@@ -11,6 +11,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Updaemon.Common", "Updaemon
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updaemon.Common.Tests", "Updaemon.Common.Tests\Updaemon.Common.Tests.csproj", "{9BD39D1F-A639-463F-ADD2-BA05817886D4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updaemon.GithubDistributionService", "Updaemon.GithubDistributionService\Updaemon.GithubDistributionService.csproj", "{CC32856F-534C-47FF-8D2B-3521030B7984}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updaemon.GithubDistributionService.Tests", "Updaemon.GithubDistributionService.Tests\Updaemon.GithubDistributionService.Tests.csproj", "{2A37BAD5-B370-4A97-A07A-752664B00C61}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +37,14 @@ Global
 		{9BD39D1F-A639-463F-ADD2-BA05817886D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9BD39D1F-A639-463F-ADD2-BA05817886D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9BD39D1F-A639-463F-ADD2-BA05817886D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CC32856F-534C-47FF-8D2B-3521030B7984}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CC32856F-534C-47FF-8D2B-3521030B7984}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CC32856F-534C-47FF-8D2B-3521030B7984}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CC32856F-534C-47FF-8D2B-3521030B7984}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2A37BAD5-B370-4A97-A07A-752664B00C61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2A37BAD5-B370-4A97-A07A-752664B00C61}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2A37BAD5-B370-4A97-A07A-752664B00C61}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2A37BAD5-B370-4A97-A07A-752664B00C61}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
