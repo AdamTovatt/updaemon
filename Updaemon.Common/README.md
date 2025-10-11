@@ -38,9 +38,9 @@ using Updaemon.Common;
 
 public class MyDistributionService : IDistributionService
 {
-    public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
+    public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
     {
-        // Parse secrets (key=value pairs separated by newlines)
+        // Access secrets using secrets.GetValue("key") or secrets.GetValueIgnoreCase("key")
         // Initialize your distribution service client
     }
 
@@ -85,18 +85,24 @@ class Program
 
 ## IDistributionService Interface
 
-### InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
+### InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
 
 Called once when updaemon connects to your plugin.
 
 **Parameters:**
-- `secrets` - Nullable string containing zero or more `key=value` pairs separated by line breaks. Null if no secrets configured.
+- `secrets` - Collection of secret key-value pairs. Use `GetValue(key)` for case-sensitive lookup or `GetValueIgnoreCase(key)` for case-insensitive lookup.
 - `cancellationToken` - Cancellation token to cancel the operation.
 
-**Example secrets:**
-```
-tenantId=550e8400-e29b-41d4-a716-446655440000
-apiKey=abc123xyz
+**Example usage:**
+```csharp
+string? tenantId = secrets.GetValueIgnoreCase("tenantId");
+string? apiKey = secrets.GetValueIgnoreCase("apiKey");
+
+// Or using TryGet pattern
+if (secrets.TryGetValue("githubToken", out string? token))
+{
+    // Use token
+}
 ```
 
 ### GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)

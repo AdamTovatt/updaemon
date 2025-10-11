@@ -517,9 +517,9 @@ Distribution plugins are separate AOT-compiled executables that communicate with
    
    public class MyDistributionService : IDistributionService
    {
-       public Task InitializeAsync(string? secrets) { /* ... */ }
-       public Task<Version?> GetLatestVersionAsync(string serviceName) { /* ... */ }
-       public Task DownloadVersionAsync(string serviceName, Version version, string targetPath) { /* ... */ }
+       public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default) { /* ... */ }
+       public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default) { /* ... */ }
+       public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default) { /* ... */ }
    }
    ```
 
