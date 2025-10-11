@@ -58,50 +58,30 @@ public class MyDistributionService : IDistributionService
 }
 ```
 
-### 3. Host a Named Pipe Server
+### 3. Host the Service
 
-Your plugin executable must:
-- Accept a `--pipe-name <name>` command-line argument
-- Create a named pipe server with that name
-- Handle JSON-RPC requests using `RpcRequest` and `RpcResponse`
-- Use `CommonJsonContext` for serialization (AOT-compatible)
-
-Example structure:
+Use the `DistributionServiceHost` helper to handle all named pipe infrastructure:
 
 ```csharp
-using System.IO.Pipes;
-using System.Text.Json;
-using Updaemon.Common.Rpc;
-using Updaemon.Common.Serialization;
+using Updaemon.Common;
+using Updaemon.Common.Hosting;
 
 class Program
 {
     static async Task Main(string[] args)
     {
-        string pipeName = GetPipeNameFromArgs(args);
-        
-        using var pipeServer = new NamedPipeServerStream(pipeName, PipeDirection.InOut);
-        await pipeServer.WaitForConnectionAsync();
-        
-        var service = new MyDistributionService();
-        
-        using var reader = new StreamReader(pipeServer);
-        using var writer = new StreamWriter(pipeServer) { AutoFlush = true };
-        
-        while (pipeServer.IsConnected)
-        {
-            string? requestJson = await reader.ReadLineAsync();
-            if (requestJson == null) break;
-            
-            var request = JsonSerializer.Deserialize(requestJson, CommonJsonContext.Default.RpcRequest);
-            var response = await HandleRequest(service, request);
-            
-            string responseJson = JsonSerializer.Serialize(response, CommonJsonContext.Default.RpcResponse);
-            await writer.WriteLineAsync(responseJson);
-        }
+        IDistributionService service = new MyDistributionService();
+        await DistributionServiceHost.RunAsync(args, service);
     }
 }
 ```
+
+**That's it!** The host automatically:
+- Parses the `--pipe-name` argument
+- Creates and manages the named pipe server
+- Handles the RPC request/response loop
+- Routes calls to your `IDistributionService` implementation
+- Converts exceptions to proper RPC error responses
 
 ## IDistributionService Interface
 

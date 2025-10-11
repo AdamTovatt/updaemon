@@ -523,11 +523,22 @@ Distribution plugins are separate AOT-compiled executables that communicate with
    }
    ```
 
-3. **Host a named pipe server** using the RPC types from `Updaemon.Common.Rpc`
+3. **Host using DistributionServiceHost**:
+   ```csharp
+   using Updaemon.Common.Hosting;
+   
+   class Program
+   {
+       static async Task Main(string[] args)
+       {
+           await DistributionServiceHost.RunAsync(args, new MyDistributionService());
+       }
+   }
+   ```
 
-4. **Use CommonJsonContext** from `Updaemon.Common.Serialization` for AOT-compatible JSON serialization
+That's it! The `DistributionServiceHost` handles all the named pipe server infrastructure, argument parsing, RPC routing, and error handling automatically.
 
-For detailed instructions and a complete example, see [Updaemon.Common/README.md](Updaemon.Common/README.md).
+For detailed instructions and advanced options, see [Updaemon.Common/README.md](Updaemon.Common/README.md).
 
 ### Plugin Requirements
 

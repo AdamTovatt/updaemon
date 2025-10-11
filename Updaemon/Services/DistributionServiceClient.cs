@@ -15,8 +15,6 @@ namespace Updaemon.Services
     {
         private Process? _pluginProcess;
         private NamedPipeClientStream? _pipeClient;
-        private StreamReader? _reader;
-        private StreamWriter? _writer;
         private bool _disposed;
 
         public DistributionServiceClient()
@@ -55,9 +53,6 @@ namespace Updaemon.Services
 
             // Wait for connection with timeout (10 seconds in milliseconds)
             await _pipeClient.ConnectAsync(10000);
-
-            _reader = new StreamReader(_pipeClient, Encoding.UTF8);
-            _writer = new StreamWriter(_pipeClient, Encoding.UTF8) { AutoFlush = true };
         }
 
         public async Task InitializeAsync(string? secrets)
@@ -90,7 +85,7 @@ namespace Updaemon.Services
 
         private async Task<TResult?> InvokeMethodAsync<TResult>(string methodName, object? parameters)
         {
-            if (_writer == null || _reader == null)
+            if (_pipeClient == null || !_pipeClient.IsConnected)
             {
                 throw new InvalidOperationException("Client is not connected");
             }
@@ -106,10 +101,12 @@ namespace Updaemon.Services
 
             // Send request
             string requestJson = JsonSerializer.Serialize(request, CommonJsonContext.Default.RpcRequest);
-            await _writer.WriteLineAsync(requestJson);
+            byte[] requestBytes = Encoding.UTF8.GetBytes(requestJson + "\n");
+            await _pipeClient.WriteAsync(requestBytes, 0, requestBytes.Length);
+            await _pipeClient.FlushAsync();
 
             // Read response
-            string? responseJson = await _reader.ReadLineAsync();
+            string? responseJson = await ReadLineAsync(_pipeClient);
             if (responseJson == null)
             {
                 throw new InvalidOperationException("No response received from plugin");
@@ -141,6 +138,31 @@ namespace Updaemon.Services
             return (TResult?)objResult;
         }
 
+        private static async Task<string?> ReadLineAsync(Stream stream)
+        {
+            StringBuilder lineBuilder = new StringBuilder();
+            byte[] buffer = new byte[1];
+
+            while (true)
+            {
+                int bytesRead = await stream.ReadAsync(buffer, 0, 1);
+                if (bytesRead == 0)
+                {
+                    return lineBuilder.Length > 0 ? lineBuilder.ToString() : null;
+                }
+
+                char c = (char)buffer[0];
+                if (c == '\n')
+                {
+                    return lineBuilder.ToString();
+                }
+                else if (c != '\r')
+                {
+                    lineBuilder.Append(c);
+                }
+            }
+        }
+
         public async ValueTask DisposeAsync()
         {
             if (_disposed)
@@ -149,16 +171,6 @@ namespace Updaemon.Services
             }
 
             _disposed = true;
-
-            if (_writer != null)
-            {
-                await _writer.DisposeAsync();
-            }
-
-            if (_reader != null)
-            {
-                _reader.Dispose();
-            }
 
             if (_pipeClient != null)
             {
