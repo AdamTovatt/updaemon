@@ -3,13 +3,13 @@ using Updaemon.Interfaces;
 namespace Updaemon.Commands
 {
     /// <summary>
-    /// Handles the 'dist-set' command to set distribution service secrets.
+    /// Handles the 'secret-set' command to set distribution service secrets.
     /// </summary>
-    public class DistSetCommand
+    public class SecretSetCommand
     {
         private readonly ISecretsManager _secretsManager;
 
-        public DistSetCommand(ISecretsManager secretsManager)
+        public SecretSetCommand(ISecretsManager secretsManager)
         {
             _secretsManager = secretsManager;
         }

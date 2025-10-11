@@ -9,20 +9,20 @@ namespace Updaemon.Commands
         private readonly UpdateCommand _updateCommand;
         private readonly SetRemoteCommand _setRemoteCommand;
         private readonly DistInstallCommand _distInstallCommand;
-        private readonly DistSetCommand _distSetCommand;
+        private readonly SecretSetCommand _secretSetCommand;
 
         public CommandExecutor(
             NewCommand newCommand,
             UpdateCommand updateCommand,
             SetRemoteCommand setRemoteCommand,
             DistInstallCommand distInstallCommand,
-            DistSetCommand distSetCommand)
+            SecretSetCommand secretSetCommand)
         {
             _newCommand = newCommand;
             _updateCommand = updateCommand;
             _setRemoteCommand = setRemoteCommand;
             _distInstallCommand = distInstallCommand;
-            _distSetCommand = distSetCommand;
+            _secretSetCommand = secretSetCommand;
         }
 
         public async Task<int> ExecuteAsync(string[] args)
@@ -74,14 +74,14 @@ namespace Updaemon.Commands
                         await _distInstallCommand.ExecuteAsync(args[1]);
                         return 0;
 
-                    case "dist-set":
+                    case "secret-set":
                         if (args.Length < 3)
                         {
-                            Console.WriteLine("Error: 'dist-set' command requires a key and value");
-                            Console.WriteLine("Usage: updaemon dist-set <key> <value>");
+                            Console.WriteLine("Error: 'secret-set' command requires a key and value");
+                            Console.WriteLine("Usage: updaemon secret-set <key> <value>");
                             return 1;
                         }
-                        await _distSetCommand.ExecuteAsync(args[1], args[2]);
+                        await _secretSetCommand.ExecuteAsync(args[1], args[2]);
                         return 0;
 
                     default:
@@ -106,7 +106,7 @@ namespace Updaemon.Commands
             Console.WriteLine("  updaemon update [app-name]           Update all services or a specific service");
             Console.WriteLine("  updaemon set-remote <app> <remote>   Set remote name for a service");
             Console.WriteLine("  updaemon dist-install <url>          Install a distribution service plugin");
-            Console.WriteLine("  updaemon dist-set <key> <value>      Set a distribution service secret");
+            Console.WriteLine("  updaemon secret-set <key> <value>    Set a distribution service secret");
             Console.WriteLine();
             Console.WriteLine("Examples:");
             Console.WriteLine("  updaemon new my-api");
@@ -114,7 +114,7 @@ namespace Updaemon.Commands
             Console.WriteLine("  updaemon update my-api");
             Console.WriteLine("  updaemon set-remote my-api Dev.MyApi");
             Console.WriteLine("  updaemon dist-install https://example.com/plugin");
-            Console.WriteLine("  updaemon dist-set apiKey abc123");
+            Console.WriteLine("  updaemon secret-set apiKey abc123");
         }
     }
 }

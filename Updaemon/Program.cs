@@ -55,7 +55,7 @@ namespace Updaemon
             services.AddSingleton<UpdateCommand>();
             services.AddSingleton<SetRemoteCommand>();
             services.AddSingleton<DistInstallCommand>();
-            services.AddSingleton<DistSetCommand>();
+            services.AddSingleton<SecretSetCommand>();
 
             // Command executor
             services.AddSingleton<CommandExecutor>();
