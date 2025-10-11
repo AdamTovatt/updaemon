@@ -10,17 +10,20 @@ namespace Updaemon.Commands
         private readonly IConfigManager _configManager;
         private readonly IServiceManager _serviceManager;
         private readonly IOutputWriter _outputWriter;
+        private readonly IUnitFileManager _unitFileManager;
         private readonly string _serviceBaseDirectory;
         private readonly string _systemdUnitDirectory;
 
         public NewCommand(
             IConfigManager configManager,
             IServiceManager serviceManager,
-            IOutputWriter outputWriter)
+            IOutputWriter outputWriter,
+            IUnitFileManager unitFileManager)
         {
             _configManager = configManager;
             _serviceManager = serviceManager;
             _outputWriter = outputWriter;
+            _unitFileManager = unitFileManager;
             _serviceBaseDirectory = "/opt";
             _systemdUnitDirectory = "/etc/systemd/system";
         }
@@ -29,12 +32,14 @@ namespace Updaemon.Commands
             IConfigManager configManager,
             IServiceManager serviceManager,
             IOutputWriter outputWriter,
+            IUnitFileManager unitFileManager,
             string serviceBaseDirectory,
             string systemdUnitDirectory)
         {
             _configManager = configManager;
             _serviceManager = serviceManager;
             _outputWriter = outputWriter;
+            _unitFileManager = unitFileManager;
             _serviceBaseDirectory = serviceBaseDirectory;
             _systemdUnitDirectory = systemdUnitDirectory;
         }
@@ -52,7 +57,7 @@ namespace Updaemon.Commands
             string unitFilePath = Path.Combine(_systemdUnitDirectory, $"{appName}.service");
             string symlinkPath = Path.Combine(_serviceBaseDirectory, appName, "current");
 
-            string unitFileContent = GenerateUnitFile(appName, symlinkPath);
+            string unitFileContent = await _unitFileManager.ReadTemplateWithSubstitutionsAsync(appName, symlinkPath);
             await File.WriteAllTextAsync(unitFilePath, unitFileContent);
             _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");
 
@@ -66,26 +71,6 @@ namespace Updaemon.Commands
 
             _outputWriter.WriteLine($"Service '{appName}' created successfully!");
             _outputWriter.WriteLine($"Note: Run 'updaemon update {appName}' to download and install the service.");
-        }
-
-        private string GenerateUnitFile(string serviceName, string executablePath)
-        {
-            return $@"[Unit]
-Description={serviceName} service managed by updaemon
-After=network.target
-
-[Service]
-Type=simple
-ExecStart={executablePath}
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier={serviceName}
-
-[Install]
-WantedBy=multi-user.target
-";
         }
     }
 }

@@ -421,6 +421,7 @@ sudo updaemon secret-set tenantId 550e8400-e29b-41d4-a716-446655440000
 /var/lib/updaemon/
 ├── config.json              # Service registry and plugin configuration
 ├── secrets.txt              # Distribution service secrets (key=value format)
+├── default-unit.template    # Default systemd unit file template (customizable)
 └── plugins/
     └── <plugin-executable>  # Distribution service plugin
 
@@ -459,6 +460,36 @@ sudo updaemon secret-set tenantId 550e8400-e29b-41d4-a716-446655440000
 tenantId=550e8400-e29b-41d4-a716-446655440000
 apiKey=abc123xyz
 ```
+
+### /var/lib/updaemon/default-unit.template
+
+This file contains the systemd unit file template used when creating new services with `updaemon new`. It is automatically created from an embedded default on first use, but you can customize it to match your needs.
+
+**Placeholders:**
+- `{SERVICE_NAME}` - The name of the service
+- `{DESCRIPTION}` - A description of the service
+- `{EXECUTABLE_PATH}` - The path to the executable (typically the symlink `/opt/<service>/current`)
+
+**Example:**
+```ini
+[Unit]
+Description={DESCRIPTION}
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={EXECUTABLE_PATH}
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={SERVICE_NAME}
+
+[Install]
+WantedBy=multi-user.target
+```
+
+You can edit this file to add custom systemd directives like environment variables, resource limits, or security settings that will apply to all new services created with updaemon.
 
 ### App-specific Configuration (Optional)
 

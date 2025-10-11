@@ -76,9 +76,13 @@ namespace Updaemon.Tests.Commands
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
             MockOutputWriter outputWriter = new MockOutputWriter();
+            MockUnitFileManager unitFileManager = new MockUnitFileManager
+            {
+                TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+            };
 
             // Create a command executor with a mock that will throw
-            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter);
+            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager);
             UpdateCommand updateCommand = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -129,8 +133,12 @@ namespace Updaemon.Tests.Commands
             secretsManager ??= new MockSecretsManager();
             serviceManager ??= new MockServiceManager();
             MockOutputWriter outputWriter = new MockOutputWriter();
+            MockUnitFileManager unitFileManager = new MockUnitFileManager
+            {
+                TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+            };
 
-            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter);
+            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager);
             UpdateCommand updateCommand = new UpdateCommand(
                 configManager,
                 secretsManager,

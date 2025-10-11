@@ -18,6 +18,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Templates\service.template" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Templates\service.template" />
   </ItemGroup>
 </Project>
