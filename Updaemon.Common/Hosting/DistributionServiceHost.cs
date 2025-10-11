@@ -198,7 +198,9 @@ namespace Updaemon.Common.Hosting
             Version? version = await implementation.GetLatestVersionAsync(serviceName, cancellationToken);
 
             string? result = version?.ToString();
-            string? resultJson = JsonSerializer.Serialize(result, CommonJsonContext.Default.String);
+            string resultJson = result != null 
+                ? JsonSerializer.Serialize(result, CommonJsonContext.Default.String)
+                : "null";
 
             return new RpcResponse
             {
