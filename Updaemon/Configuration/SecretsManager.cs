@@ -11,10 +11,18 @@ namespace Updaemon.Configuration
         private const string SecretsFileName = "secrets.txt";
         
         private readonly string _secretsFilePath;
+        private readonly string _configDirectory;
 
         public SecretsManager()
         {
-            _secretsFilePath = Path.Combine(ConfigDirectory, SecretsFileName);
+            _configDirectory = ConfigDirectory;
+            _secretsFilePath = Path.Combine(_configDirectory, SecretsFileName);
+        }
+
+        public SecretsManager(string configDirectory)
+        {
+            _configDirectory = configDirectory;
+            _secretsFilePath = Path.Combine(_configDirectory, SecretsFileName);
         }
 
         public async Task SetSecretAsync(string key, string value)
@@ -76,7 +84,7 @@ namespace Updaemon.Configuration
 
         private async Task SaveSecretsAsync(Dictionary<string, string> secrets)
         {
-            Directory.CreateDirectory(ConfigDirectory);
+            Directory.CreateDirectory(_configDirectory);
             string content = string.Join(Environment.NewLine, secrets.Select(kvp => $"{kvp.Key}={kvp.Value}"));
             await File.WriteAllTextAsync(_secretsFilePath, content);
         }

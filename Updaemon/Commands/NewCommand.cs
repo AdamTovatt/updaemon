@@ -9,11 +9,27 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly IServiceManager _serviceManager;
+        private readonly string _serviceBaseDirectory;
+        private readonly string _systemdUnitDirectory;
 
         public NewCommand(IConfigManager configManager, IServiceManager serviceManager)
         {
             _configManager = configManager;
             _serviceManager = serviceManager;
+            _serviceBaseDirectory = "/opt";
+            _systemdUnitDirectory = "/etc/systemd/system";
+        }
+
+        public NewCommand(
+            IConfigManager configManager,
+            IServiceManager serviceManager,
+            string serviceBaseDirectory,
+            string systemdUnitDirectory)
+        {
+            _configManager = configManager;
+            _serviceManager = serviceManager;
+            _serviceBaseDirectory = serviceBaseDirectory;
+            _systemdUnitDirectory = systemdUnitDirectory;
         }
 
         public async Task ExecuteAsync(string appName)
@@ -21,13 +37,13 @@ namespace Updaemon.Commands
             Console.WriteLine($"Creating new service: {appName}");
 
             // Create the service directory
-            string serviceDirectory = $"/opt/{appName}";
+            string serviceDirectory = Path.Combine(_serviceBaseDirectory, appName);
             Directory.CreateDirectory(serviceDirectory);
             Console.WriteLine($"Created directory: {serviceDirectory}");
 
             // Create systemd unit file
-            string unitFilePath = $"/etc/systemd/system/{appName}.service";
-            string symlinkPath = $"/opt/{appName}/current";
+            string unitFilePath = Path.Combine(_systemdUnitDirectory, $"{appName}.service");
+            string symlinkPath = Path.Combine(_serviceBaseDirectory, appName, "current");
             
             string unitFileContent = GenerateUnitFile(appName, symlinkPath);
             await File.WriteAllTextAsync(unitFilePath, unitFileContent);

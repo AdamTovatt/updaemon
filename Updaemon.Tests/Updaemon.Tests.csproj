@@ -22,4 +22,9 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Updaemon\Updaemon.csproj" />
+    <ProjectReference Include="..\Updaemon.Contracts\Updaemon.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>

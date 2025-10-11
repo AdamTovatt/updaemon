@@ -9,11 +9,20 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly HttpClient _httpClient;
+        private readonly string _pluginsDirectory;
 
         public DistInstallCommand(IConfigManager configManager, HttpClient httpClient)
         {
             _configManager = configManager;
             _httpClient = httpClient;
+            _pluginsDirectory = "/var/lib/updaemon/plugins";
+        }
+
+        public DistInstallCommand(IConfigManager configManager, HttpClient httpClient, string pluginsDirectory)
+        {
+            _configManager = configManager;
+            _httpClient = httpClient;
+            _pluginsDirectory = pluginsDirectory;
         }
 
         public async Task ExecuteAsync(string url)
@@ -32,11 +41,10 @@ namespace Updaemon.Commands
             }
 
             // Create plugins directory
-            string pluginsDirectory = "/var/lib/updaemon/plugins";
-            Directory.CreateDirectory(pluginsDirectory);
+            Directory.CreateDirectory(_pluginsDirectory);
 
             // Save the plugin
-            string pluginPath = Path.Combine(pluginsDirectory, filename);
+            string pluginPath = Path.Combine(_pluginsDirectory, filename);
             await File.WriteAllBytesAsync(pluginPath, pluginData);
             Console.WriteLine($"Saved plugin to: {pluginPath}");
 

@@ -1,54 +1,32 @@
-using System.Text.Json;
 using Updaemon.Interfaces;
 using Updaemon.Models;
-using Updaemon.Serialization;
 
-namespace Updaemon.Configuration
+namespace Updaemon.Tests.Mocks
 {
     /// <summary>
-    /// Manages the updaemon configuration stored in /var/lib/updaemon/config.json
+    /// Mock implementation of IConfigManager with in-memory storage.
     /// </summary>
-    public class ConfigManager : IConfigManager
+    public class MockConfigManager : IConfigManager
     {
-        private const string ConfigDirectory = "/var/lib/updaemon";
-        private const string ConfigFileName = "config.json";
-        
-        private readonly string _configFilePath;
-        private readonly string _configDirectory;
+        private UpdaemonConfig _config = new UpdaemonConfig();
+        public List<string> MethodCalls { get; } = new List<string>();
 
-        public ConfigManager()
+        public Task<UpdaemonConfig> LoadConfigAsync()
         {
-            _configDirectory = ConfigDirectory;
-            _configFilePath = Path.Combine(_configDirectory, ConfigFileName);
+            MethodCalls.Add(nameof(LoadConfigAsync));
+            return Task.FromResult(_config);
         }
 
-        public ConfigManager(string configDirectory)
+        public Task SaveConfigAsync(UpdaemonConfig config)
         {
-            _configDirectory = configDirectory;
-            _configFilePath = Path.Combine(_configDirectory, ConfigFileName);
-        }
-
-        public async Task<UpdaemonConfig> LoadConfigAsync()
-        {
-            if (!File.Exists(_configFilePath))
-            {
-                return new UpdaemonConfig();
-            }
-
-            string json = await File.ReadAllTextAsync(_configFilePath);
-            UpdaemonConfig? config = JsonSerializer.Deserialize(json, UpdaemonJsonContext.Default.UpdaemonConfig);
-            return config ?? new UpdaemonConfig();
-        }
-
-        public async Task SaveConfigAsync(UpdaemonConfig config)
-        {
-            Directory.CreateDirectory(_configDirectory);
-            string json = JsonSerializer.Serialize(config, UpdaemonJsonContext.Default.UpdaemonConfig);
-            await File.WriteAllTextAsync(_configFilePath, json);
+            MethodCalls.Add(nameof(SaveConfigAsync));
+            _config = config;
+            return Task.CompletedTask;
         }
 
         public async Task RegisterServiceAsync(string localName, string remoteName)
         {
+            MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}");
             UpdaemonConfig config = await LoadConfigAsync();
             
             RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
@@ -68,6 +46,7 @@ namespace Updaemon.Configuration
 
         public async Task SetRemoteNameAsync(string localName, string remoteName)
         {
+            MethodCalls.Add($"{nameof(SetRemoteNameAsync)}:{localName}:{remoteName}");
             UpdaemonConfig config = await LoadConfigAsync();
             
             RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
@@ -82,18 +61,21 @@ namespace Updaemon.Configuration
 
         public async Task<RegisteredService?> GetServiceAsync(string localName)
         {
+            MethodCalls.Add($"{nameof(GetServiceAsync)}:{localName}");
             UpdaemonConfig config = await LoadConfigAsync();
             return config.Services.FirstOrDefault(s => s.LocalName == localName);
         }
 
         public async Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync()
         {
+            MethodCalls.Add(nameof(GetAllServicesAsync));
             UpdaemonConfig config = await LoadConfigAsync();
             return config.Services.AsReadOnly();
         }
 
         public async Task SetDistributionPluginPathAsync(string pluginPath)
         {
+            MethodCalls.Add($"{nameof(SetDistributionPluginPathAsync)}:{pluginPath}");
             UpdaemonConfig config = await LoadConfigAsync();
             config.DistributionPluginPath = pluginPath;
             await SaveConfigAsync(config);
@@ -101,6 +83,7 @@ namespace Updaemon.Configuration
 
         public async Task<string?> GetDistributionPluginPathAsync()
         {
+            MethodCalls.Add(nameof(GetDistributionPluginPathAsync));
             UpdaemonConfig config = await LoadConfigAsync();
             return config.DistributionPluginPath;
         }

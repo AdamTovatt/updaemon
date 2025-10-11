@@ -14,6 +14,7 @@ namespace Updaemon.Commands
         private readonly ISymlinkManager _symlinkManager;
         private readonly IExecutableDetector _executableDetector;
         private readonly IDistributionServiceClient _distributionClient;
+        private readonly string _serviceBaseDirectory;
 
         public UpdateCommand(
             IConfigManager configManager,
@@ -29,6 +30,25 @@ namespace Updaemon.Commands
             _symlinkManager = symlinkManager;
             _executableDetector = executableDetector;
             _distributionClient = distributionClient;
+            _serviceBaseDirectory = "/opt";
+        }
+
+        public UpdateCommand(
+            IConfigManager configManager,
+            ISecretsManager secretsManager,
+            IServiceManager serviceManager,
+            ISymlinkManager symlinkManager,
+            IExecutableDetector executableDetector,
+            IDistributionServiceClient distributionClient,
+            string serviceBaseDirectory)
+        {
+            _configManager = configManager;
+            _secretsManager = secretsManager;
+            _serviceManager = serviceManager;
+            _symlinkManager = symlinkManager;
+            _executableDetector = executableDetector;
+            _distributionClient = distributionClient;
+            _serviceBaseDirectory = serviceBaseDirectory;
         }
 
         public async Task ExecuteAsync(string? specificAppName = null)
@@ -114,7 +134,7 @@ namespace Updaemon.Commands
                 }
 
                 // Download new version
-                string versionDirectory = $"/opt/{service.LocalName}/{latestVersion}";
+                string versionDirectory = Path.Combine(_serviceBaseDirectory, service.LocalName, latestVersion.ToString());
                 Console.WriteLine($"Downloading to: {versionDirectory}");
                 
                 Directory.CreateDirectory(versionDirectory);
@@ -132,7 +152,7 @@ namespace Updaemon.Commands
                 Console.WriteLine($"Found executable: {executablePath}");
 
                 // Update symlink
-                string symlinkPath = $"/opt/{service.LocalName}/current";
+                string symlinkPath = Path.Combine(_serviceBaseDirectory, service.LocalName, "current");
                 await _symlinkManager.CreateOrUpdateSymlinkAsync(symlinkPath, executablePath);
                 Console.WriteLine($"Updated symlink: {symlinkPath} -> {executablePath}");
 
@@ -151,6 +171,7 @@ namespace Updaemon.Commands
                         Console.WriteLine("Starting service...");
                         await _serviceManager.StartServiceAsync(service.LocalName);
                     }
+
                     Console.WriteLine("Service updated successfully");
                 }
                 else
@@ -167,13 +188,14 @@ namespace Updaemon.Commands
         private async Task<Version?> GetCurrentVersionAsync(string localName)
         {
             // Check symlink target
-            string symlinkPath = $"/opt/{localName}/current";
+            string symlinkPath = Path.Combine(_serviceBaseDirectory, localName, "current");
             string? target = await _symlinkManager.ReadSymlinkAsync(symlinkPath);
             
             if (target != null)
             {
                 // Extract version from path (e.g., /opt/app-name/1.2.3/app-name -> 1.2.3)
-                string[] parts = target.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                char[] separators = new char[] { '/', '\\' };
+                string[] parts = target.Split(separators, StringSplitOptions.RemoveEmptyEntries);
                 foreach (string part in parts)
                 {
                     if (Version.TryParse(part, out Version? version))
@@ -184,7 +206,7 @@ namespace Updaemon.Commands
             }
 
             // Fallback: scan directory for highest version
-            string serviceDirectory = $"/opt/{localName}";
+            string serviceDirectory = Path.Combine(_serviceBaseDirectory, localName);
             if (!Directory.Exists(serviceDirectory))
             {
                 return null;
