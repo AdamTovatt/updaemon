@@ -1,6 +1,6 @@
 # Updaemon
 
-A lightweight, AOT-compiled service update daemon for Linux that automatically keeps your services up to date through pluggable distribution sources.
+A lightweight, AOT-compiled service update manager for Linux that automatically keeps your services up to date through pluggable distribution sources.
 
 ## Overview
 
@@ -10,6 +10,28 @@ Updaemon is a CLI-based update manager designed to:
 - Automatically update services from remote distribution sources
 - Manage systemd service files and lifecycle
 - Use symlinks for zero-downtime version switching
+
+## Table of Contents
+
+**Visualizations:**
+- [System Architecture](#system-architecture)
+- [Update Flow](#update-flow)
+- [Plugin Communication Architecture](#plugin-communication-architecture)
+- [File System Data Flow](#file-system-data-flow)
+- [CLI Command Flow](#cli-command-flow)
+
+**Getting Started:**
+- [Installation](#installation)
+- [Usage](#usage)
+
+**Reference:**
+- [CLI Commands](#cli-commands)
+- [Directory Structure](#directory-structure)
+- [Configuration Files](#configuration-files)
+
+**Advanced:**
+- [Creating Distribution Plugins](#creating-distribution-plugins)
+- [Architecture Decisions](#architecture-decisions)
 
 ## System Architecture
 
@@ -23,7 +45,7 @@ graph TB
         UpdateCmd[Update Command]
         SetRemoteCmd[Set Remote Command]
         DistInstallCmd[Dist Install Command]
-        DistSetCmd[Dist Set Command]
+        SecretSetCmd[Secret Set Command]
     end
     
     subgraph Core Services
@@ -56,7 +78,7 @@ graph TB
     Executor --> UpdateCmd
     Executor --> SetRemoteCmd
     Executor --> DistInstallCmd
-    Executor --> DistSetCmd
+    Executor --> SecretSetCmd
     
     NewCmd --> ConfigMgr
     UpdateCmd --> ConfigMgr
@@ -79,6 +101,8 @@ graph TB
     UpdateCmd --> OptDir
     NewCmd --> EtcDir
 ```
+
+[↑ Back to top](#updaemon)
 
 ## Update Flow
 
@@ -128,6 +152,8 @@ sequenceDiagram
     UpdateCmd-->>User: Update complete
 ```
 
+[↑ Back to top](#updaemon)
+
 ## Plugin Communication Architecture
 
 ```mermaid
@@ -150,6 +176,8 @@ graph LR
     
     RpcLayer -.->|Defines Contract| NamedPipe
 ```
+
+[↑ Back to top](#updaemon)
 
 ## File System Data Flow
 
@@ -181,15 +209,9 @@ graph TB
     
     UnitFile -->|Executes| Current
     Current -->|Points to| V110
-    
-    style ConfigJson fill:#e1f5ff
-    style SecretsFile fill:#ffe1e1
-    style PluginsDir fill:#fff4e1
-    style V100 fill:#e8f5e9
-    style V110 fill:#c8e6c9
-    style Current fill:#ffeb3b
-    style UnitFile fill:#f3e5f5
 ```
+
+[↑ Back to top](#updaemon)
 
 ## CLI Command Flow
 
@@ -202,13 +224,13 @@ graph TD
     Update{update?}
     SetRemote{set-remote?}
     DistInstall{dist-install?}
-    DistSet{dist-set?}
+    SecretSet{secret-set?}
     
     NewAction[Create directory<br/>Generate systemd unit<br/>Register service<br/>Enable service]
     UpdateAction[Connect to plugin<br/>Check versions<br/>Download if newer<br/>Update symlink<br/>Restart service]
     SetRemoteAction[Update remote name<br/>in config.json]
     DistInstallAction[Download plugin<br/>Make executable<br/>Save to plugins dir<br/>Update config]
-    DistSetAction[Add/update secret<br/>in secrets.txt]
+    SecretSetAction[Add/update secret<br/>in secrets.txt]
     
     Success([Exit 0])
     Error([Exit 1])
@@ -222,16 +244,18 @@ graph TD
     SetRemote -->|Yes| SetRemoteAction
     SetRemote -->|No| DistInstall
     DistInstall -->|Yes| DistInstallAction
-    DistInstall -->|No| DistSet
-    DistSet -->|Yes| DistSetAction
-    DistSet -->|No| Error
+    DistInstall -->|No| SecretSet
+    SecretSet -->|Yes| SecretSetAction
+    SecretSet -->|No| Error
     
     NewAction --> Success
     UpdateAction --> Success
     SetRemoteAction --> Success
     DistInstallAction --> Success
-    DistSetAction --> Success
+    SecretSetAction --> Success
 ```
+
+[↑ Back to top](#updaemon)
 
 ## Installation
 
@@ -268,8 +292,8 @@ sudo mkdir -p /var/lib/updaemon/plugins
 sudo updaemon dist-install https://example.com/byteshelf-plugin
 
 # Configure plugin secrets
-sudo updaemon dist-set tenantId your-tenant-id
-sudo updaemon dist-set apiKey your-api-key
+sudo updaemon secret-set tenantId your-tenant-id
+sudo updaemon secret-set apiKey your-api-key
 ```
 
 ### Create a New Service
@@ -338,6 +362,8 @@ sudo systemctl enable updaemon.timer
 sudo systemctl start updaemon.timer
 ```
 
+[↑ Back to top](#updaemon)
+
 ## CLI Commands
 
 ### `updaemon new <app-name>`
@@ -377,15 +403,17 @@ Downloads and installs a distribution service plugin from a URL.
 sudo updaemon dist-install https://example.com/plugins/byteshelf-dist
 ```
 
-### `updaemon dist-set <key> <value>`
+### `updaemon secret-set <key> <value>`
 
 Sets a secret key-value pair for the distribution service.
 
 **Example:**
 ```bash
-sudo updaemon dist-set apiKey abc123xyz
-sudo updaemon dist-set tenantId 550e8400-e29b-41d4-a716-446655440000
+sudo updaemon secret-set apiKey abc123xyz
+sudo updaemon secret-set tenantId 550e8400-e29b-41d4-a716-446655440000
 ```
+
+[↑ Back to top](#updaemon)
 
 ## Directory Structure
 
@@ -406,6 +434,8 @@ sudo updaemon dist-set tenantId 550e8400-e29b-41d4-a716-446655440000
 /etc/systemd/system/
 └── <service-name>.service   # systemd unit file
 ```
+
+[↑ Back to top](#updaemon)
 
 ## Configuration Files
 
@@ -439,6 +469,8 @@ Applications can include an `updaemon.json` file in their published output to pr
   "executablePath": "bin/my-app"
 }
 ```
+
+[↑ Back to top](#updaemon)
 
 ## Creating Distribution Plugins
 
@@ -478,7 +510,29 @@ Distribution plugins are separate AOT-compiled executables that communicate with
 }
 ```
 
+[↑ Back to top](#updaemon)
+
 ## Architecture Decisions
+
+### Why AOT Compilation?
+
+Updaemon uses AOT (Ahead-of-Time) compilation instead of traditional JIT (Just-in-Time) compilation for several key reasons:
+
+- **Lightning fast startup time**: As a one shot CLI tool that runs frequently (potentially on every update check), AOT provides near-instant startup with no JIT warmup overhead
+- **Single executable deployment**: The entire application compiles to a single native binary, making installation as simple as copying one file
+- **No runtime dependencies**: Target systems don't need the .NET runtime installed, reducing deployment complexity and system requirements
+- **Lower memory footprint**: AOT binaries use less memory than JIT-compiled applications, important for a background service
+
+### Why Pluggable Distribution Services?
+
+Updaemon uses a plugin architecture for distribution services to maintain true flexibility:
+
+- **Support diverse distribution methods**: Different organizations use different distribution systems (custom file servers, cloud storage, package registries, etc.)
+- **No vendor lock-in**: Users can implement their own distribution service without modifying updaemon's core
+- **Evolution over time**: New distribution methods can be added as they emerge without updating updaemon itself
+- **Custom authentication**: Each plugin can handle its own authentication mechanisms (API keys, OAuth, certificates, etc.)
+
+By separating service management and update decisions (updaemon core) from file acquisition and retrieval (distribution plugins), the system remains adaptable to any deployment workflow.
 
 ### Why Named Pipes with JSON-RPC Instead of DLL Plugins?
 
@@ -503,6 +557,8 @@ Symlinks enable:
 - Easy rollback (just repoint the symlink)
 - Multiple versions coexisting on disk
 - Atomic version switching
+
+[↑ Back to top](#updaemon)
 
 ## License
 
