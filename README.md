@@ -258,43 +258,32 @@ graph TD
 [↑ Back to top](#updaemon)
 
 ## Installation
-
-### Building from Source
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd Updaemon
-
-# Publish as AOT-compiled executable
-dotnet publish Updaemon/Updaemon.csproj -c Release
-
-# The executable will be in: Updaemon/bin/Release/net8.0/linux-x64/publish/
-```
-
-### Installing Updaemon
+To install Updaemon, run the following command:
 
 ```bash
-# Copy to system location
-sudo cp Updaemon/bin/Release/net8.0/linux-x64/publish/Updaemon /usr/local/bin/updaemon
-sudo chmod +x /usr/local/bin/updaemon
-
-# Create configuration directory
-sudo mkdir -p /var/lib/updaemon/plugins
+curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
 ```
+
+That's it!
 
 ## Usage
 
-### Install a Distribution Plugin
+After installing Updaemon you can invoke it with `updaemon` and additional commands / parameters. Running just `updaemon` without anything more will show a help section that explains how to use it. Or, you can read on here of course.
+
+### Install a distribution plugin
+
+To install a ditribution plugin you can run `updaemon dist-install [url]` with the `[url]` replaced by an actual url to a downloadable plugin. For example, if you want to be able to automatically update from GitHub releases you can install the plugin for that like this:
 
 ```bash
 # Install a distribution service plugin
-sudo updaemon dist-install https://example.com/byteshelf-plugin
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.1.0/Updaemon.GithubDistributionService
 
-# Configure plugin secrets
-sudo updaemon secret-set tenantId your-tenant-id
-sudo updaemon secret-set apiKey your-api-key
+# Configure plugin secrets (optional)
+sudo updaemon secret-set githubToken your-github-token-here
 ```
+
+> [!NOTE]
+> Setting a github token is not required for public repositories. It is required for private repositories and if you want to make frequent requests without being rate limited.
 
 ### Create a New Service
 
