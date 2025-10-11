@@ -7,7 +7,7 @@ namespace Updaemon.Common.Utilities
     /// </summary>
     public class DownloadPostProcessor : IDownloadPostProcessor
     {
-        public async Task ProcessAsync(string targetDirectory)
+        public async Task ProcessAsync(string targetDirectory, CancellationToken cancellationToken = default)
         {
             if (!Directory.Exists(targetDirectory))
             {
@@ -26,23 +26,23 @@ namespace Updaemon.Common.Utilities
                 // Check if it's a zip file
                 if (extension == ".zip")
                 {
-                    await ExtractAndDeleteZipAsync(filePath, targetDirectory);
+                    await ExtractAndDeleteZipAsync(filePath, targetDirectory, cancellationToken);
                 }
             }
         }
 
-        private async Task ExtractAndDeleteZipAsync(string zipFilePath, string targetDirectory)
+        private async Task ExtractAndDeleteZipAsync(string zipFilePath, string targetDirectory, CancellationToken cancellationToken)
         {
             try
             {
                 // Extract the zip file
-                await Task.Run(() => ZipFile.ExtractToDirectory(zipFilePath, targetDirectory));
+                await Task.Run(() => ZipFile.ExtractToDirectory(zipFilePath, targetDirectory), cancellationToken);
 
                 // Delete the zip file
                 File.Delete(zipFilePath);
 
                 // After extraction, check if we should unwrap a single directory
-                await UnwrapSingleDirectoryAsync(targetDirectory);
+                await UnwrapSingleDirectoryAsync(targetDirectory, cancellationToken);
             }
             catch
             {
@@ -51,7 +51,7 @@ namespace Updaemon.Common.Utilities
             }
         }
 
-        private async Task UnwrapSingleDirectoryAsync(string targetDirectory)
+        private async Task UnwrapSingleDirectoryAsync(string targetDirectory, CancellationToken cancellationToken)
         {
             try
             {
@@ -67,7 +67,7 @@ namespace Updaemon.Common.Utilities
                     // Only unwrap if the directory actually contains files
                     if (nestedFiles.Length > 0)
                     {
-                        await Task.Run(() => UnwrapDirectory(singleDirectory, targetDirectory));
+                        await Task.Run(() => UnwrapDirectory(singleDirectory, targetDirectory), cancellationToken);
                     }
                 }
             }

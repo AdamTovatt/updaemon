@@ -11,46 +11,46 @@ namespace Updaemon.Tests.Mocks
         public Dictionary<string, bool> ServiceRunningStates { get; } = new Dictionary<string, bool>();
         public Dictionary<string, bool> ServiceExistsStates { get; } = new Dictionary<string, bool>();
 
-        public Task StartServiceAsync(string serviceName)
+        public Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(StartServiceAsync)}:{serviceName}");
             ServiceRunningStates[serviceName] = true;
             return Task.CompletedTask;
         }
 
-        public Task StopServiceAsync(string serviceName)
+        public Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(StopServiceAsync)}:{serviceName}");
             ServiceRunningStates[serviceName] = false;
             return Task.CompletedTask;
         }
 
-        public Task RestartServiceAsync(string serviceName)
+        public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(RestartServiceAsync)}:{serviceName}");
             ServiceRunningStates[serviceName] = true;
             return Task.CompletedTask;
         }
 
-        public Task EnableServiceAsync(string serviceName)
+        public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(EnableServiceAsync)}:{serviceName}");
             return Task.CompletedTask;
         }
 
-        public Task DisableServiceAsync(string serviceName)
+        public Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(DisableServiceAsync)}:{serviceName}");
             return Task.CompletedTask;
         }
 
-        public Task<bool> IsServiceRunningAsync(string serviceName)
+        public Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(IsServiceRunningAsync)}:{serviceName}");
             return Task.FromResult(ServiceRunningStates.GetValueOrDefault(serviceName, false));
         }
 
-        public Task<bool> ServiceExistsAsync(string serviceName)
+        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(ServiceExistsAsync)}:{serviceName}");
             return Task.FromResult(ServiceExistsStates.GetValueOrDefault(serviceName, false));

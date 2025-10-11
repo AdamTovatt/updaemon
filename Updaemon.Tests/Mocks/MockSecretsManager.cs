@@ -10,20 +10,20 @@ namespace Updaemon.Tests.Mocks
         private readonly Dictionary<string, string> _secrets = new Dictionary<string, string>();
         public List<string> MethodCalls { get; } = new List<string>();
 
-        public Task SetSecretAsync(string key, string value)
+        public Task SetSecretAsync(string key, string value, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(SetSecretAsync)}:{key}:{value}");
             _secrets[key] = value;
             return Task.CompletedTask;
         }
 
-        public Task<string?> GetSecretAsync(string key)
+        public Task<string?> GetSecretAsync(string key, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(GetSecretAsync)}:{key}");
             return Task.FromResult(_secrets.GetValueOrDefault(key));
         }
 
-        public Task<string?> GetAllSecretsFormattedAsync()
+        public Task<string?> GetAllSecretsFormattedAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(GetAllSecretsFormattedAsync));
 
@@ -36,7 +36,7 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult<string?>(formatted);
         }
 
-        public Task RemoveSecretAsync(string key)
+        public Task RemoveSecretAsync(string key, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(RemoveSecretAsync)}:{key}");
             _secrets.Remove(key);

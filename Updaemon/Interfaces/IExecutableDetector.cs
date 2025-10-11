@@ -11,7 +11,7 @@ namespace Updaemon.Interfaces
         /// <param name="directoryPath">The directory to search in.</param>
         /// <param name="serviceName">The service name to match against.</param>
         /// <returns>The path to the executable, or null if not found.</returns>
-        Task<string?> FindExecutableAsync(string directoryPath, string serviceName);
+        Task<string?> FindExecutableAsync(string directoryPath, string serviceName, CancellationToken cancellationToken = default);
     }
 }
 

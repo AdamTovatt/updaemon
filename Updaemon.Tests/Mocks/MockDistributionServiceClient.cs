@@ -14,27 +14,27 @@ namespace Updaemon.Tests.Mocks
         public string? InitializedSecrets { get; private set; }
         public bool IsDisposed { get; private set; }
 
-        public Task ConnectAsync(string pluginExecutablePath)
+        public Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(ConnectAsync)}:{pluginExecutablePath}");
             ConnectedPluginPath = pluginExecutablePath;
             return Task.CompletedTask;
         }
 
-        public Task InitializeAsync(string? secrets)
+        public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(InitializeAsync)}:{secrets ?? "(null)"}");
             InitializedSecrets = secrets;
             return Task.CompletedTask;
         }
 
-        public Task<Version?> GetLatestVersionAsync(string serviceName)
+        public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(GetLatestVersionAsync)}:{serviceName}");
             return Task.FromResult(LatestVersions.GetValueOrDefault(serviceName));
         }
 
-        public Task DownloadVersionAsync(string serviceName, Version version, string targetPath)
+        public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(DownloadVersionAsync)}:{serviceName}:{version}:{targetPath}");
             Downloads.Add((serviceName, version, targetPath));

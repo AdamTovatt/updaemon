@@ -10,7 +10,7 @@ namespace Updaemon.Tests.Mocks
         public List<string> MethodCalls { get; } = new List<string>();
         public Dictionary<string, string?> ConfiguredResults { get; } = new Dictionary<string, string?>();
 
-        public Task<string?> FindExecutableAsync(string directoryPath, string serviceName)
+        public Task<string?> FindExecutableAsync(string directoryPath, string serviceName, CancellationToken cancellationToken = default)
         {
             string key = $"{directoryPath}:{serviceName}";
             MethodCalls.Add($"{nameof(FindExecutableAsync)}:{key}");

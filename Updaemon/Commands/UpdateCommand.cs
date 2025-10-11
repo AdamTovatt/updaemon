@@ -61,10 +61,10 @@ namespace Updaemon.Commands
             _serviceBaseDirectory = serviceBaseDirectory;
         }
 
-        public async Task ExecuteAsync(string? specificAppName = null)
+        public async Task ExecuteAsync(string? specificAppName = null, CancellationToken cancellationToken = default)
         {
             // Get the distribution plugin path
-            string? pluginPath = await _configManager.GetDistributionPluginPathAsync();
+            string? pluginPath = await _configManager.GetDistributionPluginPathAsync(cancellationToken);
             if (string.IsNullOrEmpty(pluginPath))
             {
                 _outputWriter.WriteError("Error: No distribution service plugin configured.");
@@ -73,17 +73,17 @@ namespace Updaemon.Commands
             }
 
             // Connect to the distribution service
-            await _distributionClient.ConnectAsync(pluginPath);
+            await _distributionClient.ConnectAsync(pluginPath, cancellationToken);
 
             // Initialize with secrets
-            string? secrets = await _secretsManager.GetAllSecretsFormattedAsync();
-            await _distributionClient.InitializeAsync(secrets);
+            string? secrets = await _secretsManager.GetAllSecretsFormattedAsync(cancellationToken);
+            await _distributionClient.InitializeAsync(secrets, cancellationToken);
 
             // Get services to update
             IReadOnlyList<RegisteredService> services;
             if (specificAppName != null)
             {
-                RegisteredService? service = await _configManager.GetServiceAsync(specificAppName);
+                RegisteredService? service = await _configManager.GetServiceAsync(specificAppName, cancellationToken);
                 if (service == null)
                 {
                     _outputWriter.WriteError($"Error: Service '{specificAppName}' is not registered.");
@@ -94,7 +94,7 @@ namespace Updaemon.Commands
             }
             else
             {
-                services = await _configManager.GetAllServicesAsync();
+                services = await _configManager.GetAllServicesAsync(cancellationToken);
             }
 
             if (services.Count == 0)
@@ -106,18 +106,18 @@ namespace Updaemon.Commands
             // Update each service
             foreach (RegisteredService service in services)
             {
-                await UpdateServiceAsync(service);
+                await UpdateServiceAsync(service, cancellationToken);
             }
         }
 
-        private async Task UpdateServiceAsync(RegisteredService service)
+        private async Task UpdateServiceAsync(RegisteredService service, CancellationToken cancellationToken)
         {
             _outputWriter.WriteLine($"\nUpdating service: {service.LocalName}");
 
             try
             {
                 // Get current version
-                Version? currentVersion = await GetCurrentVersionAsync(service.LocalName);
+                Version? currentVersion = await GetCurrentVersionAsync(service.LocalName, cancellationToken);
                 if (currentVersion != null)
                 {
                     _outputWriter.WriteLine($"Current version: {currentVersion}");
@@ -128,7 +128,7 @@ namespace Updaemon.Commands
                 }
 
                 // Get latest version from distribution service
-                Version? latestVersion = await _distributionClient.GetLatestVersionAsync(service.RemoteName);
+                Version? latestVersion = await _distributionClient.GetLatestVersionAsync(service.RemoteName, cancellationToken);
                 if (latestVersion == null)
                 {
                     _outputWriter.WriteLine($"No version available for '{service.RemoteName}'");
@@ -149,11 +149,11 @@ namespace Updaemon.Commands
                 _outputWriter.WriteLine($"Downloading to: {versionDirectory}");
 
                 Directory.CreateDirectory(versionDirectory);
-                await _distributionClient.DownloadVersionAsync(service.RemoteName, latestVersion, versionDirectory);
+                await _distributionClient.DownloadVersionAsync(service.RemoteName, latestVersion, versionDirectory, cancellationToken);
                 _outputWriter.WriteLine("Download complete");
 
                 // Find executable
-                string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, service.LocalName);
+                string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, service.LocalName, cancellationToken);
                 if (executablePath == null)
                 {
                     _outputWriter.WriteError($"Error: Could not find executable in {versionDirectory}");
@@ -164,23 +164,23 @@ namespace Updaemon.Commands
 
                 // Update symlink
                 string symlinkPath = Path.Combine(_serviceBaseDirectory, service.LocalName, "current");
-                await _symlinkManager.CreateOrUpdateSymlinkAsync(symlinkPath, executablePath);
+                await _symlinkManager.CreateOrUpdateSymlinkAsync(symlinkPath, executablePath, cancellationToken);
                 _outputWriter.WriteLine($"Updated symlink: {symlinkPath} -> {executablePath}");
 
                 // Restart service
-                bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName);
+                bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName, cancellationToken);
                 if (serviceExists)
                 {
-                    bool isRunning = await _serviceManager.IsServiceRunningAsync(service.LocalName);
+                    bool isRunning = await _serviceManager.IsServiceRunningAsync(service.LocalName, cancellationToken);
                     if (isRunning)
                     {
                         _outputWriter.WriteLine("Restarting service...");
-                        await _serviceManager.RestartServiceAsync(service.LocalName);
+                        await _serviceManager.RestartServiceAsync(service.LocalName, cancellationToken);
                     }
                     else
                     {
                         _outputWriter.WriteLine("Starting service...");
-                        await _serviceManager.StartServiceAsync(service.LocalName);
+                        await _serviceManager.StartServiceAsync(service.LocalName, cancellationToken);
                     }
 
                     _outputWriter.WriteLine("Service updated successfully");
@@ -196,11 +196,11 @@ namespace Updaemon.Commands
             }
         }
 
-        private async Task<Version?> GetCurrentVersionAsync(string localName)
+        private async Task<Version?> GetCurrentVersionAsync(string localName, CancellationToken cancellationToken)
         {
             // Check symlink target
             string symlinkPath = Path.Combine(_serviceBaseDirectory, localName, "current");
-            string? target = await _symlinkManager.ReadSymlinkAsync(symlinkPath);
+            string? target = await _symlinkManager.ReadSymlinkAsync(symlinkPath, cancellationToken);
 
             return _versionExtractor.ExtractVersionFromPath(target);
         }

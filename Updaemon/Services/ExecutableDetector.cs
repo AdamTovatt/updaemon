@@ -10,7 +10,7 @@ namespace Updaemon.Services
     /// </summary>
     public class ExecutableDetector : IExecutableDetector
     {
-        public async Task<string?> FindExecutableAsync(string directoryPath, string serviceName)
+        public async Task<string?> FindExecutableAsync(string directoryPath, string serviceName, CancellationToken cancellationToken = default)
         {
             if (!Directory.Exists(directoryPath))
             {
@@ -23,7 +23,7 @@ namespace Updaemon.Services
             {
                 try
                 {
-                    string configJson = await File.ReadAllTextAsync(configPath);
+                    string configJson = await File.ReadAllTextAsync(configPath, cancellationToken);
                     AppConfig? config = JsonSerializer.Deserialize(configJson, UpdaemonJsonContext.Default.AppConfig);
 
                     if (config?.ExecutablePath != null)

@@ -346,7 +346,7 @@ namespace Updaemon.Common.Tests.Hosting
             public Version? LatestVersion { get; set; }
             public bool ShouldThrowException { get; set; }
 
-            public Task InitializeAsync(string? secrets)
+            public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
             {
                 if (ShouldThrowException)
                 {
@@ -357,7 +357,7 @@ namespace Updaemon.Common.Tests.Hosting
                 return Task.CompletedTask;
             }
 
-            public Task<Version?> GetLatestVersionAsync(string serviceName)
+            public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
             {
                 if (ShouldThrowException)
                 {
@@ -368,7 +368,7 @@ namespace Updaemon.Common.Tests.Hosting
                 return Task.FromResult(LatestVersion);
             }
 
-            public Task DownloadVersionAsync(string serviceName, Version version, string targetPath)
+            public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
             {
                 if (ShouldThrowException)
                 {

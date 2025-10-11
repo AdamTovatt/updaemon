@@ -8,32 +8,32 @@ namespace Updaemon.Services
     /// </summary>
     public class ServiceManager : IServiceManager
     {
-        public async Task StartServiceAsync(string serviceName)
+        public async Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            await ExecuteSystemctlCommandAsync("start", serviceName);
+            await ExecuteSystemctlCommandAsync("start", serviceName, cancellationToken);
         }
 
-        public async Task StopServiceAsync(string serviceName)
+        public async Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            await ExecuteSystemctlCommandAsync("stop", serviceName);
+            await ExecuteSystemctlCommandAsync("stop", serviceName, cancellationToken);
         }
 
-        public async Task RestartServiceAsync(string serviceName)
+        public async Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            await ExecuteSystemctlCommandAsync("restart", serviceName);
+            await ExecuteSystemctlCommandAsync("restart", serviceName, cancellationToken);
         }
 
-        public async Task EnableServiceAsync(string serviceName)
+        public async Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            await ExecuteSystemctlCommandAsync("enable", serviceName);
+            await ExecuteSystemctlCommandAsync("enable", serviceName, cancellationToken);
         }
 
-        public async Task DisableServiceAsync(string serviceName)
+        public async Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            await ExecuteSystemctlCommandAsync("disable", serviceName);
+            await ExecuteSystemctlCommandAsync("disable", serviceName, cancellationToken);
         }
 
-        public async Task<bool> IsServiceRunningAsync(string serviceName)
+        public async Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -49,8 +49,8 @@ namespace Updaemon.Services
 
                 using (Process process = Process.Start(startInfo)!)
                 {
-                    string output = await process.StandardOutput.ReadToEndAsync();
-                    await process.WaitForExitAsync();
+                    string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+                    await process.WaitForExitAsync(cancellationToken);
 
                     return output.Trim() == "active";
                 }
@@ -61,7 +61,7 @@ namespace Updaemon.Services
             }
         }
 
-        public async Task<bool> ServiceExistsAsync(string serviceName)
+        public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -74,7 +74,7 @@ namespace Updaemon.Services
             }
         }
 
-        private async Task ExecuteSystemctlCommandAsync(string command, string serviceName)
+        private async Task ExecuteSystemctlCommandAsync(string command, string serviceName, CancellationToken cancellationToken)
         {
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
@@ -88,9 +88,9 @@ namespace Updaemon.Services
 
             using (Process process = Process.Start(startInfo)!)
             {
-                string output = await process.StandardOutput.ReadToEndAsync();
-                string error = await process.StandardError.ReadToEndAsync();
-                await process.WaitForExitAsync();
+                string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+                string error = await process.StandardError.ReadToEndAsync(cancellationToken);
+                await process.WaitForExitAsync(cancellationToken);
 
                 if (process.ExitCode != 0)
                 {

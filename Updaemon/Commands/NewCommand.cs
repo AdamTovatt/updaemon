@@ -44,7 +44,7 @@ namespace Updaemon.Commands
             _systemdUnitDirectory = systemdUnitDirectory;
         }
 
-        public async Task ExecuteAsync(string appName)
+        public async Task ExecuteAsync(string appName, CancellationToken cancellationToken = default)
         {
             _outputWriter.WriteLine($"Creating new service: {appName}");
 
@@ -57,16 +57,16 @@ namespace Updaemon.Commands
             string unitFilePath = Path.Combine(_systemdUnitDirectory, $"{appName}.service");
             string symlinkPath = Path.Combine(_serviceBaseDirectory, appName, "current");
 
-            string unitFileContent = await _unitFileManager.ReadTemplateWithSubstitutionsAsync(appName, symlinkPath);
-            await File.WriteAllTextAsync(unitFilePath, unitFileContent);
+            string unitFileContent = await _unitFileManager.ReadTemplateWithSubstitutionsAsync(appName, symlinkPath, cancellationToken);
+            await File.WriteAllTextAsync(unitFilePath, unitFileContent, cancellationToken);
             _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");
 
             // Register the service (local name = remote name initially)
-            await _configManager.RegisterServiceAsync(appName, appName);
+            await _configManager.RegisterServiceAsync(appName, appName, cancellationToken);
             _outputWriter.WriteLine($"Registered service in updaemon config");
 
             // Enable the service
-            await _serviceManager.EnableServiceAsync(appName);
+            await _serviceManager.EnableServiceAsync(appName, cancellationToken);
             _outputWriter.WriteLine($"Enabled service: {appName}");
 
             _outputWriter.WriteLine($"Service '{appName}' created successfully!");

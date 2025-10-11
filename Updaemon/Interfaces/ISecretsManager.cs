@@ -8,23 +8,23 @@ namespace Updaemon.Interfaces
         /// <summary>
         /// Sets or updates a secret key-value pair.
         /// </summary>
-        Task SetSecretAsync(string key, string value);
+        Task SetSecretAsync(string key, string value, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets a secret value by key.
         /// </summary>
-        Task<string?> GetSecretAsync(string key);
+        Task<string?> GetSecretAsync(string key, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets all secrets as a formatted string (key=value pairs separated by line breaks).
         /// Returns null if no secrets are configured.
         /// </summary>
-        Task<string?> GetAllSecretsFormattedAsync();
+        Task<string?> GetAllSecretsFormattedAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Removes a secret by key.
         /// </summary>
-        Task RemoveSecretAsync(string key);
+        Task RemoveSecretAsync(string key, CancellationToken cancellationToken = default);
     }
 }
 

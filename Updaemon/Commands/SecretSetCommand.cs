@@ -16,11 +16,11 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
         }
 
-        public async Task ExecuteAsync(string key, string value)
+        public async Task ExecuteAsync(string key, string value, CancellationToken cancellationToken = default)
         {
             _outputWriter.WriteLine($"Setting secret: {key}");
 
-            await _secretsManager.SetSecretAsync(key, value);
+            await _secretsManager.SetSecretAsync(key, value, cancellationToken);
 
             _outputWriter.WriteLine("Secret set successfully");
         }

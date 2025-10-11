@@ -10,42 +10,42 @@ namespace Updaemon.Interfaces
         /// <summary>
         /// Loads the configuration from disk.
         /// </summary>
-        Task<UpdaemonConfig> LoadConfigAsync();
+        Task<UpdaemonConfig> LoadConfigAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Saves the configuration to disk.
         /// </summary>
-        Task SaveConfigAsync(UpdaemonConfig config);
+        Task SaveConfigAsync(UpdaemonConfig config, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Registers a new service.
         /// </summary>
-        Task RegisterServiceAsync(string localName, string remoteName);
+        Task RegisterServiceAsync(string localName, string remoteName, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Updates the remote name for an existing service.
         /// </summary>
-        Task SetRemoteNameAsync(string localName, string remoteName);
+        Task SetRemoteNameAsync(string localName, string remoteName, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets a registered service by local name.
         /// </summary>
-        Task<RegisteredService?> GetServiceAsync(string localName);
+        Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets all registered services.
         /// </summary>
-        Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync();
+        Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Sets the active distribution service plugin path.
         /// </summary>
-        Task SetDistributionPluginPathAsync(string pluginPath);
+        Task SetDistributionPluginPathAsync(string pluginPath, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets the active distribution service plugin path.
         /// </summary>
-        Task<string?> GetDistributionPluginPathAsync();
+        Task<string?> GetDistributionPluginPathAsync(CancellationToken cancellationToken = default);
     }
 }
 

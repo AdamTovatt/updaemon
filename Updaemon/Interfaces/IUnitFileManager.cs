@@ -9,7 +9,7 @@ namespace Updaemon.Interfaces
         /// Reads the raw unit file template without any substitutions.
         /// </summary>
         /// <returns>The raw template content.</returns>
-        Task<string> ReadTemplateAsync();
+        Task<string> ReadTemplateAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Reads the unit file template and substitutes placeholders with provided values.
@@ -17,7 +17,7 @@ namespace Updaemon.Interfaces
         /// <param name="serviceName">The name of the service.</param>
         /// <param name="executablePath">The path to the executable.</param>
         /// <returns>The unit file content with substitutions applied.</returns>
-        Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string executablePath);
+        Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string executablePath, CancellationToken cancellationToken = default);
     }
 }
 

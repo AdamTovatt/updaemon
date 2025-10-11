@@ -30,7 +30,7 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
         }
 
-        public async Task<int> ExecuteAsync(string[] args)
+        public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
             if (args.Length == 0)
             {
@@ -52,12 +52,12 @@ namespace Updaemon.Commands
                             return 1;
                         }
 
-                        await _newCommand.ExecuteAsync(args[1]);
+                        await _newCommand.ExecuteAsync(args[1], cancellationToken);
                         return 0;
 
                     case "update":
                         string? appName = args.Length > 1 ? args[1] : null;
-                        await _updateCommand.ExecuteAsync(appName);
+                        await _updateCommand.ExecuteAsync(appName, cancellationToken);
                         return 0;
 
                     case "set-remote":
@@ -68,7 +68,7 @@ namespace Updaemon.Commands
                             return 1;
                         }
 
-                        await _setRemoteCommand.ExecuteAsync(args[1], args[2]);
+                        await _setRemoteCommand.ExecuteAsync(args[1], args[2], cancellationToken);
                         return 0;
 
                     case "dist-install":
@@ -79,7 +79,7 @@ namespace Updaemon.Commands
                             return 1;
                         }
 
-                        await _distInstallCommand.ExecuteAsync(args[1]);
+                        await _distInstallCommand.ExecuteAsync(args[1], cancellationToken);
                         return 0;
 
                     case "secret-set":
@@ -90,7 +90,7 @@ namespace Updaemon.Commands
                             return 1;
                         }
 
-                        await _secretSetCommand.ExecuteAsync(args[1], args[2]);
+                        await _secretSetCommand.ExecuteAsync(args[1], args[2], cancellationToken);
                         return 0;
 
                     default:

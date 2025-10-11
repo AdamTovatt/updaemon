@@ -21,7 +21,7 @@ namespace Updaemon.Services
         {
         }
 
-        public async Task ConnectAsync(string pluginExecutablePath)
+        public async Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
         {
             if (!File.Exists(pluginExecutablePath))
             {
@@ -51,18 +51,18 @@ namespace Updaemon.Services
             // Connect to the named pipe
             _pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
 
-            // Wait for connection with timeout (10 seconds in milliseconds)
-            await _pipeClient.ConnectAsync(10000);
+            // Wait for connection with cancellation token
+            await _pipeClient.ConnectAsync(cancellationToken);
         }
 
-        public async Task InitializeAsync(string? secrets)
+        public async Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
         {
-            await InvokeMethodAsync("InitializeAsync", secrets);
+            await InvokeMethodAsync("InitializeAsync", secrets, cancellationToken);
         }
 
-        public async Task<Version?> GetLatestVersionAsync(string serviceName)
+        public async Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            string? versionString = await InvokeMethodAsync<string?>("GetLatestVersionAsync", serviceName);
+            string? versionString = await InvokeMethodAsync<string?>("GetLatestVersionAsync", serviceName, cancellationToken);
 
             if (string.IsNullOrEmpty(versionString))
             {
@@ -72,18 +72,18 @@ namespace Updaemon.Services
             return Version.Parse(versionString);
         }
 
-        public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath)
+        public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
         {
             object parameters = new { serviceName, version = version.ToString(), targetPath };
-            await InvokeMethodAsync("DownloadVersionAsync", parameters);
+            await InvokeMethodAsync("DownloadVersionAsync", parameters, cancellationToken);
         }
 
-        private async Task InvokeMethodAsync(string methodName, object? parameters)
+        private async Task InvokeMethodAsync(string methodName, object? parameters, CancellationToken cancellationToken)
         {
-            await InvokeMethodAsync<object>(methodName, parameters);
+            await InvokeMethodAsync<object>(methodName, parameters, cancellationToken);
         }
 
-        private async Task<TResult?> InvokeMethodAsync<TResult>(string methodName, object? parameters)
+        private async Task<TResult?> InvokeMethodAsync<TResult>(string methodName, object? parameters, CancellationToken cancellationToken)
         {
             if (_pipeClient == null || !_pipeClient.IsConnected)
             {
@@ -102,11 +102,11 @@ namespace Updaemon.Services
             // Send request
             string requestJson = JsonSerializer.Serialize(request, CommonJsonContext.Default.RpcRequest);
             byte[] requestBytes = Encoding.UTF8.GetBytes(requestJson + "\n");
-            await _pipeClient.WriteAsync(requestBytes, 0, requestBytes.Length);
-            await _pipeClient.FlushAsync();
+            await _pipeClient.WriteAsync(requestBytes, 0, requestBytes.Length, cancellationToken);
+            await _pipeClient.FlushAsync(cancellationToken);
 
             // Read response
-            string? responseJson = await ReadLineAsync(_pipeClient);
+            string? responseJson = await ReadLineAsync(_pipeClient, cancellationToken);
             if (responseJson == null)
             {
                 throw new InvalidOperationException("No response received from plugin");
@@ -138,14 +138,14 @@ namespace Updaemon.Services
             return (TResult?)objResult;
         }
 
-        private static async Task<string?> ReadLineAsync(Stream stream)
+        private static async Task<string?> ReadLineAsync(Stream stream, CancellationToken cancellationToken)
         {
             StringBuilder lineBuilder = new StringBuilder();
             byte[] buffer = new byte[1];
 
             while (true)
             {
-                int bytesRead = await stream.ReadAsync(buffer, 0, 1);
+                int bytesRead = await stream.ReadAsync(buffer, 0, 1, cancellationToken);
                 if (bytesRead == 0)
                 {
                     return lineBuilder.Length > 0 ? lineBuilder.ToString() : null;

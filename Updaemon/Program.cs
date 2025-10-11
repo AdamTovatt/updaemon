@@ -10,27 +10,37 @@ namespace Updaemon
     {
         public static async Task<int> Main(string[] args)
         {
-            // Setup DI container
-            ServiceCollection services = new ServiceCollection();
-            ConfigureServices(services);
-
-            ServiceProvider serviceProvider = services.BuildServiceProvider();
-
-            // Execute command
-            CommandExecutor executor = serviceProvider.GetRequiredService<CommandExecutor>();
-            int exitCode = await executor.ExecuteAsync(args);
-
-            // Cleanup
-            if (serviceProvider is IAsyncDisposable asyncDisposable)
+            // Setup cancellation token for Ctrl+C
+            using (CancellationTokenSource cancellationTokenSource = new CancellationTokenSource())
             {
-                await asyncDisposable.DisposeAsync();
-            }
-            else
-            {
-                serviceProvider.Dispose();
-            }
+                Console.CancelKeyPress += (sender, e) =>
+                {
+                    e.Cancel = true; // Prevent immediate termination
+                    cancellationTokenSource.Cancel();
+                };
 
-            return exitCode;
+                // Setup DI container
+                ServiceCollection services = new ServiceCollection();
+                ConfigureServices(services);
+
+                ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+                // Execute command
+                CommandExecutor executor = serviceProvider.GetRequiredService<CommandExecutor>();
+                int exitCode = await executor.ExecuteAsync(args, cancellationTokenSource.Token);
+
+                // Cleanup
+                if (serviceProvider is IAsyncDisposable asyncDisposable)
+                {
+                    await asyncDisposable.DisposeAsync();
+                }
+                else
+                {
+                    serviceProvider.Dispose();
+                }
+
+                return exitCode;
+            }
         }
 
         private static void ConfigureServices(ServiceCollection services)

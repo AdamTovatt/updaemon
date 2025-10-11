@@ -17,8 +17,9 @@ namespace Updaemon.Common.Hosting
         /// </summary>
         /// <param name="args">Command-line arguments (must include --pipe-name)</param>
         /// <param name="implementation">The IDistributionService implementation to host</param>
+        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         /// <exception cref="ArgumentException">Thrown when --pipe-name argument is missing or invalid</exception>
-        public static async Task RunAsync(string[] args, IDistributionService implementation)
+        public static async Task RunAsync(string[] args, IDistributionService implementation, CancellationToken cancellationToken = default)
         {
             string pipeName = ParsePipeName(args);
 
@@ -29,8 +30,8 @@ namespace Updaemon.Common.Hosting
                 transmissionMode: PipeTransmissionMode.Byte,
                 options: PipeOptions.Asynchronous))
             {
-                await pipeServer.WaitForConnectionAsync();
-                await HandleRequestsAsync(pipeServer, implementation);
+                await pipeServer.WaitForConnectionAsync(cancellationToken);
+                await HandleRequestsAsync(pipeServer, implementation, cancellationToken);
             }
         }
 
@@ -60,14 +61,15 @@ namespace Updaemon.Common.Hosting
         /// </summary>
         private static async Task HandleRequestsAsync(
             Stream stream,
-            IDistributionService implementation)
+            IDistributionService implementation,
+            CancellationToken cancellationToken)
         {
             byte[] buffer = new byte[4096];
             StringBuilder messageBuilder = new StringBuilder();
 
             while (true)
             {
-                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
                 if (bytesRead == 0)
                 {
                     break;
@@ -91,11 +93,11 @@ namespace Updaemon.Common.Hosting
                         RpcRequest? request = JsonSerializer.Deserialize(requestJson, CommonJsonContext.Default.RpcRequest);
                         if (request != null)
                         {
-                            RpcResponse response = await HandleRequestAsync(request, implementation);
+                            RpcResponse response = await HandleRequestAsync(request, implementation, cancellationToken);
                             string responseJson = JsonSerializer.Serialize(response, CommonJsonContext.Default.RpcResponse);
                             byte[] responseBytes = Encoding.UTF8.GetBytes(responseJson + "\n");
-                            await stream.WriteAsync(responseBytes, 0, responseBytes.Length);
-                            await stream.FlushAsync();
+                            await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken);
+                            await stream.FlushAsync(cancellationToken);
                         }
                     }
 
@@ -109,20 +111,21 @@ namespace Updaemon.Common.Hosting
         /// </summary>
         private static async Task<RpcResponse> HandleRequestAsync(
             RpcRequest request,
-            IDistributionService implementation)
+            IDistributionService implementation,
+            CancellationToken cancellationToken)
         {
             try
             {
                 switch (request.Method)
                 {
                     case "InitializeAsync":
-                        return await HandleInitializeAsync(request, implementation);
+                        return await HandleInitializeAsync(request, implementation, cancellationToken);
 
                     case "GetLatestVersionAsync":
-                        return await HandleGetLatestVersionAsync(request, implementation);
+                        return await HandleGetLatestVersionAsync(request, implementation, cancellationToken);
 
                     case "DownloadVersionAsync":
-                        return await HandleDownloadVersionAsync(request, implementation);
+                        return await HandleDownloadVersionAsync(request, implementation, cancellationToken);
 
                     default:
                         return new RpcResponse
@@ -149,7 +152,8 @@ namespace Updaemon.Common.Hosting
         /// </summary>
         private static async Task<RpcResponse> HandleInitializeAsync(
             RpcRequest request,
-            IDistributionService implementation)
+            IDistributionService implementation,
+            CancellationToken cancellationToken)
         {
             string? secrets = null;
             if (request.Parameters != null)
@@ -157,7 +161,7 @@ namespace Updaemon.Common.Hosting
                 secrets = JsonSerializer.Deserialize(request.Parameters, CommonJsonContext.Default.String);
             }
 
-            await implementation.InitializeAsync(secrets);
+            await implementation.InitializeAsync(secrets, cancellationToken);
 
             return new RpcResponse
             {
@@ -172,7 +176,8 @@ namespace Updaemon.Common.Hosting
         /// </summary>
         private static async Task<RpcResponse> HandleGetLatestVersionAsync(
             RpcRequest request,
-            IDistributionService implementation)
+            IDistributionService implementation,
+            CancellationToken cancellationToken)
         {
             if (request.Parameters == null)
             {
@@ -185,7 +190,7 @@ namespace Updaemon.Common.Hosting
                 throw new ArgumentException("serviceName cannot be null");
             }
 
-            Version? version = await implementation.GetLatestVersionAsync(serviceName);
+            Version? version = await implementation.GetLatestVersionAsync(serviceName, cancellationToken);
 
             string? result = version?.ToString();
             string? resultJson = JsonSerializer.Serialize(result, CommonJsonContext.Default.String);
@@ -203,7 +208,8 @@ namespace Updaemon.Common.Hosting
         /// </summary>
         private static async Task<RpcResponse> HandleDownloadVersionAsync(
             RpcRequest request,
-            IDistributionService implementation)
+            IDistributionService implementation,
+            CancellationToken cancellationToken)
         {
             if (request.Parameters == null)
             {
@@ -224,7 +230,7 @@ namespace Updaemon.Common.Hosting
 
             Version version = Version.Parse(versionString);
 
-            await implementation.DownloadVersionAsync(serviceName, version, targetPath);
+            await implementation.DownloadVersionAsync(serviceName, version, targetPath, cancellationToken);
 
             return new RpcResponse
             {

@@ -10,7 +10,8 @@ namespace Updaemon.Common
         /// Automatically extracts archives and unwraps single-directory structures.
         /// </summary>
         /// <param name="targetDirectory">The directory where files were downloaded.</param>
-        Task ProcessAsync(string targetDirectory);
+        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
+        Task ProcessAsync(string targetDirectory, CancellationToken cancellationToken = default);
     }
 }
 

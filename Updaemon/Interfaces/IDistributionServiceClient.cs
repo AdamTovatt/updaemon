@@ -11,7 +11,8 @@ namespace Updaemon.Interfaces
         /// Connects to the distribution service plugin executable.
         /// </summary>
         /// <param name="pluginExecutablePath">Path to the plugin executable.</param>
-        Task ConnectAsync(string pluginExecutablePath);
+        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
+        Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default);
     }
 }
 

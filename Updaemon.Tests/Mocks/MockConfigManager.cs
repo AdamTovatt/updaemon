@@ -11,23 +11,23 @@ namespace Updaemon.Tests.Mocks
         private UpdaemonConfig _config = new UpdaemonConfig();
         public List<string> MethodCalls { get; } = new List<string>();
 
-        public Task<UpdaemonConfig> LoadConfigAsync()
+        public Task<UpdaemonConfig> LoadConfigAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(LoadConfigAsync));
             return Task.FromResult(_config);
         }
 
-        public Task SaveConfigAsync(UpdaemonConfig config)
+        public Task SaveConfigAsync(UpdaemonConfig config, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(SaveConfigAsync));
             _config = config;
             return Task.CompletedTask;
         }
 
-        public async Task RegisterServiceAsync(string localName, string remoteName)
+        public async Task RegisterServiceAsync(string localName, string remoteName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}");
-            UpdaemonConfig config = await LoadConfigAsync();
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
 
             RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
             if (existing != null)
@@ -41,13 +41,13 @@ namespace Updaemon.Tests.Mocks
                 RemoteName = remoteName,
             });
 
-            await SaveConfigAsync(config);
+            await SaveConfigAsync(config, cancellationToken);
         }
 
-        public async Task SetRemoteNameAsync(string localName, string remoteName)
+        public async Task SetRemoteNameAsync(string localName, string remoteName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(SetRemoteNameAsync)}:{localName}:{remoteName}");
-            UpdaemonConfig config = await LoadConfigAsync();
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
 
             RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
             if (service == null)
@@ -56,35 +56,35 @@ namespace Updaemon.Tests.Mocks
             }
 
             service.RemoteName = remoteName;
-            await SaveConfigAsync(config);
+            await SaveConfigAsync(config, cancellationToken);
         }
 
-        public async Task<RegisteredService?> GetServiceAsync(string localName)
+        public async Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(GetServiceAsync)}:{localName}");
-            UpdaemonConfig config = await LoadConfigAsync();
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
             return config.Services.FirstOrDefault(s => s.LocalName == localName);
         }
 
-        public async Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync()
+        public async Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(GetAllServicesAsync));
-            UpdaemonConfig config = await LoadConfigAsync();
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
             return config.Services.AsReadOnly();
         }
 
-        public async Task SetDistributionPluginPathAsync(string pluginPath)
+        public async Task SetDistributionPluginPathAsync(string pluginPath, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(SetDistributionPluginPathAsync)}:{pluginPath}");
-            UpdaemonConfig config = await LoadConfigAsync();
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
             config.DistributionPluginPath = pluginPath;
-            await SaveConfigAsync(config);
+            await SaveConfigAsync(config, cancellationToken);
         }
 
-        public async Task<string?> GetDistributionPluginPathAsync()
+        public async Task<string?> GetDistributionPluginPathAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(GetDistributionPluginPathAsync));
-            UpdaemonConfig config = await LoadConfigAsync();
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
             return config.DistributionPluginPath;
         }
     }

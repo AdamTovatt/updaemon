@@ -7,7 +7,7 @@ namespace Updaemon.Services
     /// </summary>
     public class SymlinkManager : ISymlinkManager
     {
-        public Task CreateOrUpdateSymlinkAsync(string linkPath, string targetPath)
+        public Task CreateOrUpdateSymlinkAsync(string linkPath, string targetPath, CancellationToken cancellationToken = default)
         {
             // If symlink already exists, delete it first
             if (File.Exists(linkPath) || Directory.Exists(linkPath))
@@ -28,7 +28,7 @@ namespace Updaemon.Services
             return Task.CompletedTask;
         }
 
-        public Task<string?> ReadSymlinkAsync(string linkPath)
+        public Task<string?> ReadSymlinkAsync(string linkPath, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -52,7 +52,7 @@ namespace Updaemon.Services
             }
         }
 
-        public Task<bool> IsSymlinkAsync(string path)
+        public Task<bool> IsSymlinkAsync(string path, CancellationToken cancellationToken = default)
         {
             try
             {

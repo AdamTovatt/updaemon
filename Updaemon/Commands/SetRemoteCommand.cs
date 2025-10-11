@@ -16,11 +16,11 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
         }
 
-        public async Task ExecuteAsync(string localName, string remoteName)
+        public async Task ExecuteAsync(string localName, string remoteName, CancellationToken cancellationToken = default)
         {
             _outputWriter.WriteLine($"Setting remote name for '{localName}' to '{remoteName}'");
 
-            await _configManager.SetRemoteNameAsync(localName, remoteName);
+            await _configManager.SetRemoteNameAsync(localName, remoteName, cancellationToken);
 
             _outputWriter.WriteLine("Remote name updated successfully");
         }

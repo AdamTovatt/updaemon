@@ -35,12 +35,12 @@ namespace Updaemon.Commands
             _pluginsDirectory = pluginsDirectory;
         }
 
-        public async Task ExecuteAsync(string url)
+        public async Task ExecuteAsync(string url, CancellationToken cancellationToken = default)
         {
             _outputWriter.WriteLine($"Downloading distribution plugin from: {url}");
 
             // Download the plugin
-            byte[] pluginData = await _httpClient.GetByteArrayAsync(url);
+            byte[] pluginData = await _httpClient.GetByteArrayAsync(url, cancellationToken);
             _outputWriter.WriteLine($"Downloaded {pluginData.Length} bytes");
 
             // Determine filename from URL
@@ -55,7 +55,7 @@ namespace Updaemon.Commands
 
             // Save the plugin
             string pluginPath = Path.Combine(_pluginsDirectory, filename);
-            await File.WriteAllBytesAsync(pluginPath, pluginData);
+            await File.WriteAllBytesAsync(pluginPath, pluginData, cancellationToken);
             _outputWriter.WriteLine($"Saved plugin to: {pluginPath}");
 
             // Make it executable (on Linux)
@@ -70,7 +70,7 @@ namespace Updaemon.Commands
             }
 
             // Update config
-            await _configManager.SetDistributionPluginPathAsync(pluginPath);
+            await _configManager.SetDistributionPluginPathAsync(pluginPath, cancellationToken);
             _outputWriter.WriteLine("Distribution plugin installed successfully");
         }
     }

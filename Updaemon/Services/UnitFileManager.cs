@@ -27,15 +27,15 @@ namespace Updaemon.Services
             _templateFilePath = Path.Combine(_configDirectory, TemplateFileName);
         }
 
-        public async Task<string> ReadTemplateAsync()
+        public async Task<string> ReadTemplateAsync(CancellationToken cancellationToken = default)
         {
-            await EnsureTemplateExistsAsync();
-            return await File.ReadAllTextAsync(_templateFilePath);
+            await EnsureTemplateExistsAsync(cancellationToken);
+            return await File.ReadAllTextAsync(_templateFilePath, cancellationToken);
         }
 
-        public async Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string executablePath)
+        public async Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string executablePath, CancellationToken cancellationToken = default)
         {
-            string template = await ReadTemplateAsync();
+            string template = await ReadTemplateAsync(cancellationToken);
 
             string result = template
                 .Replace("{SERVICE_NAME}", serviceName)
@@ -45,7 +45,7 @@ namespace Updaemon.Services
             return result;
         }
 
-        private async Task EnsureTemplateExistsAsync()
+        private async Task EnsureTemplateExistsAsync(CancellationToken cancellationToken = default)
         {
             if (File.Exists(_templateFilePath))
                 return;
@@ -62,7 +62,7 @@ namespace Updaemon.Services
 
                 using (FileStream fileStream = new FileStream(_templateFilePath, FileMode.Create, FileAccess.Write))
                 {
-                    await resourceStream.CopyToAsync(fileStream);
+                    await resourceStream.CopyToAsync(fileStream, cancellationToken);
                 }
             }
         }
