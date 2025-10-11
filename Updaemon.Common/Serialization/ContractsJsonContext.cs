@@ -1,10 +1,10 @@
 using System.Text.Json.Serialization;
-using Updaemon.Contracts.Rpc;
+using Updaemon.Common.Rpc;
 
-namespace Updaemon.Contracts.Serialization
+namespace Updaemon.Common.Serialization
 {
     /// <summary>
-    /// JSON serialization context for updaemon contracts, enabling AOT compilation.
+    /// JSON serialization context for updaemon common types, enabling AOT compilation.
     /// Both updaemon and distribution plugins should use this context for RPC communication.
     /// </summary>
     [JsonSerializable(typeof(RpcRequest))]
@@ -14,7 +14,7 @@ namespace Updaemon.Contracts.Serialization
     [JsonSourceGenerationOptions(
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
-    public partial class ContractsJsonContext : JsonSerializerContext
+    public partial class CommonJsonContext : JsonSerializerContext
     {
     }
 }

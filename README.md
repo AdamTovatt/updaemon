@@ -505,15 +505,15 @@ Applications can include an `updaemon.json` file in their published output to pr
 
 ## Creating Distribution Plugins
 
-Distribution plugins are separate AOT-compiled executables that communicate with updaemon via named pipes using a JSON-RPC protocol. The contract is defined in the separate **Updaemon.Contracts** project.
+Distribution plugins are separate AOT-compiled executables that communicate with updaemon via named pipes using a JSON-RPC protocol. The contract is defined in the separate **Updaemon.Common** project.
 
 ### Quick Start
 
-1. **Reference Updaemon.Contracts** in your plugin project.
+1. **Reference Updaemon.Common** in your plugin project.
 
 2. **Implement IDistributionService**:
    ```csharp
-   using Updaemon.Contracts;
+   using Updaemon.Common;
    
    public class MyDistributionService : IDistributionService
    {
@@ -523,24 +523,24 @@ Distribution plugins are separate AOT-compiled executables that communicate with
    }
    ```
 
-3. **Host a named pipe server** using the RPC types from `Updaemon.Contracts.Rpc`
+3. **Host a named pipe server** using the RPC types from `Updaemon.Common.Rpc`
 
-4. **Use ContractsJsonContext** from `Updaemon.Contracts.Serialization` for AOT-compatible JSON serialization
+4. **Use CommonJsonContext** from `Updaemon.Common.Serialization` for AOT-compatible JSON serialization
 
-For detailed instructions and a complete example, see [Updaemon.Contracts/README.md](Updaemon.Contracts/README.md).
+For detailed instructions and a complete example, see [Updaemon.Common/README.md](Updaemon.Common/README.md).
 
 ### Plugin Requirements
 
-1. Reference the **Updaemon.Contracts** project or NuGet package
-2. Implement the `IDistributionService` interface from `Updaemon.Contracts`
+1. Reference the **Updaemon.Common** project or NuGet package
+2. Implement the `IDistributionService` interface from `Updaemon.Common`
 3. Accept `--pipe-name <name>` command-line argument
 4. Host a named pipe server that handles JSON-RPC requests
-5. Use `ContractsJsonContext` for RPC serialization (AOT-compatible)
+5. Use `CommonJsonContext` for RPC serialization (AOT-compatible)
 6. Be compiled as an AOT executable for Linux
 
 ### RPC Protocol
 
-The RPC types (`RpcRequest` and `RpcResponse`) are defined in `Updaemon.Contracts.Rpc`:
+The RPC types (`RpcRequest` and `RpcResponse`) are defined in `Updaemon.Common.Rpc`:
 
 **Request:**
 ```json
@@ -561,25 +561,25 @@ The RPC types (`RpcRequest` and `RpcResponse`) are defined in `Updaemon.Contract
 }
 ```
 
-**Important:** Use `Updaemon.Contracts.Serialization.ContractsJsonContext` for serializing/deserializing RPC messages to ensure AOT compatibility.
+**Important:** Use `Updaemon.Common.Serialization.CommonJsonContext` for serializing/deserializing RPC messages to ensure AOT compatibility.
 
 [↑ Back to top](#updaemon)
 
 ## Architecture Decisions
 
-### Why a Separate Contracts Project?
+### Why a Separate Common Project?
 
-The **Updaemon.Contracts** project contains only the shared contract between updaemon and distribution plugins:
+The **Updaemon.Common** project contains only the shared code between updaemon and distribution plugins:
 - `IDistributionService` interface
 - RPC message types (`RpcRequest`, `RpcResponse`)
 - JSON serialization context for AOT compatibility
 
 **Benefits:**
 - **Clean separation**: Plugin authors only reference what they need, not updaemon's entire codebase
-- **Clear versioning**: The contract can be versioned independently
+- **Clear versioning**: The common library can be versioned independently
 - **Reduced coupling**: Internal updaemon changes don't affect plugin authors
 - **NuGet distribution**: Can be published as a standalone package for easy consumption
-- **Better testing**: Plugins can test against a stable, minimal contract
+- **Better testing**: Plugins can test against a stable, minimal library
 
 Without this separation, plugin authors would either need to reference the entire Updaemon project (pulling in unnecessary dependencies like command handlers, config managers, etc.) or manually recreate the interface definitions (risking version drift and errors).
 

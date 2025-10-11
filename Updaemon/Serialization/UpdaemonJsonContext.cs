@@ -5,7 +5,7 @@ namespace Updaemon.Serialization
 {
     /// <summary>
     /// JSON serialization context for updaemon internal models, enabling AOT compilation.
-    /// For RPC types, use Updaemon.Contracts.Serialization.ContractsJsonContext.
+    /// For RPC types, use Updaemon.Common.Serialization.CommonJsonContext.
     /// </summary>
     [JsonSerializable(typeof(UpdaemonConfig))]
     [JsonSerializable(typeof(RegisteredService))]

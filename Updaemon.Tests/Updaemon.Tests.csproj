@@ -24,7 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Updaemon\Updaemon.csproj" />
-    <ProjectReference Include="..\Updaemon.Contracts\Updaemon.Contracts.csproj" />
+    <ProjectReference Include="..\Updaemon.Common\Updaemon.Common.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-namespace Updaemon.Contracts.Rpc
+namespace Updaemon.Common.Rpc
 {
     /// <summary>
     /// Represents an RPC request message sent from updaemon to a distribution plugin.

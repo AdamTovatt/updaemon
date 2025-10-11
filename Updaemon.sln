@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updaemon", "Updaemon\Updaem
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updaemon.Tests", "Updaemon.Tests\Updaemon.Tests.csproj", "{AF967773-48EA-4EF3-80E1-263F123063CB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updaemon.Contracts", "Updaemon.Contracts\Updaemon.Contracts.csproj", "{4233AB86-6EBB-4976-9C3C-EC7611D9A32A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updaemon.Common", "Updaemon.Common\Updaemon.Common.csproj", "{4233AB86-6EBB-4976-9C3C-EC7611D9A32A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

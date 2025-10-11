@@ -1,6 +1,6 @@
-# Updaemon.Contracts
+# Updaemon.Common
 
-This library defines the contract between updaemon and distribution service plugins. Plugin authors should reference this package to implement custom distribution services.
+This library contains shared code between updaemon and distribution service plugins. Plugin authors should reference this package to implement custom distribution services.
 
 ## Purpose
 
@@ -8,17 +8,17 @@ Updaemon uses a pluggable architecture where distribution services are separate 
 
 - **`IDistributionService`** - The interface that all distribution plugins must implement
 - **RPC message types** - `RpcRequest` and `RpcResponse` for named pipe communication
-- **JSON serialization context** - `ContractsJsonContext` for AOT-compatible serialization
+- **JSON serialization context** - `CommonJsonContext` for AOT-compatible serialization
 
 ## Using This Package
 
 ### 1. Reference the Package
 
-Add a project reference to `Updaemon.Contracts`:
+Add a project reference to `Updaemon.Common`:
 
 ```xml
 <ItemGroup>
-  <ProjectReference Include="..\Updaemon.Contracts\Updaemon.Contracts.csproj" />
+  <ProjectReference Include="..\Updaemon.Common\Updaemon.Common.csproj" />
 </ItemGroup>
 ```
 
@@ -26,14 +26,14 @@ Or if published as a NuGet package:
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="Updaemon.Contracts" Version="1.0.0" />
+  <PackageReference Include="Updaemon.Common" Version="1.0.0" />
 </ItemGroup>
 ```
 
 ### 2. Implement IDistributionService
 
 ```csharp
-using Updaemon.Contracts;
+using Updaemon.Common;
 
 public class MyDistributionService : IDistributionService
 {
@@ -63,15 +63,15 @@ Your plugin executable must:
 - Accept a `--pipe-name <name>` command-line argument
 - Create a named pipe server with that name
 - Handle JSON-RPC requests using `RpcRequest` and `RpcResponse`
-- Use `ContractsJsonContext` for serialization (AOT-compatible)
+- Use `CommonJsonContext` for serialization (AOT-compatible)
 
 Example structure:
 
 ```csharp
 using System.IO.Pipes;
 using System.Text.Json;
-using Updaemon.Contracts.Rpc;
-using Updaemon.Contracts.Serialization;
+using Updaemon.Common.Rpc;
+using Updaemon.Common.Serialization;
 
 class Program
 {
@@ -92,10 +92,10 @@ class Program
             string? requestJson = await reader.ReadLineAsync();
             if (requestJson == null) break;
             
-            var request = JsonSerializer.Deserialize(requestJson, ContractsJsonContext.Default.RpcRequest);
+            var request = JsonSerializer.Deserialize(requestJson, CommonJsonContext.Default.RpcRequest);
             var response = await HandleRequest(service, request);
             
-            string responseJson = JsonSerializer.Serialize(response, ContractsJsonContext.Default.RpcResponse);
+            string responseJson = JsonSerializer.Serialize(response, CommonJsonContext.Default.RpcResponse);
             await writer.WriteLineAsync(responseJson);
         }
     }
@@ -171,7 +171,7 @@ Communication between updaemon and your plugin uses JSON-RPC over named pipes.
 
 Both updaemon and plugins use AOT compilation for fast startup. This package is designed to be AOT-compatible:
 
-- Uses `ContractsJsonContext` for source-generated serialization
+- Uses `CommonJsonContext` for source-generated serialization
 - No runtime reflection
 - All types are trim-safe
 

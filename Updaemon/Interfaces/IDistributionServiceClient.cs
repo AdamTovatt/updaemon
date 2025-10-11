@@ -1,4 +1,4 @@
-using Updaemon.Contracts;
+using Updaemon.Common;
 
 namespace Updaemon.Interfaces
 {
