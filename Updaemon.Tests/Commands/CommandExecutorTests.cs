@@ -86,7 +86,8 @@ namespace Updaemon.Tests.Commands
                 new MockSymlinkManager(),
                 new MockExecutableDetector(),
                 new MockDistributionServiceClient(),
-                outputWriter
+                outputWriter,
+                new MockVersionExtractor()
             );
             SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
             DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
@@ -137,7 +138,8 @@ namespace Updaemon.Tests.Commands
                 new MockSymlinkManager(),
                 new MockExecutableDetector(),
                 new MockDistributionServiceClient(),
-                outputWriter
+                outputWriter,
+                new MockVersionExtractor()
             );
             SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
             DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);

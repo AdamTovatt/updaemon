@@ -15,6 +15,7 @@ namespace Updaemon.Commands
         private readonly IExecutableDetector _executableDetector;
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IOutputWriter _outputWriter;
+        private readonly IVersionExtractor _versionExtractor;
         private readonly string _serviceBaseDirectory;
 
         public UpdateCommand(
@@ -24,7 +25,8 @@ namespace Updaemon.Commands
             ISymlinkManager symlinkManager,
             IExecutableDetector executableDetector,
             IDistributionServiceClient distributionClient,
-            IOutputWriter outputWriter)
+            IOutputWriter outputWriter,
+            IVersionExtractor versionExtractor)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
@@ -33,6 +35,7 @@ namespace Updaemon.Commands
             _executableDetector = executableDetector;
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
+            _versionExtractor = versionExtractor;
             _serviceBaseDirectory = "/opt";
         }
 
@@ -44,6 +47,7 @@ namespace Updaemon.Commands
             IExecutableDetector executableDetector,
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
+            IVersionExtractor versionExtractor,
             string serviceBaseDirectory)
         {
             _configManager = configManager;
@@ -53,6 +57,7 @@ namespace Updaemon.Commands
             _executableDetector = executableDetector;
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
+            _versionExtractor = versionExtractor;
             _serviceBaseDirectory = serviceBaseDirectory;
         }
 
@@ -196,43 +201,7 @@ namespace Updaemon.Commands
             string symlinkPath = Path.Combine(_serviceBaseDirectory, localName, "current");
             string? target = await _symlinkManager.ReadSymlinkAsync(symlinkPath);
             
-            if (target != null)
-            {
-                // Extract version from path (e.g., /opt/app-name/1.2.3/app-name -> 1.2.3)
-                char[] separators = new char[] { '/', '\\' };
-                string[] parts = target.Split(separators, StringSplitOptions.RemoveEmptyEntries);
-                foreach (string part in parts)
-                {
-                    if (Version.TryParse(part, out Version? version))
-                    {
-                        return version;
-                    }
-                }
-            }
-
-            // Fallback: scan directory for highest version
-            string serviceDirectory = Path.Combine(_serviceBaseDirectory, localName);
-            if (!Directory.Exists(serviceDirectory))
-            {
-                return null;
-            }
-
-            Version? highestVersion = null;
-            string[] directories = Directory.GetDirectories(serviceDirectory);
-            
-            foreach (string directory in directories)
-            {
-                string directoryName = Path.GetFileName(directory);
-                if (Version.TryParse(directoryName, out Version? version))
-                {
-                    if (highestVersion == null || version > highestVersion)
-                    {
-                        highestVersion = version;
-                    }
-                }
-            }
-
-            return highestVersion;
+            return _versionExtractor.ExtractVersionFromPath(target);
         }
     }
 }

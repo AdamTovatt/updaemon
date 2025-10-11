@@ -15,6 +15,7 @@ namespace Updaemon.Tests.Commands
             MockSymlinkManager symlinkManager = new MockSymlinkManager();
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -23,7 +24,8 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
-                new MockOutputWriter()
+                new MockOutputWriter(),
+                versionExtractor
             );
 
             await command.ExecuteAsync();
@@ -43,6 +45,7 @@ namespace Updaemon.Tests.Commands
             MockSymlinkManager symlinkManager = new MockSymlinkManager();
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -51,7 +54,8 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
-                new MockOutputWriter()
+                new MockOutputWriter(),
+                versionExtractor
             );
 
             await command.ExecuteAsync("non-existent-service");
@@ -71,6 +75,7 @@ namespace Updaemon.Tests.Commands
             MockSymlinkManager symlinkManager = new MockSymlinkManager();
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -79,7 +84,8 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
-                new MockOutputWriter()
+                new MockOutputWriter(),
+                versionExtractor
             );
 
             await command.ExecuteAsync();
@@ -104,6 +110,8 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -111,7 +119,8 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
-                new MockOutputWriter()
+                new MockOutputWriter(),
+                versionExtractor
             );
 
             await command.ExecuteAsync("my-api");
@@ -138,6 +147,8 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("Service1", new Version(1, 0, 0));
             distributionClient.SetLatestVersion("Service2", new Version(1, 0, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -145,7 +156,8 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
-                new MockOutputWriter()
+                new MockOutputWriter(),
+                versionExtractor
             );
 
             await command.ExecuteAsync();
@@ -174,6 +186,9 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -182,6 +197,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
+                versionExtractor,
                 serviceBaseDirectory
             );
 
@@ -222,6 +238,9 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -230,6 +249,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
+                versionExtractor,
                 serviceBaseDirectory
             );
 
@@ -268,6 +288,9 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -276,6 +299,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
+                versionExtractor,
                 serviceBaseDirectory
             );
 
@@ -313,6 +337,9 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -321,6 +348,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
+                versionExtractor,
                 serviceBaseDirectory
             );
 
@@ -357,6 +385,9 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -365,6 +396,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
+                versionExtractor,
                 serviceBaseDirectory
             );
 
@@ -392,6 +424,8 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -399,7 +433,8 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
-                new MockOutputWriter()
+                new MockOutputWriter(),
+                versionExtractor
             );
 
             await command.ExecuteAsync("my-api");
@@ -427,6 +462,8 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -434,7 +471,8 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
-                new MockOutputWriter()
+                new MockOutputWriter(),
+                versionExtractor
             );
 
             await command.ExecuteAsync("my-api");
