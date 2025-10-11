@@ -9,6 +9,7 @@ Updaemon uses a pluggable architecture where distribution services are separate 
 - **`IDistributionService`** - The interface that all distribution plugins must implement
 - **RPC message types** - `RpcRequest` and `RpcResponse` for named pipe communication
 - **JSON serialization context** - `CommonJsonContext` for AOT-compatible serialization
+- **Utilities** - Helper classes like `DownloadPostProcessor` for common tasks
 
 ## Using This Package
 
@@ -138,9 +139,55 @@ Download a specific version to the target directory.
 
 **Behavior:**
 - Download all necessary files for the service
-- Extract archives if needed
+- Extract archives if needed (see `DownloadPostProcessor` utility below)
 - Preserve file permissions (especially for executables)
 - Throw exceptions on failure
+
+## Utilities
+
+### DownloadPostProcessor
+
+A helper utility for automatically extracting and unwrapping downloaded archives. This is useful when your distribution service downloads zip files.
+
+**Features:**
+- Automatically detects and extracts `.zip` files
+- Unwraps single-directory structures (e.g., if a zip contains only `app-1.0.0/` with files inside, moves files up one level)
+- Deletes the archive file after extraction
+- Gracefully handles errors without failing the download
+
+**Usage Example:**
+
+```csharp
+using Updaemon.Common;
+using Updaemon.Common.Utilities;
+
+public class MyDistributionService : IDistributionService
+{
+    private readonly IDownloadPostProcessor _postProcessor = new DownloadPostProcessor();
+
+    public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath)
+    {
+        // Download the zip file from your distribution server
+        string zipPath = Path.Combine(targetPath, $"{serviceName}-{version}.zip");
+        await DownloadZipFileAsync(serviceName, version, zipPath);
+        
+        // Automatically extract and unwrap
+        await _postProcessor.ProcessAsync(targetPath);
+        
+        // Files are now ready for use
+    }
+}
+```
+
+**When to Use:**
+- Your distribution source provides `.zip` archives
+- You want automatic extraction and directory unwrapping
+- You need consistent behavior across different archive structures
+
+**When NOT to Use:**
+- You download pre-extracted files directly
+- You need custom extraction logic
+- You use non-zip archive formats (implement your own logic)
 
 ## RPC Protocol
 

@@ -573,6 +573,7 @@ The **Updaemon.Common** project contains only the shared code between updaemon a
 - `IDistributionService` interface
 - RPC message types (`RpcRequest`, `RpcResponse`)
 - JSON serialization context for AOT compatibility
+- Utility classes (e.g., `DownloadPostProcessor` for archive extraction)
 
 **Benefits:**
 - **Clean separation**: Plugin authors only reference what they need, not updaemon's entire codebase
@@ -580,8 +581,9 @@ The **Updaemon.Common** project contains only the shared code between updaemon a
 - **Reduced coupling**: Internal updaemon changes don't affect plugin authors
 - **NuGet distribution**: Can be published as a standalone package for easy consumption
 - **Better testing**: Plugins can test against a stable, minimal library
+- **Shared utilities**: Common functionality like archive extraction can be reused across plugins
 
-Without this separation, plugin authors would either need to reference the entire Updaemon project (pulling in unnecessary dependencies like command handlers, config managers, etc.) or manually recreate the interface definitions (risking version drift and errors).
+Without this separation, plugin authors would either need to reference the entire Updaemon project (pulling in unnecessary dependencies like command handlers, config managers, etc.) or manually recreate the interface definitions and utilities (risking version drift and errors).
 
 ### Why AOT Compilation?
 
