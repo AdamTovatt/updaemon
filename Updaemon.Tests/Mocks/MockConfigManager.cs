@@ -28,7 +28,7 @@ namespace Updaemon.Tests.Mocks
         {
             MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}");
             UpdaemonConfig config = await LoadConfigAsync();
-            
+
             RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
             if (existing != null)
             {
@@ -48,7 +48,7 @@ namespace Updaemon.Tests.Mocks
         {
             MethodCalls.Add($"{nameof(SetRemoteNameAsync)}:{localName}:{remoteName}");
             UpdaemonConfig config = await LoadConfigAsync();
-            
+
             RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
             if (service == null)
             {

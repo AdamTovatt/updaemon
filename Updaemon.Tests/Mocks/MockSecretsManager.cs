@@ -26,7 +26,7 @@ namespace Updaemon.Tests.Mocks
         public Task<string?> GetAllSecretsFormattedAsync()
         {
             MethodCalls.Add(nameof(GetAllSecretsFormattedAsync));
-            
+
             if (_secrets.Count == 0)
             {
                 return Task.FromResult<string?>(null);

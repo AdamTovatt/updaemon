@@ -146,7 +146,7 @@ namespace Updaemon.Commands
                 // Download new version
                 string versionDirectory = Path.Combine(_serviceBaseDirectory, service.LocalName, latestVersion.ToString());
                 _outputWriter.WriteLine($"Downloading to: {versionDirectory}");
-                
+
                 Directory.CreateDirectory(versionDirectory);
                 await _distributionClient.DownloadVersionAsync(service.RemoteName, latestVersion, versionDirectory);
                 _outputWriter.WriteLine("Download complete");
@@ -200,7 +200,7 @@ namespace Updaemon.Commands
             // Check symlink target
             string symlinkPath = Path.Combine(_serviceBaseDirectory, localName, "current");
             string? target = await _symlinkManager.ReadSymlinkAsync(symlinkPath);
-            
+
             return _versionExtractor.ExtractVersionFromPath(target);
         }
     }

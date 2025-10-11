@@ -140,7 +140,7 @@ namespace Updaemon.Tests.Configuration
 
                 // Create a new instance to test persistence
                 SecretsManager newInstance = new SecretsManager(tempHelper.TempDirectory);
-                
+
                 string? value1 = await newInstance.GetSecretAsync("key1");
                 string? value2 = await newInstance.GetSecretAsync("key2");
                 string? value3 = await newInstance.GetSecretAsync("key3");

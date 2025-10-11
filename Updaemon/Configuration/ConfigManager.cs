@@ -12,7 +12,7 @@ namespace Updaemon.Configuration
     {
         private const string ConfigDirectory = "/var/lib/updaemon";
         private const string ConfigFileName = "config.json";
-        
+
         private readonly string _configFilePath;
         private readonly string _configDirectory;
 
@@ -50,7 +50,7 @@ namespace Updaemon.Configuration
         public async Task RegisterServiceAsync(string localName, string remoteName)
         {
             UpdaemonConfig config = await LoadConfigAsync();
-            
+
             RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
             if (existing != null)
             {
@@ -69,7 +69,7 @@ namespace Updaemon.Configuration
         public async Task SetRemoteNameAsync(string localName, string remoteName)
         {
             UpdaemonConfig config = await LoadConfigAsync();
-            
+
             RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
             if (service == null)
             {

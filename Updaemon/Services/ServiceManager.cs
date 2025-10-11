@@ -51,7 +51,7 @@ namespace Updaemon.Services
                 {
                     string output = await process.StandardOutput.ReadToEndAsync();
                     await process.WaitForExitAsync();
-                    
+
                     return output.Trim() == "active";
                 }
             }

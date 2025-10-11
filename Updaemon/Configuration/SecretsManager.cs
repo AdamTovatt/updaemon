@@ -9,7 +9,7 @@ namespace Updaemon.Configuration
     {
         private const string ConfigDirectory = "/var/lib/updaemon";
         private const string SecretsFileName = "secrets.txt";
-        
+
         private readonly string _secretsFilePath;
         private readonly string _configDirectory;
 
@@ -41,7 +41,7 @@ namespace Updaemon.Configuration
         public async Task<string?> GetAllSecretsFormattedAsync()
         {
             Dictionary<string, string> secrets = await LoadSecretsAsync();
-            
+
             if (secrets.Count == 0)
             {
                 return null;

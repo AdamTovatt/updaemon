@@ -51,6 +51,7 @@ namespace Updaemon.Commands
                             _outputWriter.WriteLine("Usage: updaemon new <app-name>");
                             return 1;
                         }
+
                         await _newCommand.ExecuteAsync(args[1]);
                         return 0;
 
@@ -66,6 +67,7 @@ namespace Updaemon.Commands
                             _outputWriter.WriteLine("Usage: updaemon set-remote <app-name> <remote-name>");
                             return 1;
                         }
+
                         await _setRemoteCommand.ExecuteAsync(args[1], args[2]);
                         return 0;
 
@@ -76,6 +78,7 @@ namespace Updaemon.Commands
                             _outputWriter.WriteLine("Usage: updaemon dist-install <url>");
                             return 1;
                         }
+
                         await _distInstallCommand.ExecuteAsync(args[1]);
                         return 0;
 
@@ -86,6 +89,7 @@ namespace Updaemon.Commands
                             _outputWriter.WriteLine("Usage: updaemon secret-set <key> <value>");
                             return 1;
                         }
+
                         await _secretSetCommand.ExecuteAsync(args[1], args[2]);
                         return 0;
 

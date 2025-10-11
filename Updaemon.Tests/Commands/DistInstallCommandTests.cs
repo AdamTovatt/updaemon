@@ -17,7 +17,7 @@ namespace Updaemon.Tests.Commands
                 mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 }); // ELF header bytes
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-                
+
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
 
                 await command.ExecuteAsync("https://example.com/plugins/my-plugin");
@@ -39,7 +39,7 @@ namespace Updaemon.Tests.Commands
                 mockHandler.SetException(new HttpRequestException("Network error"));
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-                
+
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
 
                 await Assert.ThrowsAsync<HttpRequestException>(
@@ -58,7 +58,7 @@ namespace Updaemon.Tests.Commands
                 mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-                
+
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
 
                 await command.ExecuteAsync("https://example.com/path/to/byteshelf-dist");

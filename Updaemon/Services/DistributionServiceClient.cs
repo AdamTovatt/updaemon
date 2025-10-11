@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
-using Updaemon.Contracts;
 using Updaemon.Contracts.Rpc;
 using Updaemon.Contracts.Serialization;
 using Updaemon.Interfaces;
@@ -53,7 +52,7 @@ namespace Updaemon.Services
 
             // Connect to the named pipe
             _pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-            
+
             // Wait for connection with timeout (10 seconds in milliseconds)
             await _pipeClient.ConnectAsync(10000);
 
@@ -69,7 +68,7 @@ namespace Updaemon.Services
         public async Task<Version?> GetLatestVersionAsync(string serviceName)
         {
             string? versionString = await InvokeMethodAsync<string?>("GetLatestVersionAsync", serviceName);
-            
+
             if (string.IsNullOrEmpty(versionString))
             {
                 return null;
@@ -97,7 +96,7 @@ namespace Updaemon.Services
             }
 
             string requestId = Guid.NewGuid().ToString("N");
-            
+
             RpcRequest request = new RpcRequest
             {
                 Id = requestId,

@@ -14,7 +14,7 @@ namespace Updaemon.Tests.Mocks
         {
             string key = $"{directoryPath}:{serviceName}";
             MethodCalls.Add($"{nameof(FindExecutableAsync)}:{key}");
-            
+
             if (ConfiguredResults.TryGetValue(key, out string? result))
             {
                 return Task.FromResult(result);

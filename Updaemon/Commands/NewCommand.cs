@@ -51,7 +51,7 @@ namespace Updaemon.Commands
             // Create systemd unit file
             string unitFilePath = Path.Combine(_systemdUnitDirectory, $"{appName}.service");
             string symlinkPath = Path.Combine(_serviceBaseDirectory, appName, "current");
-            
+
             string unitFileContent = GenerateUnitFile(appName, symlinkPath);
             await File.WriteAllTextAsync(unitFilePath, unitFileContent);
             _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");

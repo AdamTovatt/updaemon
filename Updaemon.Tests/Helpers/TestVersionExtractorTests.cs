@@ -1,5 +1,3 @@
-using Updaemon.Tests.Helpers;
-
 namespace Updaemon.Tests.Helpers
 {
     public class TestVersionExtractorTests

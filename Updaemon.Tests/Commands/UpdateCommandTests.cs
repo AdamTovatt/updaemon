@@ -1,5 +1,4 @@
 using Updaemon.Commands;
-using Updaemon.Models;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
@@ -170,7 +169,7 @@ namespace Updaemon.Tests.Commands
         public async Task UpdateService_AlreadyUpToDate_SkipsUpdate()
         {
             string serviceBaseDirectory = "/opt";
-            
+
             MockConfigManager configManager = new MockConfigManager();
             await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
             await configManager.RegisterServiceAsync("my-api", "MyApi");
@@ -205,9 +204,9 @@ namespace Updaemon.Tests.Commands
 
             // Should not download if already up to date
             Assert.Empty(distributionClient.Downloads);
-            
+
             // Should not call any service manager methods (no restart/start)
-            Assert.Empty(serviceManager.MethodCalls.Where(call => 
+            Assert.Empty(serviceManager.MethodCalls.Where(call =>
                 call.Contains("Start") || call.Contains("Restart") || call.Contains("Stop")));
         }
 
@@ -215,7 +214,7 @@ namespace Updaemon.Tests.Commands
         public async Task UpdateService_NewerVersionAvailable_DownloadsAndInstalls()
         {
             string serviceBaseDirectory = "/opt";
-            
+
             MockConfigManager configManager = new MockConfigManager();
             await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
             await configManager.RegisterServiceAsync("my-api", "MyApi");
@@ -265,7 +264,7 @@ namespace Updaemon.Tests.Commands
         public async Task UpdateService_UpdatesSymlinkToNewExecutable()
         {
             string serviceBaseDirectory = "/opt";
-            
+
             MockConfigManager configManager = new MockConfigManager();
             await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
             await configManager.RegisterServiceAsync("my-api", "MyApi");
@@ -314,7 +313,7 @@ namespace Updaemon.Tests.Commands
         public async Task UpdateService_RestartsRunningService()
         {
             string serviceBaseDirectory = "/opt";
-            
+
             MockConfigManager configManager = new MockConfigManager();
             await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
             await configManager.RegisterServiceAsync("my-api", "MyApi");
@@ -362,7 +361,7 @@ namespace Updaemon.Tests.Commands
         public async Task UpdateService_StartsStoppedService()
         {
             string serviceBaseDirectory = "/opt";
-            
+
             MockConfigManager configManager = new MockConfigManager();
             await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
             await configManager.RegisterServiceAsync("my-api", "MyApi");
@@ -417,7 +416,7 @@ namespace Updaemon.Tests.Commands
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
             MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            
+
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             // Don't configure any result - detector will return null
 
