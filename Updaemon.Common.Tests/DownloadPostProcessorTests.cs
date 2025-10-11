@@ -1,8 +1,8 @@
 using System.IO.Compression;
-using Updaemon.Services;
-using Updaemon.Tests.Helpers;
+using Updaemon.Common.Tests.Helpers;
+using Updaemon.Common.Utilities;
 
-namespace Updaemon.Tests.Services
+namespace Updaemon.Common.Tests
 {
     public class DownloadPostProcessorTests
     {

@@ -15,7 +15,6 @@ namespace Updaemon.Tests.Commands
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -25,8 +24,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor,
-                downloadPostProcessor
+                versionExtractor
             );
 
             await command.ExecuteAsync();
@@ -47,7 +45,6 @@ namespace Updaemon.Tests.Commands
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -57,8 +54,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor,
-                downloadPostProcessor
+                versionExtractor
             );
 
             await command.ExecuteAsync("non-existent-service");
@@ -79,7 +75,6 @@ namespace Updaemon.Tests.Commands
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -89,8 +84,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor,
-                downloadPostProcessor
+                versionExtractor
             );
 
             await command.ExecuteAsync();
@@ -116,7 +110,6 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -126,8 +119,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor,
-                downloadPostProcessor
+                versionExtractor
             );
 
             await command.ExecuteAsync("my-api");
@@ -155,7 +147,6 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("Service2", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -165,8 +156,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor,
-                downloadPostProcessor
+                versionExtractor
             );
 
             await command.ExecuteAsync();
@@ -197,7 +187,6 @@ namespace Updaemon.Tests.Commands
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -208,7 +197,6 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
-                downloadPostProcessor,
                 serviceBaseDirectory
             );
 
@@ -251,7 +239,6 @@ namespace Updaemon.Tests.Commands
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -262,7 +249,6 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
-                downloadPostProcessor,
                 serviceBaseDirectory
             );
 
@@ -303,7 +289,6 @@ namespace Updaemon.Tests.Commands
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -314,7 +299,6 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
-                downloadPostProcessor,
                 serviceBaseDirectory
             );
 
@@ -354,7 +338,6 @@ namespace Updaemon.Tests.Commands
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -365,7 +348,6 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
-                downloadPostProcessor,
                 serviceBaseDirectory
             );
 
@@ -404,7 +386,6 @@ namespace Updaemon.Tests.Commands
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -415,7 +396,6 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
-                downloadPostProcessor,
                 serviceBaseDirectory
             );
 
@@ -444,7 +424,6 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -454,8 +433,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor,
-                downloadPostProcessor
+                versionExtractor
             );
 
             await command.ExecuteAsync("my-api");
@@ -484,7 +462,6 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockDownloadPostProcessor downloadPostProcessor = new MockDownloadPostProcessor();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -494,8 +471,7 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor,
-                downloadPostProcessor
+                versionExtractor
             );
 
             await command.ExecuteAsync("my-api");

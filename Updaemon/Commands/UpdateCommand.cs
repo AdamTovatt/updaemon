@@ -16,7 +16,6 @@ namespace Updaemon.Commands
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IOutputWriter _outputWriter;
         private readonly IVersionExtractor _versionExtractor;
-        private readonly IDownloadPostProcessor _downloadPostProcessor;
         private readonly string _serviceBaseDirectory;
 
         public UpdateCommand(
@@ -27,8 +26,7 @@ namespace Updaemon.Commands
             IExecutableDetector executableDetector,
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
-            IVersionExtractor versionExtractor,
-            IDownloadPostProcessor downloadPostProcessor)
+            IVersionExtractor versionExtractor)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
@@ -38,7 +36,6 @@ namespace Updaemon.Commands
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
             _versionExtractor = versionExtractor;
-            _downloadPostProcessor = downloadPostProcessor;
             _serviceBaseDirectory = "/opt";
         }
 
@@ -51,7 +48,6 @@ namespace Updaemon.Commands
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
             IVersionExtractor versionExtractor,
-            IDownloadPostProcessor downloadPostProcessor,
             string serviceBaseDirectory)
         {
             _configManager = configManager;
@@ -62,7 +58,6 @@ namespace Updaemon.Commands
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
             _versionExtractor = versionExtractor;
-            _downloadPostProcessor = downloadPostProcessor;
             _serviceBaseDirectory = serviceBaseDirectory;
         }
 
@@ -156,9 +151,6 @@ namespace Updaemon.Commands
                 Directory.CreateDirectory(versionDirectory);
                 await _distributionClient.DownloadVersionAsync(service.RemoteName, latestVersion, versionDirectory);
                 _outputWriter.WriteLine("Download complete");
-
-                // Post-process downloaded files (extract archives, unwrap directories)
-                await _downloadPostProcessor.ProcessAsync(versionDirectory);
 
                 // Find executable
                 string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, service.LocalName);

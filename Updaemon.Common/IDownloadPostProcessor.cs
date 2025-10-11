@@ -1,4 +1,4 @@
-namespace Updaemon.Interfaces
+namespace Updaemon.Common
 {
     /// <summary>
     /// Post-processes downloaded files, such as extracting archives and unwrapping directory structures.

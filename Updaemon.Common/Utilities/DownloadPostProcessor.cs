@@ -1,7 +1,6 @@
 using System.IO.Compression;
-using Updaemon.Interfaces;
 
-namespace Updaemon.Services
+namespace Updaemon.Common.Utilities
 {
     /// <summary>
     /// Post-processes downloaded files by extracting archives and unwrapping directory structures.
