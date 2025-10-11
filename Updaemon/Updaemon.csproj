@@ -14,6 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Updaemon.Contracts\Updaemon.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="Templates\service.template" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

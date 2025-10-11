@@ -474,22 +474,42 @@ Applications can include an `updaemon.json` file in their published output to pr
 
 ## Creating Distribution Plugins
 
-Distribution plugins are separate AOT-compiled executables that communicate with updaemon via named pipes using a JSON-RPC protocol.
+Distribution plugins are separate AOT-compiled executables that communicate with updaemon via named pipes using a JSON-RPC protocol. The contract is defined in the separate **Updaemon.Contracts** project.
+
+### Quick Start
+
+1. **Reference Updaemon.Contracts** in your plugin project.
+
+2. **Implement IDistributionService**:
+   ```csharp
+   using Updaemon.Contracts;
+   
+   public class MyDistributionService : IDistributionService
+   {
+       public Task InitializeAsync(string? secrets) { /* ... */ }
+       public Task<Version?> GetLatestVersionAsync(string serviceName) { /* ... */ }
+       public Task DownloadVersionAsync(string serviceName, Version version, string targetPath) { /* ... */ }
+   }
+   ```
+
+3. **Host a named pipe server** using the RPC types from `Updaemon.Contracts.Rpc`
+
+4. **Use ContractsJsonContext** from `Updaemon.Contracts.Serialization` for AOT-compatible JSON serialization
+
+For detailed instructions and a complete example, see [Updaemon.Contracts/README.md](Updaemon.Contracts/README.md).
 
 ### Plugin Requirements
 
-1. Implement the `IDistributionService` interface:
-   - `Task InitializeAsync(string? secrets)`
-   - `Task<Version?> GetLatestVersionAsync(string serviceName)`
-   - `Task DownloadVersionAsync(string serviceName, Version version, string targetPath)`
-
-2. Accept `--pipe-name <name>` command-line argument
-
-3. Host a named pipe server that handles JSON-RPC requests
-
-4. Be compiled as an AOT executable for Linux
+1. Reference the **Updaemon.Contracts** project or NuGet package
+2. Implement the `IDistributionService` interface from `Updaemon.Contracts`
+3. Accept `--pipe-name <name>` command-line argument
+4. Host a named pipe server that handles JSON-RPC requests
+5. Use `ContractsJsonContext` for RPC serialization (AOT-compatible)
+6. Be compiled as an AOT executable for Linux
 
 ### RPC Protocol
+
+The RPC types (`RpcRequest` and `RpcResponse`) are defined in `Updaemon.Contracts.Rpc`:
 
 **Request:**
 ```json
@@ -510,9 +530,27 @@ Distribution plugins are separate AOT-compiled executables that communicate with
 }
 ```
 
+**Important:** Use `Updaemon.Contracts.Serialization.ContractsJsonContext` for serializing/deserializing RPC messages to ensure AOT compatibility.
+
 [↑ Back to top](#updaemon)
 
 ## Architecture Decisions
+
+### Why a Separate Contracts Project?
+
+The **Updaemon.Contracts** project contains only the shared contract between updaemon and distribution plugins:
+- `IDistributionService` interface
+- RPC message types (`RpcRequest`, `RpcResponse`)
+- JSON serialization context for AOT compatibility
+
+**Benefits:**
+- **Clean separation**: Plugin authors only reference what they need, not updaemon's entire codebase
+- **Clear versioning**: The contract can be versioned independently
+- **Reduced coupling**: Internal updaemon changes don't affect plugin authors
+- **NuGet distribution**: Can be published as a standalone package for easy consumption
+- **Better testing**: Plugins can test against a stable, minimal contract
+
+Without this separation, plugin authors would either need to reference the entire Updaemon project (pulling in unnecessary dependencies like command handlers, config managers, etc.) or manually recreate the interface definitions (risking version drift and errors).
 
 ### Why AOT Compilation?
 
@@ -567,4 +605,5 @@ Symlinks enable:
 ## Contributing
 
 [Add contribution guidelines here]
+
 

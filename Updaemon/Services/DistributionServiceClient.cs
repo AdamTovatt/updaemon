@@ -2,9 +2,10 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using Updaemon.Contracts;
+using Updaemon.Contracts.Rpc;
+using Updaemon.Contracts.Serialization;
 using Updaemon.Interfaces;
-using Updaemon.RPC;
-using Updaemon.Serialization;
 
 namespace Updaemon.Services
 {
@@ -101,11 +102,11 @@ namespace Updaemon.Services
             {
                 Id = requestId,
                 Method = methodName,
-                Parameters = parameters != null ? JsonSerializer.Serialize(parameters, UpdaemonJsonContext.Default.Object) : null,
+                Parameters = parameters != null ? JsonSerializer.Serialize(parameters, ContractsJsonContext.Default.Object) : null,
             };
 
             // Send request
-            string requestJson = JsonSerializer.Serialize(request, UpdaemonJsonContext.Default.RpcRequest);
+            string requestJson = JsonSerializer.Serialize(request, ContractsJsonContext.Default.RpcRequest);
             await _writer.WriteLineAsync(requestJson);
 
             // Read response
@@ -115,7 +116,7 @@ namespace Updaemon.Services
                 throw new InvalidOperationException("No response received from plugin");
             }
 
-            RpcResponse? response = JsonSerializer.Deserialize(responseJson, UpdaemonJsonContext.Default.RpcResponse);
+            RpcResponse? response = JsonSerializer.Deserialize(responseJson, ContractsJsonContext.Default.RpcResponse);
             if (response == null)
             {
                 throw new InvalidOperationException("Failed to deserialize response");
@@ -133,11 +134,11 @@ namespace Updaemon.Services
 
             if (typeof(TResult) == typeof(string))
             {
-                object? result = JsonSerializer.Deserialize(response.Result, UpdaemonJsonContext.Default.String);
+                object? result = JsonSerializer.Deserialize(response.Result, ContractsJsonContext.Default.String);
                 return (TResult?)result;
             }
 
-            object? objResult = JsonSerializer.Deserialize(response.Result, UpdaemonJsonContext.Default.Object);
+            object? objResult = JsonSerializer.Deserialize(response.Result, ContractsJsonContext.Default.Object);
             return (TResult?)objResult;
         }
 

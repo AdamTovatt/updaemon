@@ -1,4 +1,4 @@
-namespace Updaemon.Interfaces
+namespace Updaemon.Contracts
 {
     /// <summary>
     /// Interface for distribution service plugins that manage version checking and downloads.

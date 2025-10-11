@@ -1,19 +1,15 @@
 using System.Text.Json.Serialization;
 using Updaemon.Models;
-using Updaemon.RPC;
 
 namespace Updaemon.Serialization
 {
     /// <summary>
-    /// JSON serialization context for AOT compilation.
+    /// JSON serialization context for updaemon internal models, enabling AOT compilation.
+    /// For RPC types, use Updaemon.Contracts.Serialization.ContractsJsonContext.
     /// </summary>
     [JsonSerializable(typeof(UpdaemonConfig))]
     [JsonSerializable(typeof(RegisteredService))]
     [JsonSerializable(typeof(AppConfig))]
-    [JsonSerializable(typeof(RpcRequest))]
-    [JsonSerializable(typeof(RpcResponse))]
-    [JsonSerializable(typeof(string))]
-    [JsonSerializable(typeof(object))]
     [JsonSourceGenerationOptions(
         WriteIndented = true,
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

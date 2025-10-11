@@ -1,7 +1,7 @@
-namespace Updaemon.RPC
+namespace Updaemon.Contracts.Rpc
 {
     /// <summary>
-    /// Represents an RPC request message.
+    /// Represents an RPC request message sent from updaemon to a distribution plugin.
     /// </summary>
     public class RpcRequest
     {
@@ -11,7 +11,7 @@ namespace Updaemon.RPC
         public string Id { get; set; } = string.Empty;
 
         /// <summary>
-        /// The method name to invoke.
+        /// The method name to invoke (e.g., "InitializeAsync", "GetLatestVersionAsync").
         /// </summary>
         public string Method { get; set; } = string.Empty;
 

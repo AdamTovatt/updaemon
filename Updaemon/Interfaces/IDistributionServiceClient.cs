@@ -1,3 +1,5 @@
+using Updaemon.Contracts;
+
 namespace Updaemon.Interfaces
 {
     /// <summary>
