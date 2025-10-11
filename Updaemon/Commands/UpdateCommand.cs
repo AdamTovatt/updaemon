@@ -89,6 +89,7 @@ namespace Updaemon.Commands
                     _outputWriter.WriteError($"Error: Service '{specificAppName}' is not registered.");
                     return;
                 }
+
                 services = new[] { service };
             }
             else
