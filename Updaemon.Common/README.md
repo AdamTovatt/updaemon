@@ -38,19 +38,19 @@ using Updaemon.Common;
 
 public class MyDistributionService : IDistributionService
 {
-    public Task InitializeAsync(string? secrets)
+    public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
     {
         // Parse secrets (key=value pairs separated by newlines)
         // Initialize your distribution service client
     }
 
-    public Task<Version?> GetLatestVersionAsync(string serviceName)
+    public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
     {
         // Query your distribution server for the latest version
         // Return null if service doesn't exist
     }
 
-    public Task DownloadVersionAsync(string serviceName, Version version, string targetPath)
+    public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
     {
         // Download the specified version to targetPath
         // Extract/copy all necessary files
@@ -85,12 +85,13 @@ class Program
 
 ## IDistributionService Interface
 
-### InitializeAsync(string? secrets)
+### InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
 
 Called once when updaemon connects to your plugin.
 
 **Parameters:**
 - `secrets` - Nullable string containing zero or more `key=value` pairs separated by line breaks. Null if no secrets configured.
+- `cancellationToken` - Cancellation token to cancel the operation.
 
 **Example secrets:**
 ```
@@ -98,17 +99,18 @@ tenantId=550e8400-e29b-41d4-a716-446655440000
 apiKey=abc123xyz
 ```
 
-### GetLatestVersionAsync(string serviceName)
+### GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
 
 Query your distribution server for the latest available version.
 
 **Parameters:**
 - `serviceName` - The remote service name (e.g., "FastPackages.WordLibraryApi")
+- `cancellationToken` - Cancellation token to cancel the operation.
 
 **Returns:**
 - `Version?` - The latest version available, or `null` if the service doesn't exist
 
-### DownloadVersionAsync(string serviceName, Version version, string targetPath)
+### DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
 
 Download a specific version to the target directory.
 
@@ -116,12 +118,14 @@ Download a specific version to the target directory.
 - `serviceName` - The remote service name
 - `version` - The specific version to download (e.g., `new Version(1, 2, 3)`)
 - `targetPath` - The directory path where files should be downloaded (e.g., `/opt/my-app/1.2.3/`)
+- `cancellationToken` - Cancellation token to cancel the operation.
 
 **Behavior:**
 - Download all necessary files for the service
 - Extract archives if needed (see `DownloadPostProcessor` utility below)
 - Preserve file permissions (especially for executables)
 - Throw exceptions on failure
+- Respect cancellation token for long-running operations
 
 ## Utilities
 
@@ -145,14 +149,14 @@ public class MyDistributionService : IDistributionService
 {
     private readonly IDownloadPostProcessor _postProcessor = new DownloadPostProcessor();
 
-    public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath)
+    public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
     {
         // Download the zip file from your distribution server
         string zipPath = Path.Combine(targetPath, $"{serviceName}-{version}.zip");
-        await DownloadZipFileAsync(serviceName, version, zipPath);
+        await DownloadZipFileAsync(serviceName, version, zipPath, cancellationToken);
         
         // Automatically extract and unwrap
-        await _postProcessor.ProcessAsync(targetPath);
+        await _postProcessor.ProcessAsync(targetPath, cancellationToken);
         
         // Files are now ready for use
     }
