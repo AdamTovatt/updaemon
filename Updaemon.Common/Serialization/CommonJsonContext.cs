@@ -9,6 +9,8 @@ namespace Updaemon.Common.Serialization
     /// </summary>
     [JsonSerializable(typeof(RpcRequest))]
     [JsonSerializable(typeof(RpcResponse))]
+    [JsonSerializable(typeof(SecretCollection))]
+    [JsonSerializable(typeof(Dictionary<string, string>))]
     [JsonSerializable(typeof(string))]
     [JsonSerializable(typeof(object))]
     [JsonSourceGenerationOptions(

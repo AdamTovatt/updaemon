@@ -1,3 +1,4 @@
+using Updaemon.Common;
 using Updaemon.Common.Utilities;
 using Updaemon.GithubDistributionService.Services;
 
@@ -14,7 +15,7 @@ namespace Updaemon.GithubDistributionService.Tests
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
-            await service.InitializeAsync(null);
+            await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
             Version? version = await service.GetLatestVersionAsync("curl/curl");
 
             // We can't assert exact version since it changes, but we can verify it returns something
@@ -30,7 +31,7 @@ namespace Updaemon.GithubDistributionService.Tests
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
-            await service.InitializeAsync(null);
+            await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
             Version? version = await service.GetLatestVersionAsync("nonexistent-user-12345/nonexistent-repo-67890");
 
             Assert.Null(version);
@@ -47,7 +48,7 @@ namespace Updaemon.GithubDistributionService.Tests
 
             try
             {
-                await service.InitializeAsync(null);
+                await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
                 
                 // Get the latest version first
                 Version? version = await service.GetLatestVersionAsync("adamtovatt/netlifydnsmanager");
@@ -95,7 +96,7 @@ namespace Updaemon.GithubDistributionService.Tests
 
             try
             {
-                await service.InitializeAsync(null);
+                await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
                 
                 // This tests the full flow that updaemon would use
                 Version? latestVersion = await service.GetLatestVersionAsync("curl/curl");

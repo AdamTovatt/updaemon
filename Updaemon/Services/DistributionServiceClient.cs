@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using Updaemon.Common;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
 using Updaemon.Interfaces;
@@ -57,7 +58,9 @@ namespace Updaemon.Services
 
         public async Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
         {
-            await InvokeMethodAsync("InitializeAsync", secrets, cancellationToken);
+            SecretCollection secretCollection = SecretCollection.FromString(secrets);
+            Dictionary<string, string> secretsDictionary = secretCollection.ToDictionary();
+            await InvokeMethodAsync("InitializeAsync", secretsDictionary, cancellationToken);
         }
 
         public async Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)

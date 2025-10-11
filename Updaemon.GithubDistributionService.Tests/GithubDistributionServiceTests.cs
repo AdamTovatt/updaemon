@@ -14,7 +14,7 @@ namespace Updaemon.GithubDistributionService.Tests
             IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
-            await service.InitializeAsync(null);
+            await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
 
             // Should complete without throwing
         }
@@ -26,7 +26,7 @@ namespace Updaemon.GithubDistributionService.Tests
             IVersionParser versionParser = Substitute.For<IVersionParser>();
             IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
-            string secrets = "githubToken=test-token-123\napiKey=other-value";
+            SecretCollection secrets = SecretCollection.FromString("githubToken=test-token-123\napiKey=other-value");
 
             await service.InitializeAsync(secrets);
 
@@ -362,7 +362,7 @@ namespace Updaemon.GithubDistributionService.Tests
             versionParser.Parse("v1.2.3").Returns(new Version(1, 2, 3));
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
-            await service.InitializeAsync("githubToken=test-token");
+            await service.InitializeAsync(SecretCollection.FromString("githubToken=test-token"));
             Version? result = await service.GetLatestVersionAsync("owner/repo");
 
             Assert.NotNull(result);

@@ -155,10 +155,15 @@ namespace Updaemon.Common.Hosting
             IDistributionService implementation,
             CancellationToken cancellationToken)
         {
-            string? secrets = null;
+            SecretCollection secrets;
             if (request.Parameters != null)
             {
-                secrets = JsonSerializer.Deserialize(request.Parameters, CommonJsonContext.Default.String);
+                Dictionary<string, string>? secretsDictionary = JsonSerializer.Deserialize(request.Parameters, CommonJsonContext.Default.DictionaryStringString);
+                secrets = secretsDictionary != null ? new SecretCollection(secretsDictionary) : new SecretCollection(new Dictionary<string, string>());
+            }
+            else
+            {
+                secrets = new SecretCollection(new Dictionary<string, string>());
             }
 
             await implementation.InitializeAsync(secrets, cancellationToken);

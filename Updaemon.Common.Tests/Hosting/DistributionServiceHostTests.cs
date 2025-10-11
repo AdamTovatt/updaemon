@@ -67,11 +67,16 @@ namespace Updaemon.Common.Tests.Hosting
             {
                 await client.ConnectAsync(5000);
 
+                Dictionary<string, string> secretsDictionary = new Dictionary<string, string>
+                {
+                    { "tenantId", "123" },
+                    { "apiKey", "abc" },
+                };
                 RpcRequest request = new RpcRequest
                 {
                     Id = "test-1",
                     Method = "InitializeAsync",
-                    Parameters = JsonSerializer.Serialize("tenantId=123\napiKey=abc", CommonJsonContext.Default.String),
+                    Parameters = JsonSerializer.Serialize(secretsDictionary, CommonJsonContext.Default.DictionaryStringString),
                 };
 
                 string requestJson = JsonSerializer.Serialize(request, CommonJsonContext.Default.RpcRequest);
@@ -86,7 +91,9 @@ namespace Updaemon.Common.Tests.Hosting
                 Assert.NotNull(response);
                 Assert.Equal("test-1", response.Id);
                 Assert.True(response.Success);
-                Assert.Equal("tenantId=123\napiKey=abc", service.LastInitializedSecrets);
+                Assert.NotNull(service.LastInitializedSecrets);
+                Assert.Equal("123", service.LastInitializedSecrets.GetValue("tenantId"));
+                Assert.Equal("abc", service.LastInitializedSecrets.GetValue("apiKey"));
             }
         }
 
@@ -338,7 +345,7 @@ namespace Updaemon.Common.Tests.Hosting
 
         private class TestDistributionService : IDistributionService
         {
-            public string? LastInitializedSecrets { get; private set; }
+            public SecretCollection? LastInitializedSecrets { get; private set; }
             public string? LastServiceName { get; private set; }
             public string? LastDownloadServiceName { get; private set; }
             public Version? LastDownloadVersion { get; private set; }
@@ -346,7 +353,7 @@ namespace Updaemon.Common.Tests.Hosting
             public Version? LatestVersion { get; set; }
             public bool ShouldThrowException { get; set; }
 
-            public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
+            public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
             {
                 if (ShouldThrowException)
                 {

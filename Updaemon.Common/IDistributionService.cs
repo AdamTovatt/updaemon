@@ -7,11 +7,11 @@ namespace Updaemon.Common
     public interface IDistributionService
     {
         /// <summary>
-        /// Initializes the distribution service with optional secrets.
+        /// Initializes the distribution service with secrets.
         /// </summary>
-        /// <param name="secrets">Nullable string containing zero or more key=value pairs separated by line breaks. Null if no secrets configured.</param>
+        /// <param name="secrets">Collection of secret key-value pairs.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
-        Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default);
+        Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets the latest version available for a service.

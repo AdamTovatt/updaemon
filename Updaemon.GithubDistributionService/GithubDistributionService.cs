@@ -24,31 +24,9 @@ namespace Updaemon.GithubDistributionService
             _postProcessor = postProcessor;
         }
 
-        public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
+        public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(secrets))
-            {
-                return Task.CompletedTask;
-            }
-
-            // Parse secrets for githubToken
-            string[] lines = secrets.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (string line in lines)
-            {
-                string[] parts = line.Split('=', 2);
-                if (parts.Length == 2)
-                {
-                    string key = parts[0].Trim();
-                    string value = parts[1].Trim();
-
-                    if (key.Equals("githubToken", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _githubToken = value;
-                        break;
-                    }
-                }
-            }
-
+            _githubToken = secrets.GetValueIgnoreCase("githubToken");
             return Task.CompletedTask;
         }
 
