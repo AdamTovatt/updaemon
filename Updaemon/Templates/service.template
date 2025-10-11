@@ -1,0 +1,16 @@
+[Unit]
+Description={DESCRIPTION}
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={EXECUTABLE_PATH}
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={SERVICE_NAME}
+
+[Install]
+WantedBy=multi-user.target
+
