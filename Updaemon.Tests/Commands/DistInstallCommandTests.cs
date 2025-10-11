@@ -18,7 +18,7 @@ namespace Updaemon.Tests.Commands
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
                 
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
 
                 await command.ExecuteAsync("https://example.com/plugins/my-plugin");
 
@@ -40,7 +40,7 @@ namespace Updaemon.Tests.Commands
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
                 
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
 
                 await Assert.ThrowsAsync<HttpRequestException>(
                     async () => await command.ExecuteAsync("https://example.com/invalid-plugin")
@@ -59,7 +59,7 @@ namespace Updaemon.Tests.Commands
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
                 
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
 
                 await command.ExecuteAsync("https://example.com/path/to/byteshelf-dist");
 

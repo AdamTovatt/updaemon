@@ -35,6 +35,9 @@ namespace Updaemon
 
         private static void ConfigureServices(ServiceCollection services)
         {
+            // Output writer
+            services.AddSingleton<IOutputWriter, ConsoleOutputWriter>();
+
             // Configuration and Secrets
             services.AddSingleton<IConfigManager, ConfigManager>();
             services.AddSingleton<ISecretsManager, SecretsManager>();

@@ -9,7 +9,8 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_UpdatesRemoteNameViaConfigManager()
         {
             MockConfigManager configManager = new MockConfigManager();
-            SetRemoteCommand command = new SetRemoteCommand(configManager);
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            SetRemoteCommand command = new SetRemoteCommand(configManager, outputWriter);
 
             await configManager.RegisterServiceAsync("my-api", "MyApi");
             await command.ExecuteAsync("my-api", "UpdatedApi");
@@ -21,7 +22,8 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_ThrowsWhenServiceDoesNotExist()
         {
             MockConfigManager configManager = new MockConfigManager();
-            SetRemoteCommand command = new SetRemoteCommand(configManager);
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            SetRemoteCommand command = new SetRemoteCommand(configManager, outputWriter);
 
             await Assert.ThrowsAsync<InvalidOperationException>(
                 async () => await command.ExecuteAsync("non-existent", "RemoteName")

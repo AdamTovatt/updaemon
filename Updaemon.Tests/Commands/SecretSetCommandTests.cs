@@ -9,7 +9,8 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_SetsSecretViaSecretsManager()
         {
             MockSecretsManager secretsManager = new MockSecretsManager();
-            SecretSetCommand command = new SecretSetCommand(secretsManager);
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            SecretSetCommand command = new SecretSetCommand(secretsManager, outputWriter);
 
             await command.ExecuteAsync("apiKey", "abc123");
 
@@ -20,7 +21,8 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_UpdatesExistingSecret()
         {
             MockSecretsManager secretsManager = new MockSecretsManager();
-            SecretSetCommand command = new SecretSetCommand(secretsManager);
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            SecretSetCommand command = new SecretSetCommand(secretsManager, outputWriter);
 
             await command.ExecuteAsync("apiKey", "oldValue");
             await command.ExecuteAsync("apiKey", "newValue");

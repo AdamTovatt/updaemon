@@ -22,7 +22,8 @@ namespace Updaemon.Tests.Commands
                 serviceManager,
                 symlinkManager,
                 executableDetector,
-                distributionClient
+                distributionClient,
+                new MockOutputWriter()
             );
 
             await command.ExecuteAsync();
@@ -49,7 +50,8 @@ namespace Updaemon.Tests.Commands
                 serviceManager,
                 symlinkManager,
                 executableDetector,
-                distributionClient
+                distributionClient,
+                new MockOutputWriter()
             );
 
             await command.ExecuteAsync("non-existent-service");
@@ -76,7 +78,8 @@ namespace Updaemon.Tests.Commands
                 serviceManager,
                 symlinkManager,
                 executableDetector,
-                distributionClient
+                distributionClient,
+                new MockOutputWriter()
             );
 
             await command.ExecuteAsync();
@@ -107,7 +110,8 @@ namespace Updaemon.Tests.Commands
                 serviceManager,
                 symlinkManager,
                 executableDetector,
-                distributionClient
+                distributionClient,
+                new MockOutputWriter()
             );
 
             await command.ExecuteAsync("my-api");
@@ -140,7 +144,8 @@ namespace Updaemon.Tests.Commands
                 serviceManager,
                 symlinkManager,
                 executableDetector,
-                distributionClient
+                distributionClient,
+                new MockOutputWriter()
             );
 
             await command.ExecuteAsync();
@@ -176,6 +181,7 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
+                new MockOutputWriter(),
                 serviceBaseDirectory
             );
 
@@ -223,6 +229,7 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
+                new MockOutputWriter(),
                 serviceBaseDirectory
             );
 
@@ -268,6 +275,7 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
+                new MockOutputWriter(),
                 serviceBaseDirectory
             );
 
@@ -312,6 +320,7 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
+                new MockOutputWriter(),
                 serviceBaseDirectory
             );
 
@@ -355,6 +364,7 @@ namespace Updaemon.Tests.Commands
                 symlinkManager,
                 executableDetector,
                 distributionClient,
+                new MockOutputWriter(),
                 serviceBaseDirectory
             );
 
@@ -388,7 +398,8 @@ namespace Updaemon.Tests.Commands
                 serviceManager,
                 symlinkManager,
                 executableDetector,
-                distributionClient
+                distributionClient,
+                new MockOutputWriter()
             );
 
             await command.ExecuteAsync("my-api");
@@ -422,7 +433,8 @@ namespace Updaemon.Tests.Commands
                 serviceManager,
                 symlinkManager,
                 executableDetector,
-                distributionClient
+                distributionClient,
+                new MockOutputWriter()
             );
 
             await command.ExecuteAsync("my-api");

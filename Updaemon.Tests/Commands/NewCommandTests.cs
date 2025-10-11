@@ -13,10 +13,11 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
                 string serviceDirectory = tempHelper.TempDirectory;
                 string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
                 
-                NewCommand command = new NewCommand(configManager, serviceManager, serviceDirectory, systemdDirectory);
+                NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, serviceDirectory, systemdDirectory);
 
                 await command.ExecuteAsync("my-api");
 
@@ -31,10 +32,11 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
                 string serviceDirectory = tempHelper.TempDirectory;
                 string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
                 
-                NewCommand command = new NewCommand(configManager, serviceManager, serviceDirectory, systemdDirectory);
+                NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, serviceDirectory, systemdDirectory);
 
                 await command.ExecuteAsync("my-api");
 
@@ -49,10 +51,11 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
                 string serviceDirectory = tempHelper.TempDirectory;
                 string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
                 
-                NewCommand command = new NewCommand(configManager, serviceManager, serviceDirectory, systemdDirectory);
+                NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, serviceDirectory, systemdDirectory);
 
                 await command.ExecuteAsync("test-service");
 

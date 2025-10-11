@@ -1,3 +1,5 @@
+using Updaemon.Interfaces;
+
 namespace Updaemon.Commands
 {
     /// <summary>
@@ -10,19 +12,22 @@ namespace Updaemon.Commands
         private readonly SetRemoteCommand _setRemoteCommand;
         private readonly DistInstallCommand _distInstallCommand;
         private readonly SecretSetCommand _secretSetCommand;
+        private readonly IOutputWriter _outputWriter;
 
         public CommandExecutor(
             NewCommand newCommand,
             UpdateCommand updateCommand,
             SetRemoteCommand setRemoteCommand,
             DistInstallCommand distInstallCommand,
-            SecretSetCommand secretSetCommand)
+            SecretSetCommand secretSetCommand,
+            IOutputWriter outputWriter)
         {
             _newCommand = newCommand;
             _updateCommand = updateCommand;
             _setRemoteCommand = setRemoteCommand;
             _distInstallCommand = distInstallCommand;
             _secretSetCommand = secretSetCommand;
+            _outputWriter = outputWriter;
         }
 
         public async Task<int> ExecuteAsync(string[] args)
@@ -42,8 +47,8 @@ namespace Updaemon.Commands
                     case "new":
                         if (args.Length < 2)
                         {
-                            Console.WriteLine("Error: 'new' command requires an app name");
-                            Console.WriteLine("Usage: updaemon new <app-name>");
+                            _outputWriter.WriteError("Error: 'new' command requires an app name");
+                            _outputWriter.WriteLine("Usage: updaemon new <app-name>");
                             return 1;
                         }
                         await _newCommand.ExecuteAsync(args[1]);
@@ -57,8 +62,8 @@ namespace Updaemon.Commands
                     case "set-remote":
                         if (args.Length < 3)
                         {
-                            Console.WriteLine("Error: 'set-remote' command requires app name and remote name");
-                            Console.WriteLine("Usage: updaemon set-remote <app-name> <remote-name>");
+                            _outputWriter.WriteError("Error: 'set-remote' command requires app name and remote name");
+                            _outputWriter.WriteLine("Usage: updaemon set-remote <app-name> <remote-name>");
                             return 1;
                         }
                         await _setRemoteCommand.ExecuteAsync(args[1], args[2]);
@@ -67,8 +72,8 @@ namespace Updaemon.Commands
                     case "dist-install":
                         if (args.Length < 2)
                         {
-                            Console.WriteLine("Error: 'dist-install' command requires a URL");
-                            Console.WriteLine("Usage: updaemon dist-install <url>");
+                            _outputWriter.WriteError("Error: 'dist-install' command requires a URL");
+                            _outputWriter.WriteLine("Usage: updaemon dist-install <url>");
                             return 1;
                         }
                         await _distInstallCommand.ExecuteAsync(args[1]);
@@ -77,44 +82,44 @@ namespace Updaemon.Commands
                     case "secret-set":
                         if (args.Length < 3)
                         {
-                            Console.WriteLine("Error: 'secret-set' command requires a key and value");
-                            Console.WriteLine("Usage: updaemon secret-set <key> <value>");
+                            _outputWriter.WriteError("Error: 'secret-set' command requires a key and value");
+                            _outputWriter.WriteLine("Usage: updaemon secret-set <key> <value>");
                             return 1;
                         }
                         await _secretSetCommand.ExecuteAsync(args[1], args[2]);
                         return 0;
 
                     default:
-                        Console.WriteLine($"Error: Unknown command '{command}'");
+                        _outputWriter.WriteError($"Error: Unknown command '{command}'");
                         PrintUsage();
                         return 1;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error: {ex.Message}");
+                _outputWriter.WriteError($"Error: {ex.Message}");
                 return 1;
             }
         }
 
         private void PrintUsage()
         {
-            Console.WriteLine("updaemon - Service update daemon");
-            Console.WriteLine();
-            Console.WriteLine("Usage:");
-            Console.WriteLine("  updaemon new <app-name>              Create a new service");
-            Console.WriteLine("  updaemon update [app-name]           Update all services or a specific service");
-            Console.WriteLine("  updaemon set-remote <app> <remote>   Set remote name for a service");
-            Console.WriteLine("  updaemon dist-install <url>          Install a distribution service plugin");
-            Console.WriteLine("  updaemon secret-set <key> <value>    Set a distribution service secret");
-            Console.WriteLine();
-            Console.WriteLine("Examples:");
-            Console.WriteLine("  updaemon new my-api");
-            Console.WriteLine("  updaemon update");
-            Console.WriteLine("  updaemon update my-api");
-            Console.WriteLine("  updaemon set-remote my-api Dev.MyApi");
-            Console.WriteLine("  updaemon dist-install https://example.com/plugin");
-            Console.WriteLine("  updaemon secret-set apiKey abc123");
+            _outputWriter.WriteLine("updaemon - Service update daemon");
+            _outputWriter.WriteLine("");
+            _outputWriter.WriteLine("Usage:");
+            _outputWriter.WriteLine("  updaemon new <app-name>              Create a new service");
+            _outputWriter.WriteLine("  updaemon update [app-name]           Update all services or a specific service");
+            _outputWriter.WriteLine("  updaemon set-remote <app> <remote>   Set remote name for a service");
+            _outputWriter.WriteLine("  updaemon dist-install <url>          Install a distribution service plugin");
+            _outputWriter.WriteLine("  updaemon secret-set <key> <value>    Set a distribution service secret");
+            _outputWriter.WriteLine("");
+            _outputWriter.WriteLine("Examples:");
+            _outputWriter.WriteLine("  updaemon new my-api");
+            _outputWriter.WriteLine("  updaemon update");
+            _outputWriter.WriteLine("  updaemon update my-api");
+            _outputWriter.WriteLine("  updaemon set-remote my-api Dev.MyApi");
+            _outputWriter.WriteLine("  updaemon dist-install https://example.com/plugin");
+            _outputWriter.WriteLine("  updaemon secret-set apiKey abc123");
         }
     }
 }

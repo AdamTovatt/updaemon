@@ -14,6 +14,7 @@ namespace Updaemon.Commands
         private readonly ISymlinkManager _symlinkManager;
         private readonly IExecutableDetector _executableDetector;
         private readonly IDistributionServiceClient _distributionClient;
+        private readonly IOutputWriter _outputWriter;
         private readonly string _serviceBaseDirectory;
 
         public UpdateCommand(
@@ -22,7 +23,8 @@ namespace Updaemon.Commands
             IServiceManager serviceManager,
             ISymlinkManager symlinkManager,
             IExecutableDetector executableDetector,
-            IDistributionServiceClient distributionClient)
+            IDistributionServiceClient distributionClient,
+            IOutputWriter outputWriter)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
@@ -30,6 +32,7 @@ namespace Updaemon.Commands
             _symlinkManager = symlinkManager;
             _executableDetector = executableDetector;
             _distributionClient = distributionClient;
+            _outputWriter = outputWriter;
             _serviceBaseDirectory = "/opt";
         }
 
@@ -40,6 +43,7 @@ namespace Updaemon.Commands
             ISymlinkManager symlinkManager,
             IExecutableDetector executableDetector,
             IDistributionServiceClient distributionClient,
+            IOutputWriter outputWriter,
             string serviceBaseDirectory)
         {
             _configManager = configManager;
@@ -48,6 +52,7 @@ namespace Updaemon.Commands
             _symlinkManager = symlinkManager;
             _executableDetector = executableDetector;
             _distributionClient = distributionClient;
+            _outputWriter = outputWriter;
             _serviceBaseDirectory = serviceBaseDirectory;
         }
 
@@ -57,8 +62,8 @@ namespace Updaemon.Commands
             string? pluginPath = await _configManager.GetDistributionPluginPathAsync();
             if (string.IsNullOrEmpty(pluginPath))
             {
-                Console.WriteLine("Error: No distribution service plugin configured.");
-                Console.WriteLine("Use 'updaemon dist-install <url>' to install a distribution plugin.");
+                _outputWriter.WriteError("Error: No distribution service plugin configured.");
+                _outputWriter.WriteLine("Use 'updaemon dist-install <url>' to install a distribution plugin.");
                 return;
             }
 
@@ -76,7 +81,7 @@ namespace Updaemon.Commands
                 RegisteredService? service = await _configManager.GetServiceAsync(specificAppName);
                 if (service == null)
                 {
-                    Console.WriteLine($"Error: Service '{specificAppName}' is not registered.");
+                    _outputWriter.WriteError($"Error: Service '{specificAppName}' is not registered.");
                     return;
                 }
                 services = new[] { service };
@@ -88,7 +93,7 @@ namespace Updaemon.Commands
 
             if (services.Count == 0)
             {
-                Console.WriteLine("No services registered. Use 'updaemon new <app-name>' to create a service.");
+                _outputWriter.WriteLine("No services registered. Use 'updaemon new <app-name>' to create a service.");
                 return;
             }
 
@@ -101,7 +106,7 @@ namespace Updaemon.Commands
 
         private async Task UpdateServiceAsync(RegisteredService service)
         {
-            Console.WriteLine($"\nUpdating service: {service.LocalName}");
+            _outputWriter.WriteLine($"\nUpdating service: {service.LocalName}");
 
             try
             {
@@ -109,52 +114,52 @@ namespace Updaemon.Commands
                 Version? currentVersion = await GetCurrentVersionAsync(service.LocalName);
                 if (currentVersion != null)
                 {
-                    Console.WriteLine($"Current version: {currentVersion}");
+                    _outputWriter.WriteLine($"Current version: {currentVersion}");
                 }
                 else
                 {
-                    Console.WriteLine("No version currently installed");
+                    _outputWriter.WriteLine("No version currently installed");
                 }
 
                 // Get latest version from distribution service
                 Version? latestVersion = await _distributionClient.GetLatestVersionAsync(service.RemoteName);
                 if (latestVersion == null)
                 {
-                    Console.WriteLine($"No version available for '{service.RemoteName}'");
+                    _outputWriter.WriteLine($"No version available for '{service.RemoteName}'");
                     return;
                 }
 
-                Console.WriteLine($"Latest version: {latestVersion}");
+                _outputWriter.WriteLine($"Latest version: {latestVersion}");
 
                 // Check if update is needed
                 if (currentVersion != null && latestVersion <= currentVersion)
                 {
-                    Console.WriteLine("Already up to date");
+                    _outputWriter.WriteLine("Already up to date");
                     return;
                 }
 
                 // Download new version
                 string versionDirectory = Path.Combine(_serviceBaseDirectory, service.LocalName, latestVersion.ToString());
-                Console.WriteLine($"Downloading to: {versionDirectory}");
+                _outputWriter.WriteLine($"Downloading to: {versionDirectory}");
                 
                 Directory.CreateDirectory(versionDirectory);
                 await _distributionClient.DownloadVersionAsync(service.RemoteName, latestVersion, versionDirectory);
-                Console.WriteLine("Download complete");
+                _outputWriter.WriteLine("Download complete");
 
                 // Find executable
                 string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, service.LocalName);
                 if (executablePath == null)
                 {
-                    Console.WriteLine($"Error: Could not find executable in {versionDirectory}");
+                    _outputWriter.WriteError($"Error: Could not find executable in {versionDirectory}");
                     return;
                 }
 
-                Console.WriteLine($"Found executable: {executablePath}");
+                _outputWriter.WriteLine($"Found executable: {executablePath}");
 
                 // Update symlink
                 string symlinkPath = Path.Combine(_serviceBaseDirectory, service.LocalName, "current");
                 await _symlinkManager.CreateOrUpdateSymlinkAsync(symlinkPath, executablePath);
-                Console.WriteLine($"Updated symlink: {symlinkPath} -> {executablePath}");
+                _outputWriter.WriteLine($"Updated symlink: {symlinkPath} -> {executablePath}");
 
                 // Restart service
                 bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName);
@@ -163,25 +168,25 @@ namespace Updaemon.Commands
                     bool isRunning = await _serviceManager.IsServiceRunningAsync(service.LocalName);
                     if (isRunning)
                     {
-                        Console.WriteLine("Restarting service...");
+                        _outputWriter.WriteLine("Restarting service...");
                         await _serviceManager.RestartServiceAsync(service.LocalName);
                     }
                     else
                     {
-                        Console.WriteLine("Starting service...");
+                        _outputWriter.WriteLine("Starting service...");
                         await _serviceManager.StartServiceAsync(service.LocalName);
                     }
 
-                    Console.WriteLine("Service updated successfully");
+                    _outputWriter.WriteLine("Service updated successfully");
                 }
                 else
                 {
-                    Console.WriteLine("Warning: systemd unit file not found. Service not started.");
+                    _outputWriter.WriteLine("Warning: systemd unit file not found. Service not started.");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error updating service: {ex.Message}");
+                _outputWriter.WriteError($"Error updating service: {ex.Message}");
             }
         }
 

@@ -75,27 +75,30 @@ namespace Updaemon.Tests.Commands
             MockConfigManager configManager = new MockConfigManager();
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
 
             // Create a command executor with a mock that will throw
-            NewCommand newCommand = new NewCommand(configManager, serviceManager);
+            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter);
             UpdateCommand updateCommand = new UpdateCommand(
                 configManager,
                 secretsManager,
                 serviceManager,
                 new MockSymlinkManager(),
                 new MockExecutableDetector(),
-                new MockDistributionServiceClient()
+                new MockDistributionServiceClient(),
+                outputWriter
             );
-            SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager);
-            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient());
-            SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager);
+            SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
+            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
+            SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
             CommandExecutor executor = new CommandExecutor(
                 newCommand,
                 updateCommand,
                 setRemoteCommand,
                 distInstallCommand,
-                secretSetCommand
+                secretSetCommand,
+                outputWriter
             );
 
             // Trying to set remote for non-existent service will throw
@@ -124,26 +127,29 @@ namespace Updaemon.Tests.Commands
             configManager ??= new MockConfigManager();
             secretsManager ??= new MockSecretsManager();
             serviceManager ??= new MockServiceManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
 
-            NewCommand newCommand = new NewCommand(configManager, serviceManager);
+            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter);
             UpdateCommand updateCommand = new UpdateCommand(
                 configManager,
                 secretsManager,
                 serviceManager,
                 new MockSymlinkManager(),
                 new MockExecutableDetector(),
-                new MockDistributionServiceClient()
+                new MockDistributionServiceClient(),
+                outputWriter
             );
-            SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager);
-            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient());
-            SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager);
+            SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
+            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
+            SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
             return new CommandExecutor(
                 newCommand,
                 updateCommand,
                 setRemoteCommand,
                 distInstallCommand,
-                secretSetCommand
+                secretSetCommand,
+                outputWriter
             );
         }
     }

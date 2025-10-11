@@ -8,19 +8,21 @@ namespace Updaemon.Commands
     public class SetRemoteCommand
     {
         private readonly IConfigManager _configManager;
+        private readonly IOutputWriter _outputWriter;
 
-        public SetRemoteCommand(IConfigManager configManager)
+        public SetRemoteCommand(IConfigManager configManager, IOutputWriter outputWriter)
         {
             _configManager = configManager;
+            _outputWriter = outputWriter;
         }
 
         public async Task ExecuteAsync(string localName, string remoteName)
         {
-            Console.WriteLine($"Setting remote name for '{localName}' to '{remoteName}'");
+            _outputWriter.WriteLine($"Setting remote name for '{localName}' to '{remoteName}'");
 
             await _configManager.SetRemoteNameAsync(localName, remoteName);
 
-            Console.WriteLine("Remote name updated successfully");
+            _outputWriter.WriteLine("Remote name updated successfully");
         }
     }
 }
