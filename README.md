@@ -40,23 +40,38 @@ graph TB
     end
     
     subgraph Storage
-        ConfigFile[/var/lib/updaemon/config.json]
-        SecretsFile[/var/lib/updaemon/secrets.txt]
-        PluginFiles[/var/lib/updaemon/plugins/]
+        ConfigFile["config.json"]
+        SecretsFile["secrets.txt"]
+        PluginFiles["plugins/"]
     end
     
     subgraph System
         Systemd[systemd]
-        OptDir[/opt/app-name/]
-        EtcDir[/etc/systemd/system/]
+        OptDir["app directories"]
+        EtcDir["systemd units"]
     end
     
     CLI --> Executor
-    Executor --> Commands
-    Commands --> Core Services
-    Commands --> DistClient
-    Core Services --> Storage
+    Executor --> NewCmd
+    Executor --> UpdateCmd
+    Executor --> SetRemoteCmd
+    Executor --> DistInstallCmd
+    Executor --> DistSetCmd
+    
+    NewCmd --> ConfigMgr
+    UpdateCmd --> ConfigMgr
+    UpdateCmd --> SecretsMgr
+    UpdateCmd --> ServiceMgr
+    UpdateCmd --> SymlinkMgr
+    UpdateCmd --> ExecDetector
+    UpdateCmd --> DistClient
+    
+    ConfigMgr --> ConfigFile
+    SecretsMgr --> SecretsFile
+    
     DistClient -->|Named Pipe RPC| Plugin
+    DistClient --> PluginFiles
+    
     NewCmd --> Systemd
     UpdateCmd --> Systemd
     ServiceMgr --> Systemd
@@ -140,20 +155,20 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph config["Configuration Directory: /var/lib/updaemon/"]
-        ConfigJson[config.json<br/>Registered services<br/>Plugin path]
-        SecretsFile[secrets.txt<br/>API keys<br/>Credentials]
-        PluginsDir[plugins directory<br/>Distribution executables]
+    subgraph "/var/lib/updaemon/ - Configuration"
+        ConfigJson["config.json<br/>• Registered services<br/>• Plugin path"]
+        SecretsFile["secrets.txt<br/>• API keys<br/>• Credentials"]
+        PluginsDir["plugins/<br/>• Distribution executables"]
     end
     
-    subgraph apps["Application Versions: /opt/app-name/"]
-        V100[Version 1.0.0<br/>app executable<br/>dependencies]
-        V110[Version 1.1.0<br/>app executable<br/>dependencies]
-        Current[current symlink<br/>Points to active version]
+    subgraph "/opt/app-name/ - Application Versions"
+        V100["1.0.0/<br/>• app executable<br/>• dependencies"]
+        V110["1.1.0/<br/>• app executable<br/>• dependencies"]
+        Current["current → symlink<br/>Points to active version"]
     end
     
-    subgraph systemd["Service Definitions: /etc/systemd/system/"]
-        UnitFile[app-name.service<br/>ExecStart points to current]
+    subgraph "/etc/systemd/system/ - Service Definitions"
+        UnitFile["app-name.service<br/>ExecStart=/opt/app-name/current"]
     end
     
     ConfigJson -.->|Reads service list| Updaemon[Updaemon CLI Process]
