@@ -46,6 +46,7 @@ namespace Updaemon
             services.AddSingleton<IServiceManager, ServiceManager>();
             services.AddSingleton<ISymlinkManager, SymlinkManager>();
             services.AddSingleton<IExecutableDetector, ExecutableDetector>();
+            services.AddSingleton<IDownloadPostProcessor, DownloadPostProcessor>();
             services.AddSingleton<IVersionExtractor, VersionExtractor>();
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
 
