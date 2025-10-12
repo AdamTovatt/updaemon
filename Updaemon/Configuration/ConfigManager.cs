@@ -80,6 +80,20 @@ namespace Updaemon.Configuration
             await SaveConfigAsync(config, cancellationToken);
         }
 
+        public async Task SetExecutableNameAsync(string localName, string? executableName, CancellationToken cancellationToken = default)
+        {
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
+
+            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
+            if (service == null)
+            {
+                throw new InvalidOperationException($"Service '{localName}' is not registered.");
+            }
+
+            service.ExecutableName = executableName;
+            await SaveConfigAsync(config, cancellationToken);
+        }
+
         public async Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default)
         {
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);

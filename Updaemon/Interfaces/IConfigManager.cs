@@ -28,6 +28,12 @@ namespace Updaemon.Interfaces
         Task SetRemoteNameAsync(string localName, string remoteName, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Updates the executable name for an existing service.
+        /// Pass null to clear the executable name and use the local name instead.
+        /// </summary>
+        Task SetExecutableNameAsync(string localName, string? executableName, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Gets a registered service by local name.
         /// </summary>
         Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default);

@@ -94,6 +94,7 @@ namespace Updaemon.Tests.Commands
                 new MockVersionExtractor()
             );
             SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
+            SetExecNameCommand setExecNameCommand = new SetExecNameCommand(configManager, outputWriter);
             DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
             SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
@@ -101,6 +102,7 @@ namespace Updaemon.Tests.Commands
                 newCommand,
                 updateCommand,
                 setRemoteCommand,
+                setExecNameCommand,
                 distInstallCommand,
                 secretSetCommand,
                 outputWriter
@@ -150,6 +152,7 @@ namespace Updaemon.Tests.Commands
                 new MockVersionExtractor()
             );
             SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
+            SetExecNameCommand setExecNameCommand = new SetExecNameCommand(configManager, outputWriter);
             DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
             SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
@@ -157,6 +160,7 @@ namespace Updaemon.Tests.Commands
                 newCommand,
                 updateCommand,
                 setRemoteCommand,
+                setExecNameCommand,
                 distInstallCommand,
                 secretSetCommand,
                 outputWriter

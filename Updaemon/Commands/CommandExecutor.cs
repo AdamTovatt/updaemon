@@ -10,6 +10,7 @@ namespace Updaemon.Commands
         private readonly NewCommand _newCommand;
         private readonly UpdateCommand _updateCommand;
         private readonly SetRemoteCommand _setRemoteCommand;
+        private readonly SetExecNameCommand _setExecNameCommand;
         private readonly DistInstallCommand _distInstallCommand;
         private readonly SecretSetCommand _secretSetCommand;
         private readonly IOutputWriter _outputWriter;
@@ -18,6 +19,7 @@ namespace Updaemon.Commands
             NewCommand newCommand,
             UpdateCommand updateCommand,
             SetRemoteCommand setRemoteCommand,
+            SetExecNameCommand setExecNameCommand,
             DistInstallCommand distInstallCommand,
             SecretSetCommand secretSetCommand,
             IOutputWriter outputWriter)
@@ -25,6 +27,7 @@ namespace Updaemon.Commands
             _newCommand = newCommand;
             _updateCommand = updateCommand;
             _setRemoteCommand = setRemoteCommand;
+            _setExecNameCommand = setExecNameCommand;
             _distInstallCommand = distInstallCommand;
             _secretSetCommand = secretSetCommand;
             _outputWriter = outputWriter;
@@ -71,6 +74,18 @@ namespace Updaemon.Commands
                         await _setRemoteCommand.ExecuteAsync(args[1], args[2], cancellationToken);
                         return 0;
 
+                    case "set-exec-name":
+                        if (args.Length < 3)
+                        {
+                            _outputWriter.WriteError("Error: 'set-exec-name' command requires app name and executable name");
+                            _outputWriter.WriteLine("Usage: updaemon set-exec-name <app-name> <executable-name>");
+                            _outputWriter.WriteLine("Use '-' as executable name to clear it");
+                            return 1;
+                        }
+
+                        await _setExecNameCommand.ExecuteAsync(args[1], args[2], cancellationToken);
+                        return 0;
+
                     case "dist-install":
                         if (args.Length < 2)
                         {
@@ -111,17 +126,20 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine("updaemon - Service update daemon");
             _outputWriter.WriteLine("");
             _outputWriter.WriteLine("Usage:");
-            _outputWriter.WriteLine("  updaemon new <app-name>              Create a new service");
-            _outputWriter.WriteLine("  updaemon update [app-name]           Update all services or a specific service");
-            _outputWriter.WriteLine("  updaemon set-remote <app> <remote>   Set remote name for a service");
-            _outputWriter.WriteLine("  updaemon dist-install <url>          Install a distribution service plugin");
-            _outputWriter.WriteLine("  updaemon secret-set <key> <value>    Set a distribution service secret");
+            _outputWriter.WriteLine("  updaemon new <app-name>                   Create a new service");
+            _outputWriter.WriteLine("  updaemon update [app-name]                Update all services or a specific service");
+            _outputWriter.WriteLine("  updaemon set-remote <app> <remote>        Set remote name for a service");
+            _outputWriter.WriteLine("  updaemon set-exec-name <app> <exec-name>  Set executable name for a service");
+            _outputWriter.WriteLine("  updaemon dist-install <url>               Install a distribution service plugin");
+            _outputWriter.WriteLine("  updaemon secret-set <key> <value>         Set a distribution service secret");
             _outputWriter.WriteLine("");
             _outputWriter.WriteLine("Examples:");
             _outputWriter.WriteLine("  updaemon new my-api");
             _outputWriter.WriteLine("  updaemon update");
             _outputWriter.WriteLine("  updaemon update my-api");
             _outputWriter.WriteLine("  updaemon set-remote my-api Dev.MyApi");
+            _outputWriter.WriteLine("  updaemon set-exec-name my-api MyApiExecutable");
+            _outputWriter.WriteLine("  updaemon set-exec-name my-api -");
             _outputWriter.WriteLine("  updaemon dist-install https://example.com/plugin");
             _outputWriter.WriteLine("  updaemon secret-set apiKey abc123");
         }

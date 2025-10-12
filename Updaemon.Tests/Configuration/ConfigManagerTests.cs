@@ -175,6 +175,84 @@ namespace Updaemon.Tests.Configuration
                 Assert.Null(pluginPath);
             }
         }
+
+        [Fact]
+        public async Task SetExecutableNameAsync_UpdatesExecutableName()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                await configManager.RegisterServiceAsync("my-api", "MyApi");
+                await configManager.SetExecutableNameAsync("my-api", "MyApiExecutable");
+
+                RegisteredService? service = await configManager.GetServiceAsync("my-api");
+                Assert.NotNull(service);
+                Assert.Equal("MyApiExecutable", service.ExecutableName);
+            }
+        }
+
+        [Fact]
+        public async Task SetExecutableNameAsync_WithNull_ClearsExecutableName()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                await configManager.RegisterServiceAsync("my-api", "MyApi");
+                await configManager.SetExecutableNameAsync("my-api", "MyApiExecutable");
+                await configManager.SetExecutableNameAsync("my-api", null);
+
+                RegisteredService? service = await configManager.GetServiceAsync("my-api");
+                Assert.NotNull(service);
+                Assert.Null(service.ExecutableName);
+            }
+        }
+
+        [Fact]
+        public async Task SetExecutableNameAsync_ServiceDoesNotExist_ThrowsException()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                    async () => await configManager.SetExecutableNameAsync("non-existent", "SomeExecutable")
+                );
+
+                Assert.Contains("not registered", exception.Message);
+            }
+        }
+
+        [Fact]
+        public async Task LoadConfigAsync_OldConfigWithoutExecutableName_LoadsSuccessfully()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                // Write old-style config JSON without ExecutableName field
+                string configPath = Path.Combine(tempHelper.TempDirectory, "config.json");
+                string oldConfigJson = @"{
+  ""distributionPluginPath"": ""/path/to/plugin"",
+  ""services"": [
+    {
+      ""localName"": ""test-service"",
+      ""remoteName"": ""TestService""
+    }
+  ]
+}";
+                Directory.CreateDirectory(tempHelper.TempDirectory);
+                await File.WriteAllTextAsync(configPath, oldConfigJson);
+
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+
+                Assert.NotNull(config);
+                Assert.Single(config.Services);
+                Assert.Equal("test-service", config.Services[0].LocalName);
+                Assert.Equal("TestService", config.Services[0].RemoteName);
+                Assert.Null(config.Services[0].ExecutableName);
+            }
+        }
     }
 }
 

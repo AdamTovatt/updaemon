@@ -153,7 +153,8 @@ namespace Updaemon.Commands
                 _outputWriter.WriteLine("Download complete");
 
                 // Find executable
-                string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, service.LocalName, cancellationToken);
+                string executableName = service.ExecutableName ?? service.LocalName;
+                string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, executableName, cancellationToken);
                 if (executablePath == null)
                 {
                     _outputWriter.WriteError($"Error: Could not find executable in {versionDirectory}");

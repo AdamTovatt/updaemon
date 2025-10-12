@@ -44,6 +44,7 @@ graph TB
         NewCmd[New Command]
         UpdateCmd[Update Command]
         SetRemoteCmd[Set Remote Command]
+        SetExecNameCmd[Set Exec Name Command]
         DistInstallCmd[Dist Install Command]
         SecretSetCmd[Secret Set Command]
     end
@@ -77,6 +78,7 @@ graph TB
     Executor --> NewCmd
     Executor --> UpdateCmd
     Executor --> SetRemoteCmd
+    Executor --> SetExecNameCmd
     Executor --> DistInstallCmd
     Executor --> SecretSetCmd
     
@@ -223,12 +225,14 @@ graph TD
     New{new?}
     Update{update?}
     SetRemote{set-remote?}
+    SetExecName{set-exec-name?}
     DistInstall{dist-install?}
     SecretSet{secret-set?}
     
     NewAction[Create directory<br/>Generate systemd unit<br/>Register service<br/>Enable service]
     UpdateAction[Connect to plugin<br/>Check versions<br/>Download if newer<br/>Update symlink<br/>Restart service]
     SetRemoteAction[Update remote name<br/>in config.json]
+    SetExecNameAction[Update executable name<br/>in config.json]
     DistInstallAction[Download plugin<br/>Make executable<br/>Save to plugins dir<br/>Update config]
     SecretSetAction[Add/update secret<br/>in secrets.txt]
     
@@ -242,7 +246,9 @@ graph TD
     Update -->|Yes| UpdateAction
     Update -->|No| SetRemote
     SetRemote -->|Yes| SetRemoteAction
-    SetRemote -->|No| DistInstall
+    SetRemote -->|No| SetExecName
+    SetExecName -->|Yes| SetExecNameAction
+    SetExecName -->|No| DistInstall
     DistInstall -->|Yes| DistInstallAction
     DistInstall -->|No| SecretSet
     SecretSet -->|Yes| SecretSetAction
@@ -251,6 +257,7 @@ graph TD
     NewAction --> Success
     UpdateAction --> Success
     SetRemoteAction --> Success
+    SetExecNameAction --> Success
     DistInstallAction --> Success
     SecretSetAction --> Success
 ```
@@ -383,6 +390,21 @@ Sets the remote name used when querying the distribution service for a specific 
 sudo updaemon set-remote word-library-api FastPackages.WordLibraryApi
 ```
 
+### `updaemon set-exec-name <app-name> <executable-name>`
+
+Sets the executable name for a specific app. This is useful when the actual executable name differs from the service name (e.g., service name is `pg-backup-agent` but executable is `PgBackupAgent`).
+
+Use `-` as the executable name to clear this setting and revert to using the local name.
+
+**Examples:**
+```bash
+# Set executable name
+sudo updaemon set-exec-name pg-backup-agent PgBackupAgent
+
+# Clear executable name (revert to using local name)
+sudo updaemon set-exec-name pg-backup-agent -
+```
+
 ### `updaemon dist-install <url>`
 
 Downloads and installs a distribution service plugin from a URL.
@@ -437,11 +459,14 @@ sudo updaemon secret-set tenantId 550e8400-e29b-41d4-a716-446655440000
   "services": [
     {
       "localName": "word-library-api",
-      "remoteName": "FastPackages.WordLibraryApi"
+      "remoteName": "FastPackages.WordLibraryApi",
+      "executableName": "WordLibraryApi"
     }
   ]
 }
 ```
+
+**Note:** The `executableName` field is optional. If not specified, the `localName` is used when searching for the executable.
 
 ### /var/lib/updaemon/secrets.txt
 

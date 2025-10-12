@@ -69,6 +69,7 @@ namespace Updaemon
             services.AddSingleton<NewCommand>();
             services.AddSingleton<UpdateCommand>();
             services.AddSingleton<SetRemoteCommand>();
+            services.AddSingleton<SetExecNameCommand>();
             services.AddSingleton<DistInstallCommand>();
             services.AddSingleton<SecretSetCommand>();
 
