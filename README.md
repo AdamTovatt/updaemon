@@ -285,7 +285,7 @@ After installing Updaemon you can invoke it with `updaemon` and additional comma
 To install a ditribution plugin you can run `updaemon dist-install [url]` with the `[url]` replaced by an actual url to a downloadable plugin. For example, if you want to be able to automatically update from GitHub releases you can install the plugin for that like this:
 
 ```bash
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.1.0/Updaemon.GithubDistributionService
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
 ```bash
@@ -415,7 +415,7 @@ Downloads and installs a distribution service plugin from a URL.
 
 **Example:**
 ```bash
-sudo updaemon dist-install https://example.com/plugins/byteshelf-dist
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
 ### `updaemon secret-set <key> <value>`

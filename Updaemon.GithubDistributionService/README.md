@@ -17,31 +17,10 @@ This plugin enables Updaemon to download and manage applications distributed via
 
 ## Installation
 
-### Building from Source
+> [!NOTE] If the pre built version is not the correct one for the system you're using you might have to build it from source.
 
 ```bash
-# Navigate to the project directory
-cd Updaemon.GithubDistributionService
-
-# Publish as AOT-compiled executable for Linux
-dotnet publish -c Release
-
-# The executable will be in: bin/Release/net8.0/linux-x64/publish/
-```
-
-### Installing the Plugin
-
-```bash
-# Install directly from a URL (if hosted)
-sudo updaemon dist-install https://example.com/updaemon-github-plugin
-
-# Or copy the built executable manually
-sudo cp bin/Release/net8.0/linux-x64/publish/Updaemon.GithubDistributionService /var/lib/updaemon/plugins/github-dist
-sudo chmod +x /var/lib/updaemon/plugins/github-dist
-
-# Update updaemon config to use this plugin
-# Edit /var/lib/updaemon/config.json and set:
-# "distributionPluginPath": "/var/lib/updaemon/plugins/github-dist"
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
 ## Configuration
@@ -50,11 +29,10 @@ sudo chmod +x /var/lib/updaemon/plugins/github-dist
 
 GitHub tokens are optional but highly recommended to avoid rate limits and access private repositories.
 
-```bash
-# Create a GitHub Personal Access Token at:
-# https://github.com/settings/tokens
+Create a GitHub Personal Access Token at:
+https://github.com/settings/tokens
 
-# Set the token in updaemon
+```bash
 sudo updaemon secret-set githubToken ghp_your_token_here
 ```
 
