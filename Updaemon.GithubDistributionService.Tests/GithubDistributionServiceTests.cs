@@ -1,4 +1,5 @@
 using Updaemon.Common;
+using Updaemon.Common.Utilities;
 using Updaemon.GithubDistributionService.Interfaces;
 using Updaemon.GithubDistributionService.Models;
 
