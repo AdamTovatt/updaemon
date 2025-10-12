@@ -145,6 +145,9 @@ sequenceDiagram
     UpdateCmd->>FileSystem: Find executable in /opt/app-name/1.1.0/
     FileSystem-->>UpdateCmd: /opt/app-name/1.1.0/app-name
     
+    UpdateCmd->>FileSystem: Set file permissions (chmod +x, chmod -R a+rX)
+    FileSystem-->>UpdateCmd: Permissions configured
+    
     UpdateCmd->>FileSystem: Update symlink /opt/app-name/current
     FileSystem-->>UpdateCmd: Symlink updated
     
@@ -322,8 +325,9 @@ The update process:
 1. Connects to the distribution plugin
 2. Checks the latest available version
 3. Downloads the new version to `/opt/my-api/<version>/`
-4. Updates the symlink `/opt/my-api/current`
-5. Restarts the service
+4. Sets file permissions (makes executable and sets directory access)
+5. Updates the symlink `/opt/my-api/current`
+6. Restarts the service
 
 ### Running Periodic Updates
 

@@ -15,6 +15,7 @@ namespace Updaemon.Tests.Commands
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -24,7 +25,8 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor
+                versionExtractor,
+                filePermissionManager
             );
 
             await command.ExecuteAsync();
@@ -45,6 +47,7 @@ namespace Updaemon.Tests.Commands
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -54,7 +57,8 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor
+                versionExtractor,
+                filePermissionManager
             );
 
             await command.ExecuteAsync("non-existent-service");
@@ -75,6 +79,7 @@ namespace Updaemon.Tests.Commands
             MockExecutableDetector executableDetector = new MockExecutableDetector();
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -84,7 +89,8 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor
+                versionExtractor,
+                filePermissionManager
             );
 
             await command.ExecuteAsync();
@@ -110,6 +116,7 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -119,7 +126,8 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor
+                versionExtractor,
+                filePermissionManager
             );
 
             await command.ExecuteAsync("my-api");
@@ -147,6 +155,7 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("Service2", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -156,7 +165,8 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor
+                versionExtractor,
+                filePermissionManager
             );
 
             await command.ExecuteAsync();
@@ -188,6 +198,8 @@ namespace Updaemon.Tests.Commands
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -197,6 +209,7 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
+                filePermissionManager,
                 serviceBaseDirectory
             );
 
@@ -240,6 +253,8 @@ namespace Updaemon.Tests.Commands
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -249,6 +264,7 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
+                filePermissionManager,
                 serviceBaseDirectory
             );
 
@@ -290,6 +306,8 @@ namespace Updaemon.Tests.Commands
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -299,6 +317,7 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
+                filePermissionManager,
                 serviceBaseDirectory
             );
 
@@ -339,6 +358,8 @@ namespace Updaemon.Tests.Commands
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -348,6 +369,7 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
+                filePermissionManager,
                 serviceBaseDirectory
             );
 
@@ -387,6 +409,8 @@ namespace Updaemon.Tests.Commands
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
             versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+
             UpdateCommand command = new UpdateCommand(
                 configManager,
                 secretsManager,
@@ -396,6 +420,7 @@ namespace Updaemon.Tests.Commands
                 distributionClient,
                 new MockOutputWriter(),
                 versionExtractor,
+                filePermissionManager,
                 serviceBaseDirectory
             );
 
@@ -424,6 +449,7 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -433,7 +459,8 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor
+                versionExtractor,
+                filePermissionManager
             );
 
             await command.ExecuteAsync("my-api");
@@ -462,6 +489,7 @@ namespace Updaemon.Tests.Commands
             distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
             MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
             UpdateCommand command = new UpdateCommand(
                 configManager,
@@ -471,7 +499,8 @@ namespace Updaemon.Tests.Commands
                 executableDetector,
                 distributionClient,
                 new MockOutputWriter(),
-                versionExtractor
+                versionExtractor,
+                filePermissionManager
             );
 
             await command.ExecuteAsync("my-api");
@@ -480,6 +509,61 @@ namespace Updaemon.Tests.Commands
             Assert.NotNull(distributionClient.InitializedSecrets);
             Assert.Contains("apiKey=abc123", distributionClient.InitializedSecrets);
             Assert.Contains("tenantId=550e8400", distributionClient.InitializedSecrets);
+        }
+
+        [Fact]
+        public async Task UpdateService_SetsFilePermissions()
+        {
+            string serviceBaseDirectory = "/opt";
+
+            MockConfigManager configManager = new MockConfigManager();
+            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
+            await configManager.RegisterServiceAsync("my-api", "MyApi");
+
+            MockSecretsManager secretsManager = new MockSecretsManager();
+            MockServiceManager serviceManager = new MockServiceManager();
+            serviceManager.ServiceExistsStates["my-api"] = true;
+            serviceManager.ServiceRunningStates["my-api"] = true;
+
+            MockSymlinkManager symlinkManager = new MockSymlinkManager();
+            string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
+            string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
+            symlinkManager.Symlinks[currentSymlink] = oldExecutable;
+
+            MockExecutableDetector executableDetector = new MockExecutableDetector();
+            string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
+            string newExecutable = Path.Combine(newVersionDirectory, "my-api");
+            executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
+
+            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+            distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+
+            UpdateCommand command = new UpdateCommand(
+                configManager,
+                secretsManager,
+                serviceManager,
+                symlinkManager,
+                executableDetector,
+                distributionClient,
+                new MockOutputWriter(),
+                versionExtractor,
+                filePermissionManager,
+                serviceBaseDirectory
+            );
+
+            await command.ExecuteAsync("my-api");
+
+            // Should set executable permissions on the downloaded executable
+            Assert.Contains(newExecutable, filePermissionManager.ExecutablePermissionsCalls);
+
+            // Should set directory permissions on the service directory
+            string expectedServiceDirectory = Path.Combine(serviceBaseDirectory, "my-api");
+            Assert.Contains(expectedServiceDirectory, filePermissionManager.DirectoryPermissionsCalls);
         }
     }
 }

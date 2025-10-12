@@ -16,6 +16,7 @@ namespace Updaemon.Commands
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IOutputWriter _outputWriter;
         private readonly IVersionExtractor _versionExtractor;
+        private readonly IFilePermissionManager _filePermissionManager;
         private readonly string _serviceBaseDirectory;
 
         public UpdateCommand(
@@ -26,7 +27,8 @@ namespace Updaemon.Commands
             IExecutableDetector executableDetector,
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
-            IVersionExtractor versionExtractor)
+            IVersionExtractor versionExtractor,
+            IFilePermissionManager filePermissionManager)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
@@ -36,6 +38,7 @@ namespace Updaemon.Commands
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
             _versionExtractor = versionExtractor;
+            _filePermissionManager = filePermissionManager;
             _serviceBaseDirectory = "/opt";
         }
 
@@ -48,6 +51,7 @@ namespace Updaemon.Commands
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
             IVersionExtractor versionExtractor,
+            IFilePermissionManager filePermissionManager,
             string serviceBaseDirectory)
         {
             _configManager = configManager;
@@ -58,6 +62,7 @@ namespace Updaemon.Commands
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
             _versionExtractor = versionExtractor;
+            _filePermissionManager = filePermissionManager;
             _serviceBaseDirectory = serviceBaseDirectory;
         }
 
@@ -162,6 +167,11 @@ namespace Updaemon.Commands
                 }
 
                 _outputWriter.WriteLine($"Found executable: {executablePath}");
+
+                // Set file permissions
+                await _filePermissionManager.SetExecutablePermissionsAsync(executablePath, cancellationToken);
+                string serviceDirectory = Path.Combine(_serviceBaseDirectory, service.LocalName);
+                await _filePermissionManager.SetDirectoryPermissionsAsync(serviceDirectory, cancellationToken);
 
                 // Update symlink
                 string symlinkPath = Path.Combine(_serviceBaseDirectory, service.LocalName, "current");
