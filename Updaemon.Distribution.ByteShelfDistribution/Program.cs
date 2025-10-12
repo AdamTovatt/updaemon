@@ -1,10 +1,17 @@
-﻿namespace Updaemon.Distribution.ByteShelfDistribution
+﻿using Updaemon.Common.Hosting;
+using Updaemon.Common.Utilities;
+
+namespace Updaemon.Distribution.ByteShelfDistribution
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Console.WriteLine("Hello, World!");
+            ByteShelfDistributionService service = new ByteShelfDistributionService(
+                new VersionParser(),
+                new DownloadPostProcessor());
+
+            await DistributionServiceHost.RunAsync(args, service);
         }
     }
 }
