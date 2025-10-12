@@ -104,38 +104,38 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task FindExecutableAsync_InvalidUpdaemonJson_FallsBackToSearch()
+        public async Task FindExecutableAsync_InvalidUpdaemonJson_ThrowsException()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 string serviceDirectory = tempHelper.CreateTempDirectory("service");
-                string executablePath = tempHelper.CreateTempFile("service/my-service", "");
+                tempHelper.CreateTempFile("service/my-service", "");
                 tempHelper.CreateTempFile("service/updaemon.json", "invalid json {{{");
 
                 ExecutableDetector detector = new ExecutableDetector();
 
-                string? result = await detector.FindExecutableAsync(serviceDirectory, "my-service");
+                InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => detector.FindExecutableAsync(serviceDirectory, "my-service"));
 
-                Assert.NotNull(result);
-                Assert.Equal(Path.GetFullPath(executablePath), Path.GetFullPath(result));
+                Assert.Contains("Failed to parse updaemon.json", exception.Message);
             }
         }
 
         [Fact]
-        public async Task FindExecutableAsync_UpdateaemonJsonWithNonExistentPath_FallsBackToSearch()
+        public async Task FindExecutableAsync_UpdateaemonJsonWithNonExistentPath_ThrowsException()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 string serviceDirectory = tempHelper.CreateTempDirectory("service");
-                string executablePath = tempHelper.CreateTempFile("service/my-service", "");
+                tempHelper.CreateTempFile("service/my-service", "");
                 tempHelper.CreateTempFile("service/updaemon.json", "{\"executablePath\":\"bin/nonexistent\"}");
 
                 ExecutableDetector detector = new ExecutableDetector();
 
-                string? result = await detector.FindExecutableAsync(serviceDirectory, "my-service");
+                FileNotFoundException exception = await Assert.ThrowsAsync<FileNotFoundException>(
+                    () => detector.FindExecutableAsync(serviceDirectory, "my-service"));
 
-                Assert.NotNull(result);
-                Assert.Equal(Path.GetFullPath(executablePath), Path.GetFullPath(result));
+                Assert.Contains("Executable specified in updaemon.json not found", exception.Message);
             }
         }
 
@@ -168,6 +168,23 @@ namespace Updaemon.Tests.Services
                 ExecutableDetector detector = new ExecutableDetector();
 
                 string? result = await detector.FindExecutableAsync(serviceDirectory, "myservice");
+
+                Assert.NotNull(result);
+                Assert.Equal(Path.GetFullPath(executablePath), Path.GetFullPath(result));
+            }
+        }
+
+        [Fact]
+        public async Task FindExecutableAsync_ExecutableNameWithDots_FindsExecutable()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceDirectory = tempHelper.CreateTempDirectory("service");
+                string executablePath = tempHelper.CreateTempFile("service/EasyReasy.KnowledgeBase.Web.Server", "");
+
+                ExecutableDetector detector = new ExecutableDetector();
+
+                string? result = await detector.FindExecutableAsync(serviceDirectory, "EasyReasy.KnowledgeBase.Web.Server");
 
                 Assert.NotNull(result);
                 Assert.Equal(Path.GetFullPath(executablePath), Path.GetFullPath(result));

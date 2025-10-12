@@ -21,23 +21,27 @@ namespace Updaemon.Services
             string configPath = Path.Combine(directoryPath, "updaemon.json");
             if (File.Exists(configPath))
             {
+                string configJson = await File.ReadAllTextAsync(configPath, cancellationToken);
+                
+                AppConfig? config;
                 try
                 {
-                    string configJson = await File.ReadAllTextAsync(configPath, cancellationToken);
-                    AppConfig? config = JsonSerializer.Deserialize(configJson, UpdaemonJsonContext.Default.AppConfig);
-
-                    if (config?.ExecutablePath != null)
-                    {
-                        string executablePath = Path.Combine(directoryPath, config.ExecutablePath);
-                        if (File.Exists(executablePath) && IsExecutable(executablePath))
-                        {
-                            return executablePath;
-                        }
-                    }
+                    config = JsonSerializer.Deserialize(configJson, UpdaemonJsonContext.Default.AppConfig);
                 }
-                catch
+                catch (JsonException ex)
                 {
-                    // If config parsing fails, fall back to searching
+                    throw new InvalidOperationException($"Failed to parse updaemon.json in {directoryPath}: {ex.Message}", ex);
+                }
+
+                if (config?.ExecutablePath != null)
+                {
+                    string executablePath = Path.Combine(directoryPath, config.ExecutablePath);
+                    if (!File.Exists(executablePath))
+                    {
+                        throw new FileNotFoundException($"Executable specified in updaemon.json not found: {executablePath}");
+                    }
+
+                    return executablePath;
                 }
             }
 
@@ -46,8 +50,7 @@ namespace Updaemon.Services
 
             // First, try exact name match
             string? exactMatch = files.FirstOrDefault(f =>
-                Path.GetFileNameWithoutExtension(f).Equals(serviceName, StringComparison.OrdinalIgnoreCase)
-                && IsExecutable(f));
+                Path.GetFileName(f).Equals(serviceName, StringComparison.OrdinalIgnoreCase));
 
             if (exactMatch != null)
             {
@@ -56,31 +59,9 @@ namespace Updaemon.Services
 
             // Then try partial name match
             string? partialMatch = files.FirstOrDefault(f =>
-                Path.GetFileNameWithoutExtension(f).Contains(serviceName, StringComparison.OrdinalIgnoreCase)
-                && IsExecutable(f));
+                Path.GetFileName(f).Contains(serviceName, StringComparison.OrdinalIgnoreCase));
 
             return partialMatch;
-        }
-
-        private bool IsExecutable(string filePath)
-        {
-            try
-            {
-                // On Linux, check if file has execute permission
-                // This is a simplified check; on Linux we'd need to use P/Invoke or similar
-                FileInfo fileInfo = new FileInfo(filePath);
-
-                // For now, consider files without extensions or common executable extensions as executable
-                string extension = fileInfo.Extension.ToLowerInvariant();
-                return string.IsNullOrEmpty(extension) ||
-                       extension == ".sh" ||
-                       extension == ".bin" ||
-                       !extension.Contains('.');
-            }
-            catch
-            {
-                return false;
-            }
         }
     }
 }
