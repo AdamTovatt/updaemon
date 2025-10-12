@@ -1,4 +1,4 @@
-using Updaemon.GithubDistributionService.Services;
+using Updaemon.Common.Utilities;
 
 namespace Updaemon.GithubDistributionService.Tests.Services
 {

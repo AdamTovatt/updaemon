@@ -49,6 +49,7 @@ namespace Updaemon.Common.Hosting
                     {
                         throw new ArgumentException("Pipe name cannot be empty");
                     }
+
                     return pipeName;
                 }
             }

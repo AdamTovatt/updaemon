@@ -1,4 +1,4 @@
-namespace Updaemon.GithubDistributionService.Interfaces
+namespace Updaemon.Common.Utilities
 {
     /// <summary>
     /// Parses version strings from GitHub release tag names.

@@ -1,8 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using Updaemon.GithubDistributionService.Interfaces;
 
-namespace Updaemon.GithubDistributionService.Services
+namespace Updaemon.Common.Utilities
 {
     /// <summary>
     /// Parses version strings from GitHub release tag names by extracting numeric components.
@@ -31,6 +30,7 @@ namespace Updaemon.GithubDistributionService.Services
                 {
                     versionBuilder.Append('.');
                 }
+
                 versionBuilder.Append(match.Value);
             }
 
