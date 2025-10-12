@@ -77,7 +77,12 @@ namespace Updaemon.Services
 
         public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
         {
-            object parameters = new { serviceName, version = version.ToString(), targetPath };
+            Dictionary<string, string> parameters = new Dictionary<string, string>
+            {
+                { "serviceName", serviceName },
+                { "version", version.ToString() },
+                { "targetPath", targetPath },
+            };
             await InvokeMethodAsync("DownloadVersionAsync", parameters, cancellationToken);
         }
 
