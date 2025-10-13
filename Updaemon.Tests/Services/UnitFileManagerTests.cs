@@ -25,7 +25,8 @@ namespace Updaemon.Tests.Services
                 Assert.Contains("[Install]", template);
                 Assert.Contains("{SERVICE_NAME}", template);
                 Assert.Contains("{DESCRIPTION}", template);
-                Assert.Contains("{EXECUTABLE_PATH}", template);
+                Assert.Contains("{WORKING_DIRECTORY}", template);
+                Assert.Contains("{EXECUTABLE_NAME}", template);
             }
             finally
             {
@@ -44,19 +45,22 @@ namespace Updaemon.Tests.Services
             {
                 UnitFileManager manager = new UnitFileManager(testDirectory);
                 string serviceName = "test-service";
-                string executablePath = "/opt/test-service/current";
+                string symlinkPath = "/opt/test-service/current";
+                string executableName = "test-service";
 
                 // Act
-                string result = await manager.ReadTemplateWithSubstitutionsAsync(serviceName, executablePath);
+                string result = await manager.ReadTemplateWithSubstitutionsAsync(serviceName, symlinkPath, executableName);
 
                 // Assert
                 Assert.NotEmpty(result);
                 Assert.Contains($"Description={serviceName} service managed by updaemon", result);
-                Assert.Contains($"ExecStart={executablePath}", result);
+                Assert.Contains($"WorkingDirectory={symlinkPath}", result);
+                Assert.Contains($"ExecStart={symlinkPath}/{executableName}", result);
                 Assert.Contains($"SyslogIdentifier={serviceName}", result);
                 Assert.DoesNotContain("{SERVICE_NAME}", result);
                 Assert.DoesNotContain("{DESCRIPTION}", result);
-                Assert.DoesNotContain("{EXECUTABLE_PATH}", result);
+                Assert.DoesNotContain("{WORKING_DIRECTORY}", result);
+                Assert.DoesNotContain("{EXECUTABLE_NAME}", result);
             }
             finally
             {

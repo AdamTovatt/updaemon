@@ -12,7 +12,7 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult(TemplateContent ?? string.Empty);
         }
 
-        public Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string executablePath, CancellationToken cancellationToken = default)
+        public Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(TemplateWithSubstitutions ?? string.Empty);
         }

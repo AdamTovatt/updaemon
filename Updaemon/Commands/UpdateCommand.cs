@@ -175,8 +175,8 @@ namespace Updaemon.Commands
 
                 // Update symlink
                 string symlinkPath = Path.Combine(_serviceBaseDirectory, service.LocalName, "current");
-                await _symlinkManager.CreateOrUpdateSymlinkAsync(symlinkPath, executablePath, cancellationToken);
-                _outputWriter.WriteLine($"Updated symlink: {symlinkPath} -> {executablePath}");
+                await _symlinkManager.CreateOrUpdateSymlinkAsync(symlinkPath, versionDirectory, cancellationToken);
+                _outputWriter.WriteLine($"Updated symlink: {symlinkPath} -> {versionDirectory}");
 
                 // Restart service
                 bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName, cancellationToken);

@@ -33,14 +33,15 @@ namespace Updaemon.Services
             return await File.ReadAllTextAsync(_templateFilePath, cancellationToken);
         }
 
-        public async Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string executablePath, CancellationToken cancellationToken = default)
+        public async Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default)
         {
             string template = await ReadTemplateAsync(cancellationToken);
 
             string result = template
                 .Replace("{SERVICE_NAME}", serviceName)
                 .Replace("{DESCRIPTION}", $"{serviceName} service managed by updaemon")
-                .Replace("{EXECUTABLE_PATH}", executablePath);
+                .Replace("{WORKING_DIRECTORY}", symlinkPath)
+                .Replace("{EXECUTABLE_NAME}", executableName);
 
             return result;
         }

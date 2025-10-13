@@ -445,7 +445,7 @@ sudo updaemon secret-set tenantId 550e8400-e29b-41d4-a716-446655440000
 │   └── <executable>
 ├── 1.1.0/                   # Version 1.1.0 files
 │   └── <executable>
-└── current -> 1.1.0/<exe>   # Symlink to current version
+└── current -> 1.1.0/        # Symlink to current version directory
 
 /etc/systemd/system/
 └── <service-name>.service   # systemd unit file
@@ -486,7 +486,8 @@ This file contains the systemd unit file template used when creating new service
 **Placeholders:**
 - `{SERVICE_NAME}` - The name of the service
 - `{DESCRIPTION}` - A description of the service
-- `{EXECUTABLE_PATH}` - The path to the executable (typically the symlink `/opt/<service>/current`)
+- `{WORKING_DIRECTORY}` - The working directory for the service (the symlink path `/opt/<service>/current`)
+- `{EXECUTABLE_NAME}` - The name of the executable file
 
 **Example:**
 ```ini
@@ -496,7 +497,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={EXECUTABLE_PATH}
+WorkingDirectory={WORKING_DIRECTORY}
+ExecStart={WORKING_DIRECTORY}/{EXECUTABLE_NAME}
 Restart=always
 RestartSec=10
 StandardOutput=journal

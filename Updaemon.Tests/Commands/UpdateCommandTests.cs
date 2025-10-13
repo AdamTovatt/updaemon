@@ -323,8 +323,8 @@ namespace Updaemon.Tests.Commands
 
             await command.ExecuteAsync("my-api");
 
-            // Should update symlink
-            string expectedCall = $"CreateOrUpdateSymlinkAsync:{currentSymlink}:{newExecutable}";
+            // Should update symlink to point to version directory (not executable file)
+            string expectedCall = $"CreateOrUpdateSymlinkAsync:{currentSymlink}:{newVersionDirectory}";
             Assert.Contains(symlinkManager.MethodCalls, call => call == expectedCall);
         }
 

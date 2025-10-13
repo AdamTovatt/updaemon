@@ -15,9 +15,10 @@ namespace Updaemon.Interfaces
         /// Reads the unit file template and substitutes placeholders with provided values.
         /// </summary>
         /// <param name="serviceName">The name of the service.</param>
-        /// <param name="executablePath">The path to the executable.</param>
+        /// <param name="symlinkPath">The path to the symlink directory.</param>
+        /// <param name="executableName">The name of the executable file.</param>
         /// <returns>The unit file content with substitutions applied.</returns>
-        Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string executablePath, CancellationToken cancellationToken = default);
+        Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default);
     }
 }
 
