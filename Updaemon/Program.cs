@@ -59,6 +59,7 @@ namespace Updaemon
             services.AddSingleton<IVersionExtractor, VersionExtractor>();
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
+            services.AddSingleton<ITimerManager, TimerManager>();
 
             // Distribution service client
             services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();
@@ -73,6 +74,7 @@ namespace Updaemon
             services.AddSingleton<SetExecNameCommand>();
             services.AddSingleton<DistInstallCommand>();
             services.AddSingleton<SecretSetCommand>();
+            services.AddSingleton<TimerCommand>();
 
             // Command executor
             services.AddSingleton<CommandExecutor>();
