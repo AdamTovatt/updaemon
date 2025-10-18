@@ -150,41 +150,6 @@ sudo updaemon timer -
 
 The timer command automatically creates and manages the necessary systemd service and timer files.
 
-### Manual Setup (Advanced)
-
-For advanced users who need custom scheduling, you can manually create the systemd files:
-
-```bash
-# Create timer unit file
-sudo cat > /etc/systemd/system/updaemon.timer <<EOF
-[Unit]
-Description=Run updaemon update periodically
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-# Create service unit file
-sudo cat > /etc/systemd/system/updaemon.service <<EOF
-[Unit]
-Description=Updaemon update service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/updaemon update
-EOF
-
-# Enable and start the timer
-sudo systemctl enable updaemon.timer
-sudo systemctl start updaemon.timer
-```
-
-This will check for updates every hour. You can change `OnCalendar=hourly` to any schedule you prefer (e.g., `daily`, `weekly`, `*-*-* 02:00:00` for 2 AM daily).
-
 ## CLI Commands
 
 ### `updaemon new <app-name>`
