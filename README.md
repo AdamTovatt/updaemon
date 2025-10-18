@@ -127,38 +127,28 @@ The update process:
 
 ## Scheduling Updates
 
-Set up automatic updates to run on a schedule:
+Set up automatic updates to run on a schedule using the built-in timer command:
 
 ```bash
-# Create timer unit file
-sudo cat > /etc/systemd/system/updaemon.timer <<EOF
-[Unit]
-Description=Run updaemon update periodically
+# Set timer to run every 10 minutes
+sudo updaemon timer 10m
 
-[Timer]
-OnCalendar=hourly
-Persistent=true
+# Set timer to run every hour
+sudo updaemon timer 1h
 
-[Install]
-WantedBy=timers.target
-EOF
+# Check current timer status
+sudo updaemon timer
 
-# Create service unit file
-sudo cat > /etc/systemd/system/updaemon.service <<EOF
-[Unit]
-Description=Updaemon update service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/updaemon update
-EOF
-
-# Enable and start the timer
-sudo systemctl enable updaemon.timer
-sudo systemctl start updaemon.timer
+# Disable automatic updates
+sudo updaemon timer -
 ```
 
-This will check for updates every hour. You can change `OnCalendar=hourly` to any schedule you prefer (e.g., `daily`, `weekly`, `*-*-* 02:00:00` for 2 AM daily).
+**Supported time formats:**
+- `30s` - 30 seconds
+- `5m` - 5 minutes  
+- `1h` - 1 hour
+
+The timer command automatically creates and manages the necessary systemd service and timer files.
 
 ## CLI Commands
 
@@ -223,6 +213,26 @@ Sets a secret key-value pair for the distribution service.
 sudo updaemon secret-set apiKey abc123xyz
 sudo updaemon secret-set tenantId 550e8400-e29b-41d4-a716-446655440000
 ```
+
+### `updaemon timer [interval]`
+
+Manages automatic update scheduling using systemd timers.
+
+**Examples:**
+```bash
+sudo updaemon timer 10m          # Set timer to run every 10 minutes
+sudo updaemon timer 30s          # Set timer to run every 30 seconds
+sudo updaemon timer 1h           # Set timer to run every hour
+sudo updaemon timer              # Show current timer status
+sudo updaemon timer -            # Disable automatic timer
+```
+
+**Supported time formats:**
+- `30s` - 30 seconds
+- `5m` - 5 minutes  
+- `1h` - 1 hour
+
+The timer will automatically run `updaemon update` at the specified interval.
 
 [↑ Back to top](#updaemon)
 

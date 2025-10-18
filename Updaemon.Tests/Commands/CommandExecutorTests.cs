@@ -99,6 +99,8 @@ namespace Updaemon.Tests.Commands
             DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
             SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
+            TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
+
             CommandExecutor executor = new CommandExecutor(
                 newCommand,
                 updateCommand,
@@ -106,6 +108,7 @@ namespace Updaemon.Tests.Commands
                 setExecNameCommand,
                 distInstallCommand,
                 secretSetCommand,
+                timerCommand,
                 outputWriter
             );
 
@@ -158,6 +161,8 @@ namespace Updaemon.Tests.Commands
             DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
             SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
+            TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
+
             return new CommandExecutor(
                 newCommand,
                 updateCommand,
@@ -165,6 +170,7 @@ namespace Updaemon.Tests.Commands
                 setExecNameCommand,
                 distInstallCommand,
                 secretSetCommand,
+                timerCommand,
                 outputWriter
             );
         }

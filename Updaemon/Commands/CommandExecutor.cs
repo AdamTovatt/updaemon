@@ -13,6 +13,7 @@ namespace Updaemon.Commands
         private readonly SetExecNameCommand _setExecNameCommand;
         private readonly DistInstallCommand _distInstallCommand;
         private readonly SecretSetCommand _secretSetCommand;
+        private readonly TimerCommand _timerCommand;
         private readonly IOutputWriter _outputWriter;
 
         public CommandExecutor(
@@ -22,6 +23,7 @@ namespace Updaemon.Commands
             SetExecNameCommand setExecNameCommand,
             DistInstallCommand distInstallCommand,
             SecretSetCommand secretSetCommand,
+            TimerCommand timerCommand,
             IOutputWriter outputWriter)
         {
             _newCommand = newCommand;
@@ -30,6 +32,7 @@ namespace Updaemon.Commands
             _setExecNameCommand = setExecNameCommand;
             _distInstallCommand = distInstallCommand;
             _secretSetCommand = secretSetCommand;
+            _timerCommand = timerCommand;
             _outputWriter = outputWriter;
         }
 
@@ -108,6 +111,11 @@ namespace Updaemon.Commands
                         await _secretSetCommand.ExecuteAsync(args[1], args[2], cancellationToken);
                         return 0;
 
+                    case "timer":
+                        string? interval = args.Length > 1 ? args[1] : null;
+                        await _timerCommand.ExecuteAsync(interval, cancellationToken);
+                        return 0;
+
                     default:
                         _outputWriter.WriteError($"Error: Unknown command '{command}'");
                         PrintUsage();
@@ -132,6 +140,7 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine("  updaemon set-exec-name <app> <exec-name>  Set executable name for a service");
             _outputWriter.WriteLine("  updaemon dist-install <url>               Install a distribution service plugin");
             _outputWriter.WriteLine("  updaemon secret-set <key> <value>         Set a distribution service secret");
+            _outputWriter.WriteLine("  updaemon timer [interval]                 Manage automatic update timer");
             _outputWriter.WriteLine("");
             _outputWriter.WriteLine("Examples:");
             _outputWriter.WriteLine("  updaemon new my-api");
@@ -142,6 +151,9 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine("  updaemon set-exec-name my-api -");
             _outputWriter.WriteLine("  updaemon dist-install https://example.com/plugin");
             _outputWriter.WriteLine("  updaemon secret-set apiKey abc123");
+            _outputWriter.WriteLine("  updaemon timer 10m");
+            _outputWriter.WriteLine("  updaemon timer 1h");
+            _outputWriter.WriteLine("  updaemon timer -");
         }
     }
 }
