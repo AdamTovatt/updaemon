@@ -4,9 +4,13 @@
   <img src="Icons/1024w/Updaemon.png" alt="Updaemon Logo" width="128" height="128">
 </div>
 
-**Keep your Linux services and applications automatically up to date**
+**Updaemon is a simple command line tool that helps you manage and update services and applications on Linux systems.**
 
-Updaemon is a simple tool that automatically updates your services and applications on Linux systems. It works with any distribution source (GitHub releases, custom servers, etc.) and handles the entire update process - from checking for new versions to restarting your services.
+For example: use `updaemon new my-service` to create a new systemctl service that is managed by Updaemon.
+
+Then use `updaemon update` to check for new releases of all your services and update them automatically using symlinks to ensure zero downtime.
+
+Updaemon is extremely easy to [install](#getting-started) and works with any release distribution source (GitHub releases, custom servers, etc.). It handles the entire update process - from checking for new versions to restarting your services.
 
 ## What Updaemon Does
 
@@ -22,7 +26,7 @@ Updaemon makes it easy to keep your applications and services up to date on Linu
 ## Table of Contents
 
 **Getting Started:**
-- [Installation](#installation)
+- [Installation](#getting-started)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
 
@@ -35,6 +39,19 @@ Updaemon makes it easy to keep your applications and services up to date on Linu
 - [Creating Distribution Plugins](#creating-distribution-plugins)
 - [System Architecture](#system-architecture)
 - [Architecture Decisions](#architecture-decisions)
+
+## Getting Started
+### Installation
+To install Updaemon, run the following command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
+```
+
+That's it! You can now use the `updaemon` command.
+
+> [!TIP]
+> Running the command `updaemon` without anything more will show a help section that explains usage.
 
 ## Quick Start
 
@@ -63,18 +80,7 @@ Get up and running in minutes:
 
 That's it! Your service is now managed by Updaemon and will be automatically updated.
 
-## Installation
-To install Updaemon, run the following command:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
-```
-
-That's it!
-
 ## Usage
-
-After installing Updaemon you can invoke it with `updaemon` and additional commands / parameters. Running just `updaemon` without anything more will show a help section that explains how to use it. Or, you can read on here of course.
 
 ### Install a distribution plugin
 
