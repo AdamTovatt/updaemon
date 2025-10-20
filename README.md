@@ -6,11 +6,11 @@
 
 **Updaemon is a simple command line tool that helps you manage and update services and applications on Linux systems.**
 
-For example: use `updaemon new my-service` to create a new systemctl service that is managed by Updaemon.
+For example: use `updaemon new my-service` to create a new systemctl service called `my-service` that is managed by Updaemon.
 
-Then use `updaemon update` to check for new releases of all your services and update them automatically using symlinks to ensure zero downtime.
+Then use `updaemon update` to check for new releases for all your services and update them automatically using symlinks to ensure zero downtime.
 
-Updaemon is extremely easy to [install](#getting-started) and works with any release distribution source (GitHub releases, custom servers, etc.). It handles the entire update process - from checking for new versions to restarting your services.
+Updaemon is extremely easy to [install](#getting-started) and can use any release distribution source (GitHub releases, custom servers, etc.). It handles the entire update process - from checking for new versions to restarting your services.
 
 ## What Updaemon Does
 
@@ -26,8 +26,8 @@ Updaemon makes it easy to keep your applications and services up to date on Linu
 ## Table of Contents
 
 **Getting Started:**
-- [Installation](#getting-started)
-- [Quick Start](#quick-start)
+- [Installing Updaemon](#getting-started)
+- [Installing a Distribution Plugin](#installing-a-distribution-plugin)
 - [Usage](#usage)
 
 **User Guide:**
@@ -53,123 +53,69 @@ That's it! You can now use the `updaemon` command.
 > [!TIP]
 > Running the command `updaemon` without anything more will show a help section that explains usage.
 
-## Quick Start
+### Installing a Distribution Plugin
 
-Get up and running in minutes:
+> [!NOTE]
+> A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases). You need to install at least one distribution plugin to use Updaemon.
 
-1. **Install Updaemon:**
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
-   ```
-
-2. **Install a distribution plugin (e.g., GitHub):**
-   ```bash
-   sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
-   ```
-
-3. **Add your first service:**
-   ```bash
-   sudo updaemon new my-app
-   sudo updaemon set-remote my-app your-org/your-repo
-   ```
-
-4. **Update your service:**
-   ```bash
-   sudo updaemon update my-app
-   ```
-
-That's it! Your service is now managed by Updaemon and will be automatically updated.
-
-## Usage
-
-### Install a distribution plugin
-
-To install a ditribution plugin you can run `updaemon dist-install [url]` with the `[url]` replaced by an actual url to a downloadable plugin. For example, if you want to be able to automatically update from GitHub releases you can install the plugin for that like this:
+To install a distribution plugin, run `updaemon dist-install` with the URL of the plugin you want to install. For example, to install the GitHub distribution plugin, run:
 
 ```bash
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
+### Configuring Secrets For Distribution Plugins
+
+Some distribution plugins might require secrets to run. For example, if you have a private GitHub repository, you need to provide a GitHub token. You can set secrets using the `updaemon secret-set` command. For example, to set a GitHub token, run:
+
 ```bash
 sudo updaemon secret-set githubToken your-github-token-here
 ```
 
-> [!NOTE]
+Here, the key is `githubToken` and the value should be your actual GitHub token. The name of the secret key depends on the distribution plugin you are using, so refer to the plugin's documentation to see what secrets are required if any.
+
+> [!TIP]
 > Setting a github token is not required for public repositories. It is required for private repositories and if you want to make frequent requests without being rate limited.
 
-### Create a New Service
+## Usage
+Once you have Updaemon installed and a distribution plugin set up, you can start managing your services.
 
-```bash
-# Create a new managed service
-sudo updaemon new my-api
+See the [`CLI commands`](#cli-commands) section below for a full list of available commands.
 
-# Optionally set a different remote name
-sudo updaemon set-remote my-api Prod.MyApi
-```
-
-This will:
-- Create `/opt/my-api/` directory
-- Generate systemd unit file at `/etc/systemd/system/my-api.service`
-- Enable the service
-- Register it in updaemon's configuration
-
-### Update Services
-
-```bash
-# Update all registered services
-sudo updaemon update
-
-# Update a specific service
-sudo updaemon update my-api
-```
-
-The update process:
-1. Connects to the distribution plugin
-2. Checks the latest available version
-3. Downloads the new version to `/opt/my-api/<version>/`
-4. Sets file permissions (makes executable and sets directory access)
-5. Updates the symlink `/opt/my-api/current`
-6. Restarts the service
-
-## Scheduling Updates
-
-Set up automatic updates to run on a schedule using the built-in timer command:
-
-```bash
-# Set timer to run every 10 minutes
-sudo updaemon timer 10m
-
-# Set timer to run every hour
-sudo updaemon timer 1h
-
-# Check current timer status
-sudo updaemon timer
-
-# Disable automatic updates
-sudo updaemon timer -
-```
-
-**Supported time formats:**
-- `30s` - 30 seconds
-- `5m` - 5 minutes  
-- `1h` - 1 hour
-
-The timer command automatically creates and manages the necessary systemd service and timer files.
+See the [`ServiceExample.md`](ServiceExample.md) for a complete example of setting up a simple service.
 
 ## CLI Commands
 
-### `updaemon new <app-name>`
+In this section you will find all available `updaemon` commands.
 
-Creates a new managed service with the specified name.
+An argument in angle brackets (`< >`) indicates a required parameter, while square brackets (`[ ]`) indicate an optional parameter.
 
-**Example:**
+Commands that change files in the system usually require `sudo` to run.
+
+| Command | Description |
+| --- | --- |
+| [new](#new-command) | Create a new managed service. |
+| [update](#update-command) | Update all or a specific service to the latest version. |
+| [set-remote](#set-remote-command) | Set the remote name used by the distribution plugin. |
+| [set-exec-name](#set-exec-command) | Set or clear the executable name for a service. |
+| [dist-install](#dist-install-command) | Download and install a distribution plugin. |
+| [secret-set](#secret-set-command) | Set a secret key-value pair for plugins. |
+| [timer](#timer-command) | Manage automatic update scheduling using systemd timers. |
+
+### New Command
 ```bash
-sudo updaemon new word-library-api
+updaemon new <app-name>
 ```
 
-### `updaemon update [app-name]`
+Creates a new managed service with the specified name. Should be run with `sudo`.
 
-Updates all services or a specific service to the latest available version.
+### Update Command 
+
+```bash
+updaemon update [app-name]
+```
+
+Updates all services or a specific service to the latest available version. Should be run with `sudo`.
 
 **Examples:**
 ```bash
@@ -177,31 +123,46 @@ sudo updaemon update                    # Update all services
 sudo updaemon update word-library-api   # Update specific service
 ```
 
-### `updaemon set-remote <app-name> <remote-name>`
+### Set-Remote Command
 
-Sets the remote name used when querying the distribution service for a specific app.
+```bash
+updaemon set-remote <app-name> <remote-name>
+```
+
+Sets the remote name used when querying a distribution service (plugin) for a specific app. The remote name is the name required by the distribution service to find the right file. By default, Updaemon uses the local app name (service name) as the remote name but adding a remote name might often be necessary depending on the distribution service used.
+
+For example, consider a service called `my-api` that is published to GitHub releases. The GitHub distribution service can't know exactly which repository to look for just from the local service name. Therefore, you need to set the remote name to the GitHub repository name, e.g., `user-name/repo-name`.
 
 **Example:**
 ```bash
-sudo updaemon set-remote word-library-api FastPackages.WordLibraryApi
+sudo updaemon set-remote my-api user-name/repo-name
+```
+> [!NOTE]
+> The remote name format depends on the distribution service used. Refer to the documentation of the specific distribution plugin for details on how to format the remote name. The example above is for the GitHub distribution service.
+
+### Set-Exec Command
+
+```
+updaemon set-exec-name <app-name> <executable-name>
 ```
 
-### `updaemon set-exec-name <app-name> <executable-name>`
+Sets the executable name for a specific app. This is useful when the actual executable name differs from the service name (e.g., service name is `my-api` but executable is `MyApi`).
 
-Sets the executable name for a specific app. This is useful when the actual executable name differs from the service name (e.g., service name is `pg-backup-agent` but executable is `PgBackupAgent`).
-
-Use `-` as the executable name to clear this setting and revert to using the local name.
+Use `-` as the executable name to clear this setting and revert to using the local service name.
 
 **Examples:**
 ```bash
 # Set executable name
-sudo updaemon set-exec-name pg-backup-agent PgBackupAgent
+sudo updaemon set-exec-name my-api MyApi
 
-# Clear executable name (revert to using local name)
-sudo updaemon set-exec-name pg-backup-agent -
+# Clear executable name
+sudo updaemon set-exec-name my-api -
 ```
 
-### `updaemon dist-install <url>`
+#### Dist-Install Command
+```bash
+updaemon dist-install <url>
+```
 
 Downloads and installs a distribution service plugin from a URL.
 
@@ -210,17 +171,21 @@ Downloads and installs a distribution service plugin from a URL.
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
-### `updaemon secret-set <key> <value>`
+#### Secret-Set Command
+`updaemon secret-set <key> <value>`
 
 Sets a secret key-value pair for the distribution service.
+For example, if you're using a private GitHub repository, you will need to specify a GitHub token so that the distribution plugin is actually allowed to access the repository.
 
 **Example:**
 ```bash
-sudo updaemon secret-set apiKey abc123xyz
-sudo updaemon secret-set tenantId 550e8400-e29b-41d4-a716-446655440000
+sudo updaemon secret-set githubToken your-github-token-here
 ```
 
-### `updaemon timer [interval]`
+#### Timer Command
+```bash
+updaemon timer [interval]
+```
 
 Manages automatic update scheduling using systemd timers.
 
