@@ -1,10 +1,10 @@
-[![tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
-
-# Updaemon
+# Updaemon 
 
 <div align="center">
   <img src="Icons/1024w/Updaemon.png" alt="Updaemon Logo" width="128" height="128">
 </div>
+
+[![tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
 
 **Updaemon is a simple command line tool that helps you manage and update services and applications on Linux systems.**
 
