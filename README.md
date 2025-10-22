@@ -1,3 +1,5 @@
+[![tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
+
 # Updaemon
 
 <div align="center">
