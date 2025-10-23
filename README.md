@@ -682,6 +682,26 @@ graph TD
 
 [↑ Back to top](#updaemon)
 
+## High Level Overview
+
+```mermaid
+graph TD
+    A([Wait / Sleep for a while])
+    subgraph Distribution Plugin
+        B{New release exists?}
+        C[Download new release]
+    end
+    D[Repoint symlink to new files]
+    E[Restart service]
+
+    A --> B
+    B -->|Yes| C
+    B -->|No| A
+    C --> D --> E --> A
+```
+
+[↑ Back to top](#updaemon)
+
 ## License
 
 MIT
