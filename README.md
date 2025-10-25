@@ -685,19 +685,18 @@ graph TD
 ## High Level Overview
 
 ```mermaid
-graph TD
-    A([Wait / Sleep for a while])
+graph LR
+    A([Sleep for a while])
     subgraph Distribution Plugin
         B{New release exists?}
         C[Download new release]
     end
-    D[Repoint symlink to new files]
-    E[Restart service]
+    D["• Unpack & find executable<br/>• Set file permissions<br/>• Repoint symlink<br/>• Restart service"]
 
     A --> B
     B -->|Yes| C
     B -->|No| A
-    C --> D --> E --> A
+    C --> D --> A
 ```
 
 [↑ Back to top](#updaemon)
