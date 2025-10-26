@@ -1,7 +1,7 @@
 # Updaemon 
 
 <div align="center">
-  <img src="Icons/1024w/Updaemon.png" alt="Updaemon Logo" width="128" height="128">
+  <img src="Art/Banner/Banner.png" alt="Updaemon Banner">
 </div>
 
 [![tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
@@ -13,6 +13,10 @@ For example: use `updaemon new my-service` to create a new systemctl service cal
 Then use `updaemon update` to check for new releases for all your services and update them automatically using symlinks to ensure zero downtime.
 
 Updaemon is extremely easy to [install](#getting-started) and can use any release distribution source (GitHub releases, custom servers, etc.). It handles the entire update process - from checking for new versions to restarting your services.
+
+<div align="center">
+  <img src="Art/UpdaemonIcon/Export/1024w/Updaemon.png" alt="Updaemon Logo" width="128" height="128">
+</div>
 
 ## What Updaemon Does
 
