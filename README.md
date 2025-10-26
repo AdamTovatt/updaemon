@@ -6,7 +6,7 @@
 
 [![Tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
 
-**Updaemon is a simple command line tool that helps you manage and update services and applications on Linux systems.**
+**Updaemon is a command line tool that helps you manage and update services and applications on Linux systems.**
 
 For example: use `updaemon new my-service` to create a new systemctl service called `my-service` that is managed by Updaemon.
 
