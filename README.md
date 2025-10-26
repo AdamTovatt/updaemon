@@ -1,10 +1,10 @@
-# Updaemon 
-
 <div align="center">
   <img src="Art/Banner/Banner.png" alt="Updaemon Banner">
 </div>
 
-[![tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
+# Updaemon 
+
+[![Tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
 
 **Updaemon is a simple command line tool that helps you manage and update services and applications on Linux systems.**
 
@@ -13,6 +13,7 @@ For example: use `updaemon new my-service` to create a new systemctl service cal
 Then use `updaemon update` to check for new releases for all your services and update them automatically using symlinks to ensure zero downtime.
 
 Updaemon is extremely easy to [install](#getting-started) and can use any release distribution source (GitHub releases, custom servers, etc.). It handles the entire update process - from checking for new versions to restarting your services.
+
 
 <div align="center">
   <img src="Art/UpdaemonIcon/Export/1024w/Updaemon.png" alt="Updaemon Logo" width="128" height="128">
@@ -23,11 +24,10 @@ Updaemon is extremely easy to [install](#getting-started) and can use any releas
 Updaemon makes it easy to keep your applications and services up to date on Linux:
 
 - **Automatic Updates**: Checks for new versions and updates your services automatically
-- **Zero Downtime**: Uses smart symlinks so your services keep running during updates
+- **Zero Downtime**: Uses symlinks so your services keep running during updates
 - **Works with Any Source**: Supports GitHub releases, custom servers, or any distribution method
 - **Simple Setup**: Just install once and add your services with a single command
-- **Scheduled Updates**: Set it to run automatically on a schedule
-- **Safe & Reliable**: Keeps multiple versions so you can rollback if needed
+- **Supports rollback**: Keeps multiple versions so you can rollback if needed
 
 ## Table of Contents
 
@@ -61,8 +61,7 @@ That's it! You can now use the `updaemon` command.
 
 ### Installing a Distribution Plugin
 
-> [!NOTE]
-> A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases). You need to install at least one distribution plugin to use Updaemon.
+A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases). You need to install at least one distribution plugin to use Updaemon.
 
 To install a distribution plugin, run `updaemon dist-install` with the URL of the plugin you want to install. For example, to install the GitHub distribution plugin, run:
 
