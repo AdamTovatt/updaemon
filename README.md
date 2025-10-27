@@ -8,9 +8,14 @@
 
 **Updaemon is a command line tool that helps you manage and update services and applications on Linux systems.**
 
-For example: use `updaemon new my-service` to create a new systemctl service called `my-service` that is managed by Updaemon.
+For example:
 
-Then use `updaemon update` to check for new releases for all your services and update them automatically using symlinks to ensure zero downtime.
+Running `updaemon new my-service` creates a new systemctl service called `my-service` that is managed by Updaemon.
+
+Then, `updaemon update` checks for new releases for all created services and updates them automatically if needed.
+
+The new release is downloaded to a versioned folder and the symlink used by the service is updated to point to the new version.
+
 
 Updaemon is extremely easy to [install](#getting-started) and can use any release distribution source (GitHub releases, custom servers, etc.). It handles the entire update process - from checking for new versions to restarting your services.
 
