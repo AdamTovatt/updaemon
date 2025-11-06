@@ -66,19 +66,13 @@ That's it! You can now use the `updaemon` command.
 
 ### Installing a Distribution Plugin
 
-A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases). You can install multiple plugins and give each an alias.
-
-Install with an explicit alias using `--as`:
-
-```bash
-sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
-```
-
-Or install without an alias, in which case Updaemon will query the plugin for its default alias and use that:
+A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases).
 
 ```bash
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
+
+If you want to use multiple different distribution plugins you can do that too. See the cli documentation for the [dist-install](#dist-install-command) command for more details on that.
 
 ### Configuring Secrets For Distribution Plugins
 
