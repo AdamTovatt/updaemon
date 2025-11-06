@@ -58,13 +58,15 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
-        public async Task ExecuteAsync_SecretSetCommand_WithoutKeyValue_ReturnsErrorCode()
+        public async Task ExecuteAsync_SecretSetCommand_WithoutRequiredArgs_ReturnsErrorCode()
         {
             CommandExecutor executor = CreateCommandExecutor();
 
-            int exitCodeWithOneArg = await executor.ExecuteAsync(new[] { "secret-set", "key" });
+            int exitCodeWithTwoArgs = await executor.ExecuteAsync(new[] { "secret-set", "plugin", "key" });
+            int exitCodeWithOneArg = await executor.ExecuteAsync(new[] { "secret-set", "plugin" });
             int exitCodeWithNoArgs = await executor.ExecuteAsync(new[] { "secret-set" });
 
+            Assert.Equal(1, exitCodeWithTwoArgs);
             Assert.Equal(1, exitCodeWithOneArg);
             Assert.Equal(1, exitCodeWithNoArgs);
         }
@@ -96,7 +98,8 @@ namespace Updaemon.Tests.Commands
             );
             SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
             SetExecNameCommand setExecNameCommand = new SetExecNameCommand(configManager, outputWriter);
-            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
+            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter, new MockDistributionServiceClient());
+            DistListCommand distListCommand = new DistListCommand(configManager, outputWriter, new MockDistributionServiceClient());
             SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
             TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
@@ -107,6 +110,7 @@ namespace Updaemon.Tests.Commands
                 setRemoteCommand,
                 setExecNameCommand,
                 distInstallCommand,
+                distListCommand,
                 secretSetCommand,
                 timerCommand,
                 outputWriter
@@ -124,10 +128,10 @@ namespace Updaemon.Tests.Commands
             MockSecretsManager secretsManager = new MockSecretsManager();
             CommandExecutor executor = CreateCommandExecutor(secretsManager: secretsManager);
 
-            int exitCode = await executor.ExecuteAsync(new[] { "SECRET-SET", "key", "value" });
+            int exitCode = await executor.ExecuteAsync(new[] { "SECRET-SET", "github", "key", "value" });
 
             Assert.Equal(0, exitCode);
-            Assert.Contains(secretsManager.MethodCalls, call => call.StartsWith("SetSecretAsync"));
+            Assert.Contains(secretsManager.MethodCalls, call => call.StartsWith("SetSecretAsync:github"));
         }
 
         private CommandExecutor CreateCommandExecutor(
@@ -158,7 +162,8 @@ namespace Updaemon.Tests.Commands
             );
             SetRemoteCommand setRemoteCommand = new SetRemoteCommand(configManager, outputWriter);
             SetExecNameCommand setExecNameCommand = new SetExecNameCommand(configManager, outputWriter);
-            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter);
+            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter, new MockDistributionServiceClient());
+            DistListCommand distListCommand = new DistListCommand(configManager, outputWriter, new MockDistributionServiceClient());
             SecretSetCommand secretSetCommand = new SecretSetCommand(secretsManager, outputWriter);
 
             TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
@@ -169,6 +174,7 @@ namespace Updaemon.Tests.Commands
                 setRemoteCommand,
                 setExecNameCommand,
                 distInstallCommand,
+                distListCommand,
                 secretSetCommand,
                 timerCommand,
                 outputWriter

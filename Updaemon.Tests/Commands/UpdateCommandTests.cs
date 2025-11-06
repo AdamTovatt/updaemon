@@ -489,8 +489,8 @@ namespace Updaemon.Tests.Commands
             await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
-            await secretsManager.SetSecretAsync("apiKey", "abc123");
-            await secretsManager.SetSecretAsync("tenantId", "550e8400");
+            await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
+            await secretsManager.SetSecretAsync("github", "tenantId", "550e8400");
 
             MockServiceManager serviceManager = new MockServiceManager();
             MockSymlinkManager symlinkManager = new MockSymlinkManager();

@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
 
@@ -128,6 +129,9 @@ namespace Updaemon.Common.Hosting
                     case "DownloadVersionAsync":
                         return await HandleDownloadVersionAsync(request, implementation, cancellationToken);
 
+                    case "GetServiceInformation":
+                        return HandleGetServiceInformation(request, implementation);
+
                     default:
                         return new RpcResponse
                         {
@@ -245,6 +249,24 @@ namespace Updaemon.Common.Hosting
                 Id = request.Id,
                 Success = true,
                 Result = null,
+            };
+        }
+
+        /// <summary>
+        /// Handles GetServiceInformation method invocation (synchronous).
+        /// </summary>
+        private static RpcResponse HandleGetServiceInformation(
+            RpcRequest request,
+            IDistributionService implementation)
+        {
+            DistributionServiceInformation info = implementation.GetServiceInformation();
+            string resultJson = JsonSerializer.Serialize(info, CommonJsonContext.Default.DistributionServiceInformation);
+
+            return new RpcResponse
+            {
+                Id = request.Id,
+                Success = true,
+                Result = resultJson,
             };
         }
     }

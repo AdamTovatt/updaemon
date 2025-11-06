@@ -1,3 +1,4 @@
+using Updaemon.Common.Models;
 using Updaemon.Interfaces;
 
 namespace Updaemon.Tests.Mocks
@@ -39,6 +40,19 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add($"{nameof(DownloadVersionAsync)}:{serviceName}:{version}:{targetPath}");
             Downloads.Add((serviceName, version, targetPath));
             return Task.CompletedTask;
+        }
+
+        public Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add(nameof(GetServiceInformationAsync));
+            return Task.FromResult(new DistributionServiceInformation
+            {
+                FullName = "Mock Distribution Service",
+                DefaultAlias = "mock",
+                Description = "Mock distribution service for testing",
+                Version = "1.0.0",
+                RequiredSecrets = new List<DistributionSecretInfo>()
+            });
         }
 
         public ValueTask DisposeAsync()

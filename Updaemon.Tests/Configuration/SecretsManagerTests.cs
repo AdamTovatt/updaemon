@@ -12,9 +12,9 @@ namespace Updaemon.Tests.Configuration
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                await secretsManager.SetSecretAsync("apiKey", "abc123");
+                await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
 
-                string? value = await secretsManager.GetSecretAsync("apiKey");
+                string? value = await secretsManager.GetSecretAsync("github", "apiKey");
                 Assert.Equal("abc123", value);
             }
         }
@@ -26,9 +26,9 @@ namespace Updaemon.Tests.Configuration
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                await secretsManager.SetSecretAsync("tenantId", "550e8400-e29b-41d4-a716-446655440000");
+                await secretsManager.SetSecretAsync("byteshelf", "tenantId", "550e8400-e29b-41d4-a716-446655440000");
 
-                string? value = await secretsManager.GetSecretAsync("tenantId");
+                string? value = await secretsManager.GetSecretAsync("byteshelf", "tenantId");
                 Assert.Equal("550e8400-e29b-41d4-a716-446655440000", value);
             }
         }
@@ -40,7 +40,7 @@ namespace Updaemon.Tests.Configuration
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                string? value = await secretsManager.GetSecretAsync("nonExistent");
+                string? value = await secretsManager.GetSecretAsync("github", "nonExistent");
 
                 Assert.Null(value);
             }
@@ -53,25 +53,25 @@ namespace Updaemon.Tests.Configuration
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                await secretsManager.SetSecretAsync("apiKey", "oldValue");
-                await secretsManager.SetSecretAsync("apiKey", "newValue");
+                await secretsManager.SetSecretAsync("github", "apiKey", "oldValue");
+                await secretsManager.SetSecretAsync("github", "apiKey", "newValue");
 
-                string? value = await secretsManager.GetSecretAsync("apiKey");
+                string? value = await secretsManager.GetSecretAsync("github", "apiKey");
                 Assert.Equal("newValue", value);
             }
         }
 
         [Fact]
-        public async Task GetAllSecretsFormattedAsync_ReturnsKeyValueFormat()
+        public async Task GetPluginSecretsFormattedAsync_ReturnsKeyValueFormat()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                await secretsManager.SetSecretAsync("apiKey", "abc123");
-                await secretsManager.SetSecretAsync("tenantId", "550e8400");
+                await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
+                await secretsManager.SetSecretAsync("github", "tenantId", "550e8400");
 
-                string? formatted = await secretsManager.GetAllSecretsFormattedAsync();
+                string? formatted = await secretsManager.GetPluginSecretsFormattedAsync("github");
 
                 Assert.NotNull(formatted);
                 Assert.Contains("apiKey=abc123", formatted);
@@ -80,13 +80,13 @@ namespace Updaemon.Tests.Configuration
         }
 
         [Fact]
-        public async Task GetAllSecretsFormattedAsync_NoSecrets_ReturnsNull()
+        public async Task GetPluginSecretsFormattedAsync_NoSecrets_ReturnsNull()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                string? formatted = await secretsManager.GetAllSecretsFormattedAsync();
+                string? formatted = await secretsManager.GetPluginSecretsFormattedAsync("github");
 
                 Assert.Null(formatted);
             }
@@ -99,10 +99,10 @@ namespace Updaemon.Tests.Configuration
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                await secretsManager.SetSecretAsync("apiKey", "abc123");
-                await secretsManager.RemoveSecretAsync("apiKey");
+                await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
+                await secretsManager.RemoveSecretAsync("github", "apiKey");
 
-                string? value = await secretsManager.GetSecretAsync("apiKey");
+                string? value = await secretsManager.GetSecretAsync("github", "apiKey");
                 Assert.Null(value);
             }
         }
@@ -115,14 +115,15 @@ namespace Updaemon.Tests.Configuration
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
                 // Create a secrets file with malformed lines
-                string secretsFilePath = Path.Combine(tempHelper.TempDirectory, "secrets.txt");
+                string secretsFilePath = secretsManager.GetPluginSecretsPath("github");
+                Directory.CreateDirectory(Path.GetDirectoryName(secretsFilePath)!);
                 await File.WriteAllTextAsync(secretsFilePath, "validKey=validValue\nmalformedLine\n=noKey\nkey=");
 
-                string? value = await secretsManager.GetSecretAsync("validKey");
+                string? value = await secretsManager.GetSecretAsync("github", "validKey");
                 Assert.Equal("validValue", value);
 
                 // Malformed lines should be ignored
-                string? emptyValue = await secretsManager.GetSecretAsync("key");
+                string? emptyValue = await secretsManager.GetSecretAsync("github", "key");
                 Assert.Equal("", emptyValue);
             }
         }
@@ -134,20 +135,38 @@ namespace Updaemon.Tests.Configuration
             {
                 SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
 
-                await secretsManager.SetSecretAsync("key1", "value1");
-                await secretsManager.SetSecretAsync("key2", "value2");
-                await secretsManager.SetSecretAsync("key3", "value3");
+                await secretsManager.SetSecretAsync("github", "key1", "value1");
+                await secretsManager.SetSecretAsync("github", "key2", "value2");
+                await secretsManager.SetSecretAsync("github", "key3", "value3");
 
                 // Create a new instance to test persistence
                 SecretsManager newInstance = new SecretsManager(tempHelper.TempDirectory);
 
-                string? value1 = await newInstance.GetSecretAsync("key1");
-                string? value2 = await newInstance.GetSecretAsync("key2");
-                string? value3 = await newInstance.GetSecretAsync("key3");
+                string? value1 = await newInstance.GetSecretAsync("github", "key1");
+                string? value2 = await newInstance.GetSecretAsync("github", "key2");
+                string? value3 = await newInstance.GetSecretAsync("github", "key3");
 
                 Assert.Equal("value1", value1);
                 Assert.Equal("value2", value2);
                 Assert.Equal("value3", value3);
+            }
+        }
+
+        [Fact]
+        public async Task SecretsAreIsolatedPerPlugin()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+
+                await secretsManager.SetSecretAsync("github", "apiKey", "github-key");
+                await secretsManager.SetSecretAsync("byteshelf", "apiKey", "byteshelf-key");
+
+                string? githubKey = await secretsManager.GetSecretAsync("github", "apiKey");
+                string? byteshelfKey = await secretsManager.GetSecretAsync("byteshelf", "apiKey");
+
+                Assert.Equal("github-key", githubKey);
+                Assert.Equal("byteshelf-key", byteshelfKey);
             }
         }
     }

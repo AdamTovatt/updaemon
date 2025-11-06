@@ -19,9 +19,10 @@ namespace Updaemon.Tests.Commands
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
 
-                await command.ExecuteAsync("https://example.com/plugins/my-plugin");
+                await command.ExecuteAsync(null, "https://example.com/plugins/my-plugin");
 
                 Assert.Contains(configManager.MethodCalls, call => call.StartsWith("AddOrUpdatePluginAsync:"));
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
@@ -41,10 +42,11 @@ namespace Updaemon.Tests.Commands
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
 
                 await Assert.ThrowsAsync<HttpRequestException>(
-                    async () => await command.ExecuteAsync("https://example.com/invalid-plugin")
+                    async () => await command.ExecuteAsync(null, "https://example.com/invalid-plugin")
                 );
             }
         }
@@ -60,9 +62,10 @@ namespace Updaemon.Tests.Commands
                 HttpClient httpClient = new HttpClient(mockHandler);
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), pluginsDirectory);
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
 
-                await command.ExecuteAsync("https://example.com/path/to/byteshelf-dist");
+                await command.ExecuteAsync(null, "https://example.com/path/to/byteshelf-dist");
 
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
                 Assert.NotEmpty(plugins);
