@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using Updaemon.Common;
+using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
 using Updaemon.Interfaces;
@@ -86,6 +87,23 @@ namespace Updaemon.Services
             await InvokeMethodAsync("DownloadVersionAsync", parameters, cancellationToken);
         }
 
+        public async Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)
+        {
+            string? resultJson = await InvokeMethodAsync<string?>("GetServiceInformation", null, cancellationToken);
+            if (string.IsNullOrEmpty(resultJson))
+            {
+                throw new InvalidOperationException("Plugin returned null service information");
+            }
+
+            DistributionServiceInformation? info = JsonSerializer.Deserialize(resultJson, CommonJsonContext.Default.DistributionServiceInformation);
+            if (info == null)
+            {
+                throw new InvalidOperationException("Failed to deserialize service information");
+            }
+
+            return info;
+        }
+
         private async Task InvokeMethodAsync(string methodName, object? parameters, CancellationToken cancellationToken)
         {
             await InvokeMethodAsync<object>(methodName, parameters, cancellationToken);
@@ -138,6 +156,18 @@ namespace Updaemon.Services
 
             if (typeof(TResult) == typeof(string))
             {
+                object? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.String);
+                return (TResult?)result;
+            }
+
+            // Special handling for nullable string return type
+            Type resultType = typeof(TResult);
+            if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(Nullable<>) && resultType.GetGenericArguments()[0] == typeof(string))
+            {
+                if (response.Result == null)
+                {
+                    return default;
+                }
                 object? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.String);
                 return (TResult?)result;
             }

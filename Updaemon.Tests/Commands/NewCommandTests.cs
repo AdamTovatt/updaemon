@@ -1,4 +1,5 @@
 using Updaemon.Commands;
+using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -23,7 +24,11 @@ namespace Updaemon.Tests.Commands
 
                 NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
 
-                await command.ExecuteAsync("my-api");
+                // Setup: Add a plugin first
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+
+                await command.ExecuteAsync("my-api", "github");
 
                 Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:my-api:my-api"));
             }
@@ -46,7 +51,11 @@ namespace Updaemon.Tests.Commands
 
                 NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
 
-                await command.ExecuteAsync("my-api");
+                // Setup: Add a plugin first
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+
+                await command.ExecuteAsync("my-api", "github");
 
                 Assert.Contains(serviceManager.MethodCalls, call => call == "EnableServiceAsync:my-api");
             }
@@ -69,9 +78,36 @@ namespace Updaemon.Tests.Commands
 
                 NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
 
-                await command.ExecuteAsync("test-service");
+                // Setup: Add a plugin first
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
-                Assert.Contains(configManager.MethodCalls, call => call == "RegisterServiceAsync:test-service:test-service");
+                await command.ExecuteAsync("test-service", "github");
+
+                Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:test-service:test-service"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_PluginNotFound_ThrowsException()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager
+                {
+                    TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+                };
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+
+                NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
+
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    async () => await command.ExecuteAsync("my-service", "non-existent-plugin")
+                );
             }
         }
     }

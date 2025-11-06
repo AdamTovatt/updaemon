@@ -1,6 +1,7 @@
 using ByteShelfClient;
 using ByteShelfCommon;
 using Updaemon.Common;
+using Updaemon.Common.Models;
 using Updaemon.Common.Utilities;
 using Updaemon.Distribution.ByteShelfDistribution.Interfaces;
 
@@ -22,6 +23,32 @@ namespace Updaemon.Distribution.ByteShelfDistribution
         {
             _versionParser = versionParser;
             _postProcessor = postProcessor;
+        }
+
+        public DistributionServiceInformation GetServiceInformation()
+        {
+            return new DistributionServiceInformation
+            {
+                FullName = "ByteShelf",
+                DefaultAlias = "byteshelf",
+                Description = "Distribution service that uses ByteShelf storage.",
+                Version = "0.2.0",
+                RequiredSecrets = new List<DistributionSecretInfo>
+                {
+                    new DistributionSecretInfo
+                    {
+                        Name = "byteShelfApiKey",
+                        IsRequired = true,
+                        Description = "ByteShelf API key for authentication."
+                    },
+                    new DistributionSecretInfo
+                    {
+                        Name = "byteShelfUrl",
+                        IsRequired = true,
+                        Description = "ByteShelf server URL."
+                    }
+                }
+            };
         }
 
         public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)

@@ -1,4 +1,5 @@
 using Updaemon.Common;
+using Updaemon.Common.Models;
 using Updaemon.Common.Utilities;
 using Updaemon.GithubDistributionService.Interfaces;
 using Updaemon.GithubDistributionService.Models;
@@ -23,6 +24,26 @@ namespace Updaemon.GithubDistributionService
             _apiClient = apiClient;
             _versionParser = versionParser;
             _postProcessor = postProcessor;
+        }
+
+        public DistributionServiceInformation GetServiceInformation()
+        {
+            return new DistributionServiceInformation
+            {
+                FullName = "GitHub Releases",
+                DefaultAlias = "github",
+                Description = "Distribution service that uses GitHub Releases.",
+                Version = "0.2.0",
+                RequiredSecrets = new List<DistributionSecretInfo>
+                {
+                    new DistributionSecretInfo
+                    {
+                        Name = "githubToken",
+                        IsRequired = false,
+                        Description = "GitHub personal access token. Required for private repositories and to avoid rate limiting."
+                    }
+                }
+            };
         }
 
         public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)

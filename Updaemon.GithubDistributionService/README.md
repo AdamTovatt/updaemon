@@ -20,7 +20,7 @@ This plugin enables Updaemon to download and manage applications distributed via
 > [!NOTE] If the pre built version is not the correct one for the system you're using you might have to build it from source.
 
 ```bash
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
+sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
 ## Configuration
@@ -33,7 +33,7 @@ Create a GitHub Personal Access Token at:
 https://github.com/settings/tokens
 
 ```bash
-sudo updaemon secret-set githubToken ghp_your_token_here
+sudo updaemon secret-set github githubToken ghp_your_token_here
 ```
 
 **Token Permissions Required:**
@@ -167,11 +167,11 @@ Here's a complete example deploying an application via GitHub releases:
 
 ```bash
 # 1. Install and configure the plugin (one-time setup)
-sudo updaemon dist-install https://example.com/updaemon-github-plugin
-sudo updaemon secret-set githubToken ghp_your_token_here
+sudo updaemon dist-install --as github https://example.com/updaemon-github-plugin
+sudo updaemon secret-set github githubToken ghp_your_token_here
 
 # 2. Create a service for your application
-sudo updaemon new myapp
+sudo updaemon new myapp --from github
 
 # 3. Point it to the GitHub repository with a pattern
 sudo updaemon set-remote myapp your-org/myapp/myapp-linux-*.zip

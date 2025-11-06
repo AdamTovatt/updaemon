@@ -12,9 +12,9 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SecretSetCommand command = new SecretSetCommand(secretsManager, outputWriter);
 
-            await command.ExecuteAsync("apiKey", "abc123");
+            await command.ExecuteAsync("github", "apiKey", "abc123");
 
-            Assert.Contains(secretsManager.MethodCalls, call => call == "SetSecretAsync:apiKey:abc123");
+            Assert.Contains(secretsManager.MethodCalls, call => call == "SetSecretAsync:github:apiKey:abc123");
         }
 
         [Fact]
@@ -24,10 +24,10 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SecretSetCommand command = new SecretSetCommand(secretsManager, outputWriter);
 
-            await command.ExecuteAsync("apiKey", "oldValue");
-            await command.ExecuteAsync("apiKey", "newValue");
+            await command.ExecuteAsync("github", "apiKey", "oldValue");
+            await command.ExecuteAsync("github", "apiKey", "newValue");
 
-            string? value = await secretsManager.GetSecretAsync("apiKey");
+            string? value = await secretsManager.GetSecretAsync("github", "apiKey");
             Assert.Equal("newValue", value);
         }
     }

@@ -68,22 +68,6 @@ namespace Updaemon.Commands
 
         public async Task ExecuteAsync(string? specificAppName = null, CancellationToken cancellationToken = default)
         {
-            // Get the distribution plugin path
-            string? pluginPath = await _configManager.GetDistributionPluginPathAsync(cancellationToken);
-            if (string.IsNullOrEmpty(pluginPath))
-            {
-                _outputWriter.WriteError("Error: No distribution service plugin configured.");
-                _outputWriter.WriteLine("Use 'updaemon dist-install <url>' to install a distribution plugin.");
-                return;
-            }
-
-            // Connect to the distribution service
-            await _distributionClient.ConnectAsync(pluginPath, cancellationToken);
-
-            // Initialize with secrets
-            string? secrets = await _secretsManager.GetAllSecretsFormattedAsync(cancellationToken);
-            await _distributionClient.InitializeAsync(secrets, cancellationToken);
-
             // Get services to update
             IReadOnlyList<RegisteredService> services;
             if (specificAppName != null)
@@ -104,15 +88,77 @@ namespace Updaemon.Commands
 
             if (services.Count == 0)
             {
-                _outputWriter.WriteLine("No services registered. Use 'updaemon new <app-name>' to create a service.");
+                _outputWriter.WriteLine("No services registered. Use 'updaemon new <app-name> --from <plugin>' to create a service.");
                 return;
             }
 
-            // Update each service
+            // Group services by plugin alias
+            Dictionary<string, List<RegisteredService>> servicesByPlugin = new Dictionary<string, List<RegisteredService>>();
+            foreach (RegisteredService service in services)
+            {
+                if (string.IsNullOrEmpty(service.DistributionPluginAlias))
+                {
+                    _outputWriter.WriteError($"Error: Service '{service.LocalName}' does not have a distribution plugin assigned.");
+                    continue;
+                }
+
+                if (!servicesByPlugin.ContainsKey(service.DistributionPluginAlias))
+                {
+                    servicesByPlugin[service.DistributionPluginAlias] = new List<RegisteredService>();
+                }
+
+                servicesByPlugin[service.DistributionPluginAlias].Add(service);
+            }
+
+            if (servicesByPlugin.Count == 0)
+            {
+                _outputWriter.WriteError("Error: No valid services to update.");
+                return;
+            }
+
+            // Update services grouped by plugin
+            foreach (KeyValuePair<string, List<RegisteredService>> pluginGroup in servicesByPlugin)
+            {
+                string pluginAlias = pluginGroup.Key;
+                List<RegisteredService> pluginServices = pluginGroup.Value;
+
+                await UpdateServicesForPluginAsync(pluginAlias, pluginServices, cancellationToken);
+            }
+        }
+
+        private async Task UpdateServicesForPluginAsync(string pluginAlias, List<RegisteredService> services, CancellationToken cancellationToken)
+        {
+            // Get plugin info
+            InstalledPluginInfo? pluginInfo = await _configManager.GetPluginAsync(pluginAlias, cancellationToken);
+            if (pluginInfo == null)
+            {
+                _outputWriter.WriteError($"Error: Plugin '{pluginAlias}' not found. Services using this plugin will be skipped.");
+                return;
+            }
+
+            if (!File.Exists(pluginInfo.Path))
+            {
+                _outputWriter.WriteError($"Error: Plugin executable not found at '{pluginInfo.Path}'. Services using this plugin will be skipped.");
+                return;
+            }
+
+            _outputWriter.WriteLine($"\n=== Updating services using plugin '{pluginAlias}' ===");
+
+            // Connect to the distribution service
+            await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
+
+            // Load plugin-specific secrets
+            string? secrets = await _secretsManager.GetPluginSecretsFormattedAsync(pluginAlias, cancellationToken);
+            await _distributionClient.InitializeAsync(secrets, cancellationToken);
+
+            // Update each service for this plugin
             foreach (RegisteredService service in services)
             {
                 await UpdateServiceAsync(service, cancellationToken);
             }
+
+            // Disconnect from plugin
+            await _distributionClient.DisposeAsync();
         }
 
         private async Task UpdateServiceAsync(RegisteredService service, CancellationToken cancellationToken)

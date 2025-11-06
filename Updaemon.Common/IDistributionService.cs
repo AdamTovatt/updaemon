@@ -1,3 +1,5 @@
+using Updaemon.Common.Models;
+
 namespace Updaemon.Common
 {
     /// <summary>
@@ -6,6 +8,13 @@ namespace Updaemon.Common
     /// </summary>
     public interface IDistributionService
     {
+        /// <summary>
+        /// Returns static information about the distribution service implementation.
+        /// Should not perform any network operations.
+        /// </summary>
+        /// <returns>Information about the distribution service.</returns>
+        DistributionServiceInformation GetServiceInformation();
+
         /// <summary>
         /// Initializes the distribution service with secrets.
         /// </summary>

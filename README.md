@@ -66,23 +66,23 @@ That's it! You can now use the `updaemon` command.
 
 ### Installing a Distribution Plugin
 
-A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases). You need to install at least one distribution plugin to use Updaemon.
-
-To install a distribution plugin, run `updaemon dist-install` with the URL of the plugin you want to install. For example, to install the GitHub distribution plugin, run:
+A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases).
 
 ```bash
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
+If you want to use multiple different distribution plugins you can do that too. See the cli documentation for the [dist-install](#dist-install-command) command for more details on that.
+
 ### Configuring Secrets For Distribution Plugins
 
-Some distribution plugins might require secrets to run. For example, if you have a private GitHub repository, you need to provide a GitHub token. You can set secrets using the `updaemon secret-set` command. For example, to set a GitHub token, run:
+Some distribution plugins might require secrets to run. Secrets are stored per plugin. Use the plugin alias with `secret-set`:
 
 ```bash
-sudo updaemon secret-set githubToken your-github-token-here
+sudo updaemon secret-set github githubToken your-github-token-here
 ```
 
-Here, the key is `githubToken` and the value should be your actual GitHub token. The name of the secret key depends on the distribution plugin you are using, so refer to the plugin's documentation to see what secrets are required if any.
+Here, `github` is the plugin alias, the key is `githubToken`, and the value should be your actual GitHub token. The set of secrets depends on the plugin — see the plugin's metadata or README.
 
 > [!TIP]
 > Setting a github token is not required for public repositories. It is required for private repositories and if you want to make frequent requests without being rate limited.
@@ -108,16 +108,17 @@ Commands that change files in the system usually require `sudo` to run.
 | [update](#update-command) | Update all or a specific service to the latest version. |
 | [set-remote](#set-remote-command) | Set the remote name used by the distribution plugin. |
 | [set-exec-name](#set-exec-command) | Set or clear the executable name for a service. |
-| [dist-install](#dist-install-command) | Download and install a distribution plugin. |
-| [secret-set](#secret-set-command) | Set a secret key-value pair for plugins. |
+| [dist-install](#dist-install-command) | Download and install a distribution plugin (supports `--as`). |
+| [dist-list](#dist-list-command) | List installed distribution plugins and their metadata. |
+| [secret-set](#secret-set-command) | Set a secret key-value pair for a specific plugin. |
 | [timer](#timer-command) | Manage automatic update scheduling using systemd timers. |
 
 ### New Command
 ```bash
-updaemon new <app-name>
+updaemon new <app-name> --from <plugin-alias>
 ```
 
-Creates a new managed service with the specified name. Should be run with `sudo`.
+Creates a new managed service with the specified name and associates it with the distribution plugin identified by `<plugin-alias>`. Should be run with `sudo`.
 
 ### Update Command 
 
@@ -171,26 +172,33 @@ sudo updaemon set-exec-name my-api -
 
 #### Dist-Install Command
 ```bash
-updaemon dist-install <url>
+updaemon dist-install [--as <alias>] <url>
 ```
 
-Downloads and installs a distribution service plugin from a URL.
+Downloads and installs a distribution service plugin from a URL. If `--as` is omitted, the plugin's default alias will be used.
 
-**Example:**
+**Examples:**
 ```bash
+sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 ```
 
 #### Secret-Set Command
-`updaemon secret-set <key> <value>`
+`updaemon secret-set <plugin-alias> <key> <value>`
 
-Sets a secret key-value pair for the distribution service.
-For example, if you're using a private GitHub repository, you will need to specify a GitHub token so that the distribution plugin is actually allowed to access the repository.
+Sets a secret key-value pair for a specific distribution plugin.
 
 **Example:**
 ```bash
-sudo updaemon secret-set githubToken your-github-token-here
+sudo updaemon secret-set github githubToken your-github-token-here
 ```
+
+#### Dist-List Command
+```bash
+updaemon dist-list
+```
+
+Lists installed distribution plugins with their alias, full name, version, description, and required/optional secrets.
 
 #### Timer Command
 ```bash
@@ -221,20 +229,23 @@ The timer will automatically run `updaemon update` at the specified interval.
 
 Updaemon stores its configuration in `/var/lib/updaemon/`:
 
-- **`config.json`** - Your registered services and plugin settings
-- **`secrets.txt`** - API keys and credentials for distribution services
-- **`plugins/`** - Downloaded distribution plugins
+- **`config.json`** - Your registered services and installed plugins
+- **`plugins/`** - Downloaded distribution plugins and their per-plugin secrets
 - **`default-unit.template`** - Customizable systemd service template
 
 ### Directory Structure
 
 ```
 /var/lib/updaemon/
-├── config.json              # Service registry and plugin configuration
-├── secrets.txt              # Distribution service secrets (key=value format)
-├── default-unit.template    # Default systemd unit file template (customizable)
+├── config.json                     # Service registry and installed plugins
+├── default-unit.template           # Default systemd unit file template (customizable)
 └── plugins/
-    └── <plugin-executable>  # Distribution service plugin
+    ├── github/
+    │   ├── Updaemon.GithubDistributionService  # Plugin executable
+    │   └── secrets.txt                          # Secrets for 'github' plugin
+    └── byteshelf/
+        ├── Updaemon.Distribution.ByteShelfDistribution
+        └── secrets.txt
 
 /opt/<service-name>/
 ├── 1.0.0/                   # Version 1.0.0 files
@@ -253,12 +264,18 @@ Updaemon stores its configuration in `/var/lib/updaemon/`:
 
 ```json
 {
-  "distributionPluginPath": "/var/lib/updaemon/plugins/byteshelf-dist",
+  "installedPlugins": {
+    "github": {
+      "alias": "github",
+      "path": "/var/lib/updaemon/plugins/github/Updaemon.GithubDistributionService"
+    }
+  },
   "services": [
     {
       "localName": "word-library-api",
       "remoteName": "FastPackages.WordLibraryApi",
-      "executableName": "WordLibraryApi"
+      "executableName": "WordLibraryApi",
+      "distributionPluginAlias": "github"
     }
   ]
 }
@@ -266,11 +283,12 @@ Updaemon stores its configuration in `/var/lib/updaemon/`:
 
 **Note:** The `executableName` field is optional. If not specified, the `localName` is used when searching for the executable.
 
-### /var/lib/updaemon/secrets.txt
+### /var/lib/updaemon/plugins/<alias>/secrets.txt
+
+Each plugin has its own `secrets.txt` with `key=value` pairs. Example for `github`:
 
 ```
-tenantId=550e8400-e29b-41d4-a716-446655440000
-apiKey=abc123xyz
+githubToken=ghp_abc123
 ```
 
 ### /var/lib/updaemon/default-unit.template

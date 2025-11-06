@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Updaemon.Common.Rpc;
+using Updaemon.Common.Models;
 
 namespace Updaemon.Common.Serialization
 {
@@ -10,6 +11,8 @@ namespace Updaemon.Common.Serialization
     [JsonSerializable(typeof(RpcRequest))]
     [JsonSerializable(typeof(RpcResponse))]
     [JsonSerializable(typeof(SecretCollection))]
+    [JsonSerializable(typeof(DistributionServiceInformation))]
+    [JsonSerializable(typeof(DistributionSecretInfo))]
     [JsonSerializable(typeof(Dictionary<string, string>))]
     [JsonSerializable(typeof(string))]
     [JsonSerializable(typeof(object))]

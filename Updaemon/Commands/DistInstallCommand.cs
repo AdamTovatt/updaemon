@@ -1,4 +1,6 @@
+using Updaemon.Common.Models;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Commands
 {
@@ -10,16 +12,19 @@ namespace Updaemon.Commands
         private readonly IConfigManager _configManager;
         private readonly HttpClient _httpClient;
         private readonly IOutputWriter _outputWriter;
+        private readonly IDistributionServiceClient _distributionClient;
         private readonly string _pluginsDirectory;
 
         public DistInstallCommand(
             IConfigManager configManager,
             HttpClient httpClient,
-            IOutputWriter outputWriter)
+            IOutputWriter outputWriter,
+            IDistributionServiceClient distributionClient)
         {
             _configManager = configManager;
             _httpClient = httpClient;
             _outputWriter = outputWriter;
+            _distributionClient = distributionClient;
             _pluginsDirectory = "/var/lib/updaemon/plugins";
         }
 
@@ -27,15 +32,17 @@ namespace Updaemon.Commands
             IConfigManager configManager,
             HttpClient httpClient,
             IOutputWriter outputWriter,
+            IDistributionServiceClient distributionClient,
             string pluginsDirectory)
         {
             _configManager = configManager;
             _httpClient = httpClient;
             _outputWriter = outputWriter;
+            _distributionClient = distributionClient;
             _pluginsDirectory = pluginsDirectory;
         }
 
-        public async Task ExecuteAsync(string url, CancellationToken cancellationToken = default)
+        public async Task ExecuteAsync(string? alias, string url, CancellationToken cancellationToken = default)
         {
             _outputWriter.WriteLine($"Downloading distribution plugin from: {url}");
 
@@ -53,25 +60,59 @@ namespace Updaemon.Commands
             // Create plugins directory
             Directory.CreateDirectory(_pluginsDirectory);
 
-            // Save the plugin
-            string pluginPath = Path.Combine(_pluginsDirectory, filename);
-            await File.WriteAllBytesAsync(pluginPath, pluginData, cancellationToken);
-            _outputWriter.WriteLine($"Saved plugin to: {pluginPath}");
+            // Temporarily save the plugin to get metadata
+            string tempPluginPath = Path.Combine(_pluginsDirectory, $"temp_{Guid.NewGuid():N}_{filename}");
+            await File.WriteAllBytesAsync(tempPluginPath, pluginData, cancellationToken);
 
             // Make it executable (on Linux)
             try
             {
-                System.Diagnostics.Process.Start("chmod", $"+x {pluginPath}")?.WaitForExit();
-                _outputWriter.WriteLine("Made plugin executable");
+                System.Diagnostics.Process.Start("chmod", $"+x {tempPluginPath}")?.WaitForExit();
             }
             catch
             {
                 _outputWriter.WriteLine("Warning: Could not make plugin executable. You may need to run 'chmod +x' manually.");
             }
 
-            // Update config
-            await _configManager.SetDistributionPluginPathAsync(pluginPath, cancellationToken);
-            _outputWriter.WriteLine("Distribution plugin installed successfully");
+            // Get plugin metadata
+            await _distributionClient.ConnectAsync(tempPluginPath, cancellationToken);
+            DistributionServiceInformation serviceInfo = await _distributionClient.GetServiceInformationAsync(cancellationToken);
+            await _distributionClient.DisposeAsync();
+
+            // Determine alias
+            string finalAlias = alias ?? serviceInfo.DefaultAlias;
+            if (string.IsNullOrEmpty(finalAlias))
+            {
+                throw new InvalidOperationException("Plugin does not provide a default alias and none was specified. Use --as to specify an alias.");
+            }
+
+            // Check if alias already exists
+            InstalledPluginInfo? existing = await _configManager.GetPluginAsync(finalAlias, cancellationToken);
+            if (existing != null)
+            {
+                throw new InvalidOperationException($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
+            }
+
+            // Create plugin-specific directory
+            string pluginDirectory = Path.Combine(_pluginsDirectory, finalAlias);
+            Directory.CreateDirectory(pluginDirectory);
+
+            // Move plugin to final location
+            string finalPluginPath = Path.Combine(pluginDirectory, filename);
+            File.Move(tempPluginPath, finalPluginPath, overwrite: true);
+            _outputWriter.WriteLine($"Saved plugin to: {finalPluginPath}");
+
+            // Register plugin
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo
+            {
+                Alias = finalAlias,
+                Path = finalPluginPath
+            };
+            await _configManager.AddOrUpdatePluginAsync(pluginInfo, cancellationToken);
+            _outputWriter.WriteLine($"Distribution plugin '{finalAlias}' installed successfully");
+            _outputWriter.WriteLine($"  Name: {serviceInfo.FullName}");
+            _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
+            _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
         }
     }
 }

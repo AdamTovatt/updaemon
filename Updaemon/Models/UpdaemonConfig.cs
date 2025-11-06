@@ -6,9 +6,9 @@ namespace Updaemon.Models
     public class UpdaemonConfig
     {
         /// <summary>
-        /// Path to the active distribution service plugin executable.
+        /// Dictionary of installed distribution plugins, keyed by alias.
         /// </summary>
-        public string? DistributionPluginPath { get; set; }
+        public Dictionary<string, InstalledPluginInfo> InstalledPlugins { get; set; } = new Dictionary<string, InstalledPluginInfo>();
 
         /// <summary>
         /// List of registered services.

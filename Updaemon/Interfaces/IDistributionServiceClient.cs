@@ -35,6 +35,13 @@ namespace Updaemon.Interfaces
         /// <param name="targetPath">The directory path where the version should be downloaded.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets service information from the distribution plugin.
+        /// </summary>
+        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
+        /// <returns>Distribution service information.</returns>
+        Task<Updaemon.Common.Models.DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default);
     }
 }
 

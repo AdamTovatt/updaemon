@@ -1,4 +1,5 @@
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Commands
 {
@@ -44,8 +45,15 @@ namespace Updaemon.Commands
             _systemdUnitDirectory = systemdUnitDirectory;
         }
 
-        public async Task ExecuteAsync(string appName, CancellationToken cancellationToken = default)
+        public async Task ExecuteAsync(string appName, string distributionPluginAlias, CancellationToken cancellationToken = default)
         {
+            // Verify plugin exists
+            InstalledPluginInfo? pluginInfo = await _configManager.GetPluginAsync(distributionPluginAlias, cancellationToken);
+            if (pluginInfo == null)
+            {
+                throw new InvalidOperationException($"Distribution plugin '{distributionPluginAlias}' is not installed. Use 'updaemon dist-install' to install a plugin first.");
+            }
+
             _outputWriter.WriteLine($"Creating new service: {appName}");
 
             // Create the service directory
@@ -62,7 +70,7 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");
 
             // Register the service (local name = remote name initially)
-            await _configManager.RegisterServiceAsync(appName, appName, cancellationToken);
+            await _configManager.RegisterServiceAsync(appName, appName, distributionPluginAlias, cancellationToken);
             _outputWriter.WriteLine($"Registered service in updaemon config");
 
             // Enable the service

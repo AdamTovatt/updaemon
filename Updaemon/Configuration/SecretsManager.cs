@@ -3,44 +3,51 @@ using Updaemon.Interfaces;
 namespace Updaemon.Configuration
 {
     /// <summary>
-    /// Manages secrets stored in /var/lib/updaemon/secrets.txt in key=value format.
+    /// Manages secrets stored per-plugin in /var/lib/updaemon/plugins/&lt;alias&gt;/secrets.txt in key=value format.
     /// </summary>
     public class SecretsManager : ISecretsManager
     {
         private const string ConfigDirectory = "/var/lib/updaemon";
+        private const string PluginsDirectory = "plugins";
         private const string SecretsFileName = "secrets.txt";
 
-        private readonly string _secretsFilePath;
         private readonly string _configDirectory;
+        private readonly string _pluginsDirectory;
 
         public SecretsManager()
         {
             _configDirectory = ConfigDirectory;
-            _secretsFilePath = Path.Combine(_configDirectory, SecretsFileName);
+            _pluginsDirectory = Path.Combine(_configDirectory, PluginsDirectory);
         }
 
         public SecretsManager(string configDirectory)
         {
             _configDirectory = configDirectory;
-            _secretsFilePath = Path.Combine(_configDirectory, SecretsFileName);
+            _pluginsDirectory = Path.Combine(_configDirectory, PluginsDirectory);
         }
 
-        public async Task SetSecretAsync(string key, string value, CancellationToken cancellationToken = default)
+        public string GetPluginSecretsPath(string pluginAlias)
         {
-            Dictionary<string, string> secrets = await LoadSecretsAsync(cancellationToken);
+            string pluginDirectory = Path.Combine(_pluginsDirectory, pluginAlias);
+            return Path.Combine(pluginDirectory, SecretsFileName);
+        }
+
+        public async Task SetSecretAsync(string pluginAlias, string key, string value, CancellationToken cancellationToken = default)
+        {
+            Dictionary<string, string> secrets = await LoadPluginSecretsAsync(pluginAlias, cancellationToken);
             secrets[key] = value;
-            await SaveSecretsAsync(secrets, cancellationToken);
+            await SavePluginSecretsAsync(pluginAlias, secrets, cancellationToken);
         }
 
-        public async Task<string?> GetSecretAsync(string key, CancellationToken cancellationToken = default)
+        public async Task<string?> GetSecretAsync(string pluginAlias, string key, CancellationToken cancellationToken = default)
         {
-            Dictionary<string, string> secrets = await LoadSecretsAsync(cancellationToken);
+            Dictionary<string, string> secrets = await LoadPluginSecretsAsync(pluginAlias, cancellationToken);
             return secrets.GetValueOrDefault(key);
         }
 
-        public async Task<string?> GetAllSecretsFormattedAsync(CancellationToken cancellationToken = default)
+        public async Task<string?> GetPluginSecretsFormattedAsync(string pluginAlias, CancellationToken cancellationToken = default)
         {
-            Dictionary<string, string> secrets = await LoadSecretsAsync(cancellationToken);
+            Dictionary<string, string> secrets = await LoadPluginSecretsAsync(pluginAlias, cancellationToken);
 
             if (secrets.Count == 0)
             {
@@ -50,21 +57,23 @@ namespace Updaemon.Configuration
             return string.Join(Environment.NewLine, secrets.Select(kvp => $"{kvp.Key}={kvp.Value}"));
         }
 
-        public async Task RemoveSecretAsync(string key, CancellationToken cancellationToken = default)
+        public async Task RemoveSecretAsync(string pluginAlias, string key, CancellationToken cancellationToken = default)
         {
-            Dictionary<string, string> secrets = await LoadSecretsAsync(cancellationToken);
+            Dictionary<string, string> secrets = await LoadPluginSecretsAsync(pluginAlias, cancellationToken);
             secrets.Remove(key);
-            await SaveSecretsAsync(secrets, cancellationToken);
+            await SavePluginSecretsAsync(pluginAlias, secrets, cancellationToken);
         }
 
-        private async Task<Dictionary<string, string>> LoadSecretsAsync(CancellationToken cancellationToken = default)
+        private async Task<Dictionary<string, string>> LoadPluginSecretsAsync(string pluginAlias, CancellationToken cancellationToken = default)
         {
-            if (!File.Exists(_secretsFilePath))
+            string secretsFilePath = GetPluginSecretsPath(pluginAlias);
+
+            if (!File.Exists(secretsFilePath))
             {
                 return new Dictionary<string, string>();
             }
 
-            string content = await File.ReadAllTextAsync(_secretsFilePath, cancellationToken);
+            string content = await File.ReadAllTextAsync(secretsFilePath, cancellationToken);
             Dictionary<string, string> secrets = new Dictionary<string, string>();
 
             string[] lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -82,11 +91,14 @@ namespace Updaemon.Configuration
             return secrets;
         }
 
-        private async Task SaveSecretsAsync(Dictionary<string, string> secrets, CancellationToken cancellationToken = default)
+        private async Task SavePluginSecretsAsync(string pluginAlias, Dictionary<string, string> secrets, CancellationToken cancellationToken = default)
         {
-            Directory.CreateDirectory(_configDirectory);
+            string pluginDirectory = Path.Combine(_pluginsDirectory, pluginAlias);
+            Directory.CreateDirectory(pluginDirectory);
+
+            string secretsFilePath = GetPluginSecretsPath(pluginAlias);
             string content = string.Join(Environment.NewLine, secrets.Select(kvp => $"{kvp.Key}={kvp.Value}"));
-            await File.WriteAllTextAsync(_secretsFilePath, content, cancellationToken);
+            await File.WriteAllTextAsync(secretsFilePath, content, cancellationToken);
         }
     }
 }

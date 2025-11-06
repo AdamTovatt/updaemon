@@ -12,7 +12,7 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SetRemoteCommand command = new SetRemoteCommand(configManager, outputWriter);
 
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
             await command.ExecuteAsync("my-api", "UpdatedApi");
 
             Assert.Contains(configManager.MethodCalls, call => call == "SetRemoteNameAsync:my-api:UpdatedApi");

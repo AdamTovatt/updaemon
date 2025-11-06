@@ -1,3 +1,4 @@
+using Updaemon.Common.Models;
 using Updaemon.Interfaces;
 
 namespace Updaemon.Tests.Mocks
@@ -13,6 +14,8 @@ namespace Updaemon.Tests.Mocks
         public string? ConnectedPluginPath { get; private set; }
         public string? InitializedSecrets { get; private set; }
         public bool IsDisposed { get; private set; }
+        public bool GetServiceInformationAsyncThrows { get; set; }
+        public DistributionServiceInformation? CustomServiceInformation { get; set; }
 
         public Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
         {
@@ -39,6 +42,27 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add($"{nameof(DownloadVersionAsync)}:{serviceName}:{version}:{targetPath}");
             Downloads.Add((serviceName, version, targetPath));
             return Task.CompletedTask;
+        }
+
+        public Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add(nameof(GetServiceInformationAsync));
+            if (GetServiceInformationAsyncThrows)
+            {
+                throw new InvalidOperationException("Failed to get service information");
+            }
+            if (CustomServiceInformation != null)
+            {
+                return Task.FromResult(CustomServiceInformation);
+            }
+            return Task.FromResult(new DistributionServiceInformation
+            {
+                FullName = "Mock Distribution Service",
+                DefaultAlias = "mock",
+                Description = "Mock distribution service for testing",
+                Version = "1.0.0",
+                RequiredSecrets = new List<DistributionSecretInfo>()
+            });
         }
 
         public ValueTask DisposeAsync()
