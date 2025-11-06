@@ -24,9 +24,9 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
-        public async Task RegisterServiceAsync(string localName, string remoteName, CancellationToken cancellationToken = default)
+        public async Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}");
+            MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}:{distributionPluginAlias}");
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
 
             RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
@@ -39,6 +39,7 @@ namespace Updaemon.Tests.Mocks
             {
                 LocalName = localName,
                 RemoteName = remoteName,
+                DistributionPluginAlias = distributionPluginAlias,
             });
 
             await SaveConfigAsync(config, cancellationToken);
@@ -88,19 +89,34 @@ namespace Updaemon.Tests.Mocks
             return config.Services.AsReadOnly();
         }
 
-        public async Task SetDistributionPluginPathAsync(string pluginPath, CancellationToken cancellationToken = default)
+        public async Task AddOrUpdatePluginAsync(InstalledPluginInfo pluginInfo, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(SetDistributionPluginPathAsync)}:{pluginPath}");
+            MethodCalls.Add($"{nameof(AddOrUpdatePluginAsync)}:{pluginInfo.Alias}");
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            config.DistributionPluginPath = pluginPath;
+            config.InstalledPlugins[pluginInfo.Alias] = pluginInfo;
             await SaveConfigAsync(config, cancellationToken);
         }
 
-        public async Task<string?> GetDistributionPluginPathAsync(CancellationToken cancellationToken = default)
+        public async Task<InstalledPluginInfo?> GetPluginAsync(string alias, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add(nameof(GetDistributionPluginPathAsync));
+            MethodCalls.Add($"{nameof(GetPluginAsync)}:{alias}");
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            return config.DistributionPluginPath;
+            return config.InstalledPlugins.TryGetValue(alias, out InstalledPluginInfo? plugin) ? plugin : null;
+        }
+
+        public async Task<IReadOnlyDictionary<string, InstalledPluginInfo>> GetAllPluginsAsync(CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add(nameof(GetAllPluginsAsync));
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
+            return config.InstalledPlugins;
+        }
+
+        public async Task RemovePluginAsync(string alias, CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add($"{nameof(RemovePluginAsync)}:{alias}");
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
+            config.InstalledPlugins.Remove(alias);
+            await SaveConfigAsync(config, cancellationToken);
         }
     }
 }

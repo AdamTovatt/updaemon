@@ -20,7 +20,7 @@ namespace Updaemon.Interfaces
         /// <summary>
         /// Registers a new service.
         /// </summary>
-        Task RegisterServiceAsync(string localName, string remoteName, CancellationToken cancellationToken = default);
+        Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Updates the remote name for an existing service.
@@ -44,14 +44,24 @@ namespace Updaemon.Interfaces
         Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Sets the active distribution service plugin path.
+        /// Adds or updates an installed plugin.
         /// </summary>
-        Task SetDistributionPluginPathAsync(string pluginPath, CancellationToken cancellationToken = default);
+        Task AddOrUpdatePluginAsync(InstalledPluginInfo pluginInfo, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Gets the active distribution service plugin path.
+        /// Gets a plugin by alias.
         /// </summary>
-        Task<string?> GetDistributionPluginPathAsync(CancellationToken cancellationToken = default);
+        Task<InstalledPluginInfo?> GetPluginAsync(string alias, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets all installed plugins.
+        /// </summary>
+        Task<IReadOnlyDictionary<string, InstalledPluginInfo>> GetAllPluginsAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Removes a plugin by alias.
+        /// </summary>
+        Task RemovePluginAsync(string alias, CancellationToken cancellationToken = default);
     }
 }
 

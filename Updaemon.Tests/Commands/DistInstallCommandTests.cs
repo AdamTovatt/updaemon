@@ -1,5 +1,6 @@
 using System.Net;
 using Updaemon.Commands;
+using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -22,10 +23,10 @@ namespace Updaemon.Tests.Commands
 
                 await command.ExecuteAsync("https://example.com/plugins/my-plugin");
 
-                Assert.Contains(configManager.MethodCalls, call => call.StartsWith("SetDistributionPluginPathAsync:"));
-                string? pluginPath = await configManager.GetDistributionPluginPathAsync();
-                Assert.NotNull(pluginPath);
-                Assert.Contains("my-plugin", pluginPath);
+                Assert.Contains(configManager.MethodCalls, call => call.StartsWith("AddOrUpdatePluginAsync:"));
+                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
+                Assert.NotEmpty(plugins);
+                Assert.Contains("my-plugin", plugins.Values.First().Path);
             }
         }
 
@@ -63,9 +64,9 @@ namespace Updaemon.Tests.Commands
 
                 await command.ExecuteAsync("https://example.com/path/to/byteshelf-dist");
 
-                string? pluginPath = await configManager.GetDistributionPluginPathAsync();
-                Assert.NotNull(pluginPath);
-                Assert.Contains("byteshelf-dist", pluginPath);
+                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
+                Assert.NotEmpty(plugins);
+                Assert.Contains("byteshelf-dist", plugins.Values.First().Path);
             }
         }
     }

@@ -31,7 +31,7 @@ Root Tenant (authenticated with API key)
 ## Installation
 
 ```bash
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.1/Updaemon.Distribution.ByteShelfDistribution
+sudo updaemon dist-install --as byteshelf https://github.com/AdamTovatt/updaemon/releases/download/v0.3.1/Updaemon.Distribution.ByteShelfDistribution
 ```
 
 ## Configuration
@@ -40,11 +40,11 @@ sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/downl
 > You need to configure two secrets for the plugin to work.
 
 ```bash
-sudo updaemon secret-set byteShelfUrl https://your-byteshelf-instance.com
+sudo updaemon secret-set byteshelf byteShelfUrl https://your-byteshelf-instance.com
 ```
 
 ```bash
-sudo updaemon secret-set byteShelfApiKey your-api-key-here
+sudo updaemon secret-set byteshelf byteShelfApiKey your-api-key-here
 ```
 
 The API key must have access to your files.
@@ -73,7 +73,7 @@ sudo updaemon secret-set byteShelfUrl https://byteshelf.example.com
 sudo updaemon secret-set byteShelfApiKey abc123xyz
 
 # 2. Create a new service
-sudo updaemon new myapp
+sudo updaemon new myapp --from byteshelf
 
 # 3. Set the remote to your ByteShelf app subtenant
 sudo updaemon set-remote myapp MyApp
@@ -86,7 +86,7 @@ sudo updaemon update myapp
 
 ```bash
 # Create a service
-sudo updaemon new word-library-api
+sudo updaemon new word-library-api --from byteshelf
 
 # Set the remote with a pattern to match platform-specific files
 sudo updaemon set-remote word-library-api WordLibraryApi/linux-x64.zip

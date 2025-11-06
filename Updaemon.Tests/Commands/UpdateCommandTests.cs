@@ -1,4 +1,5 @@
 using Updaemon.Commands;
+using Updaemon.Models;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
@@ -39,7 +40,8 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_SpecificServiceNotRegistered_DoesNotProceed()
         {
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -71,7 +73,8 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_NoServicesRegistered_DoesNotProceed()
         {
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -103,8 +106,9 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_UpdatesSpecificServiceWhenAppNameProvided()
         {
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -139,9 +143,10 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_UpdatesAllServicesWhenNoAppNameProvided()
         {
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("service1", "Service1");
-            await configManager.RegisterServiceAsync("service2", "Service2");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("service1", "Service1", "github");
+            await configManager.RegisterServiceAsync("service2", "Service2", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -181,8 +186,9 @@ namespace Updaemon.Tests.Commands
             string serviceBaseDirectory = "/opt";
 
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -229,8 +235,9 @@ namespace Updaemon.Tests.Commands
             string serviceBaseDirectory = "/opt";
 
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -282,8 +289,9 @@ namespace Updaemon.Tests.Commands
             string serviceBaseDirectory = "/opt";
 
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -334,8 +342,9 @@ namespace Updaemon.Tests.Commands
             string serviceBaseDirectory = "/opt";
 
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -385,8 +394,9 @@ namespace Updaemon.Tests.Commands
             string serviceBaseDirectory = "/opt";
 
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -435,8 +445,9 @@ namespace Updaemon.Tests.Commands
         public async Task UpdateService_MissingExecutable_DoesNotUpdateSymlink()
         {
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -473,8 +484,9 @@ namespace Updaemon.Tests.Commands
         public async Task UpdateService_InitializesDistributionClientWithSecrets()
         {
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             await secretsManager.SetSecretAsync("apiKey", "abc123");
@@ -517,8 +529,9 @@ namespace Updaemon.Tests.Commands
             string serviceBaseDirectory = "/opt";
 
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.SetDistributionPluginPathAsync("/path/to/plugin");
-            await configManager.RegisterServiceAsync("my-api", "MyApi");
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            await configManager.AddOrUpdatePluginAsync(pluginInfo);
+            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();

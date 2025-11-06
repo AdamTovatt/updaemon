@@ -68,14 +68,17 @@ namespace Updaemon.Commands
 
         public async Task ExecuteAsync(string? specificAppName = null, CancellationToken cancellationToken = default)
         {
-            // Get the distribution plugin path
-            string? pluginPath = await _configManager.GetDistributionPluginPathAsync(cancellationToken);
-            if (string.IsNullOrEmpty(pluginPath))
+            // TODO: This needs to be refactored to work with multiple plugins
+            // For now, get the first plugin or use a default
+            IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await _configManager.GetAllPluginsAsync(cancellationToken);
+            if (plugins.Count == 0)
             {
                 _outputWriter.WriteError("Error: No distribution service plugin configured.");
                 _outputWriter.WriteLine("Use 'updaemon dist-install <url>' to install a distribution plugin.");
                 return;
             }
+            InstalledPluginInfo firstPlugin = plugins.Values.First();
+            string pluginPath = firstPlugin.Path;
 
             // Connect to the distribution service
             await _distributionClient.ConnectAsync(pluginPath, cancellationToken);

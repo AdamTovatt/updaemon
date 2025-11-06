@@ -38,6 +38,20 @@ using Updaemon.Common;
 
 public class MyDistributionService : IDistributionService
 {
+    public DistributionServiceInformation GetServiceInformation()
+    {
+        return new DistributionServiceInformation
+        {
+            FullName = "My Distribution Service",
+            DefaultAlias = "mydist",
+            Description = "Retrieves releases from MyDist.",
+            Version = "1.0.0",
+            RequiredSecrets = new List<DistributionSecretInfo>
+            {
+                new DistributionSecretInfo { Name = "apiKey", IsRequired = true, Description = "API key for authentication" },
+            },
+        };
+    }
     public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
     {
         // Access secrets using secrets.GetValue("key") or secrets.GetValueIgnoreCase("key")
@@ -84,6 +98,10 @@ class Program
 - Converts exceptions to proper RPC error responses
 
 ## IDistributionService Interface
+
+### GetServiceInformation()
+
+Returns static metadata about the plugin (full name, default alias, version, description, and required/optional secrets). This should not perform network operations.
 
 ### InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
 
@@ -181,7 +199,7 @@ public class MyDistributionService : IDistributionService
 
 ## RPC Protocol
 
-Communication between updaemon and your plugin uses JSON-RPC over named pipes.
+Communication between updaemon and your plugin uses JSON-RPC over named pipes. Updaemon may also invoke the plugin with a special `--get-info` mode during installation to retrieve `DistributionServiceInformation` before regular operation.
 
 ### Request Format
 

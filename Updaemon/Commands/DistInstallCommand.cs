@@ -1,4 +1,5 @@
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Commands
 {
@@ -69,8 +70,14 @@ namespace Updaemon.Commands
                 _outputWriter.WriteLine("Warning: Could not make plugin executable. You may need to run 'chmod +x' manually.");
             }
 
-            // Update config
-            await _configManager.SetDistributionPluginPathAsync(pluginPath, cancellationToken);
+            // TODO: This needs to be refactored to support --as syntax and plugin folders
+            // For now, using a temporary alias
+            InstalledPluginInfo pluginInfo = new InstalledPluginInfo
+            {
+                Alias = "temp",
+                Path = pluginPath
+            };
+            await _configManager.AddOrUpdatePluginAsync(pluginInfo, cancellationToken);
             _outputWriter.WriteLine("Distribution plugin installed successfully");
         }
     }

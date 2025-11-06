@@ -20,6 +20,11 @@ namespace Updaemon.Models
         /// If not specified (null), LocalName is used as the default.
         /// </summary>
         public string? ExecutableName { get; set; }
+
+        /// <summary>
+        /// Alias of the distribution plugin to use for this service.
+        /// </summary>
+        public string DistributionPluginAlias { get; set; } = string.Empty;
     }
 }
 

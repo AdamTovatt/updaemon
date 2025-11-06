@@ -17,7 +17,7 @@ namespace Updaemon.Tests.Configuration
 
                 Assert.NotNull(config);
                 Assert.Empty(config.Services);
-                Assert.Null(config.DistributionPluginPath);
+                Assert.Empty(config.InstalledPlugins);
             }
         }
 
@@ -30,7 +30,10 @@ namespace Updaemon.Tests.Configuration
 
                 UpdaemonConfig originalConfig = new UpdaemonConfig
                 {
-                    DistributionPluginPath = "/path/to/plugin",
+                    InstalledPlugins = new Dictionary<string, InstalledPluginInfo>
+                    {
+                        { "github", new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" } }
+                    },
                     Services = new List<RegisteredService>
                     {
                         new RegisteredService
@@ -45,7 +48,8 @@ namespace Updaemon.Tests.Configuration
                 UpdaemonConfig loadedConfig = await configManager.LoadConfigAsync();
 
                 Assert.NotNull(loadedConfig);
-                Assert.Equal(originalConfig.DistributionPluginPath, loadedConfig.DistributionPluginPath);
+                Assert.Single(loadedConfig.InstalledPlugins);
+                Assert.Equal("/path/to/plugin", loadedConfig.InstalledPlugins["github"].Path);
                 Assert.Single(loadedConfig.Services);
                 Assert.Equal("test-service", loadedConfig.Services[0].LocalName);
                 Assert.Equal("TestService", loadedConfig.Services[0].RemoteName);
@@ -59,7 +63,7 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.RegisterServiceAsync("my-api", "MyApi");
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 UpdaemonConfig config = await configManager.LoadConfigAsync();
                 Assert.Single(config.Services);
@@ -75,10 +79,10 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.RegisterServiceAsync("my-api", "MyApi");
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                    async () => await configManager.RegisterServiceAsync("my-api", "MyApi2")
+                    async () => await configManager.RegisterServiceAsync("my-api", "MyApi2", "github")
                 );
 
                 Assert.Contains("already registered", exception.Message);
@@ -92,7 +96,7 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.RegisterServiceAsync("my-api", "MyApi");
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
                 await configManager.SetRemoteNameAsync("my-api", "UpdatedApi");
 
                 RegisteredService? service = await configManager.GetServiceAsync("my-api");
@@ -136,9 +140,9 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.RegisterServiceAsync("service1", "Service1");
-                await configManager.RegisterServiceAsync("service2", "Service2");
-                await configManager.RegisterServiceAsync("service3", "Service3");
+                await configManager.RegisterServiceAsync("service1", "Service1", "github");
+                await configManager.RegisterServiceAsync("service2", "Service2", "github");
+                await configManager.RegisterServiceAsync("service3", "Service3", "github");
 
                 IReadOnlyList<RegisteredService> services = await configManager.GetAllServicesAsync();
 
@@ -150,29 +154,35 @@ namespace Updaemon.Tests.Configuration
         }
 
         [Fact]
-        public async Task SetDistributionPluginPathAsync_And_GetDistributionPluginPathAsync_Success()
+        public async Task AddOrUpdatePluginAsync_And_GetPluginAsync_Success()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.SetDistributionPluginPathAsync("/path/to/my/plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo
+                {
+                    Alias = "github",
+                    Path = "/path/to/my/plugin"
+                };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
-                string? pluginPath = await configManager.GetDistributionPluginPathAsync();
-                Assert.Equal("/path/to/my/plugin", pluginPath);
+                InstalledPluginInfo? retrieved = await configManager.GetPluginAsync("github");
+                Assert.NotNull(retrieved);
+                Assert.Equal("/path/to/my/plugin", retrieved.Path);
             }
         }
 
         [Fact]
-        public async Task GetDistributionPluginPathAsync_NoPluginConfigured_ReturnsNull()
+        public async Task GetPluginAsync_NoPluginConfigured_ReturnsNull()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                string? pluginPath = await configManager.GetDistributionPluginPathAsync();
+                InstalledPluginInfo? plugin = await configManager.GetPluginAsync("github");
 
-                Assert.Null(pluginPath);
+                Assert.Null(plugin);
             }
         }
 
@@ -183,7 +193,7 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.RegisterServiceAsync("my-api", "MyApi");
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
                 await configManager.SetExecutableNameAsync("my-api", "MyApiExecutable");
 
                 RegisteredService? service = await configManager.GetServiceAsync("my-api");
@@ -199,7 +209,7 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.RegisterServiceAsync("my-api", "MyApi");
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
                 await configManager.SetExecutableNameAsync("my-api", "MyApiExecutable");
                 await configManager.SetExecutableNameAsync("my-api", null);
 
@@ -232,7 +242,7 @@ namespace Updaemon.Tests.Configuration
                 // Write old-style config JSON without ExecutableName field
                 string configPath = Path.Combine(tempHelper.TempDirectory, "config.json");
                 string oldConfigJson = @"{
-  ""distributionPluginPath"": ""/path/to/plugin"",
+  ""installedPlugins"": {},
   ""services"": [
     {
       ""localName"": ""test-service"",

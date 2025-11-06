@@ -9,6 +9,8 @@ namespace Updaemon.Serialization
     /// </summary>
     [JsonSerializable(typeof(UpdaemonConfig))]
     [JsonSerializable(typeof(RegisteredService))]
+    [JsonSerializable(typeof(InstalledPluginInfo))]
+    [JsonSerializable(typeof(Dictionary<string, InstalledPluginInfo>))]
     [JsonSerializable(typeof(AppConfig))]
     [JsonSourceGenerationOptions(
         WriteIndented = true,

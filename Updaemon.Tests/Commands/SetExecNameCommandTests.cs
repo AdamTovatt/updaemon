@@ -13,7 +13,7 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
 
-            await configManager.RegisterServiceAsync("test-service", "TestService");
+            await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
             // Act
             await command.ExecuteAsync("test-service", "TestServiceExecutable");
@@ -32,7 +32,7 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
 
-            await configManager.RegisterServiceAsync("test-service", "TestService");
+            await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
             // Act
             await command.ExecuteAsync("test-service", "-");

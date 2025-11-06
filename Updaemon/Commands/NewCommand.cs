@@ -62,7 +62,8 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");
 
             // Register the service (local name = remote name initially)
-            await _configManager.RegisterServiceAsync(appName, appName, cancellationToken);
+            // TODO: This needs to accept distributionPluginAlias from --from flag
+            await _configManager.RegisterServiceAsync(appName, appName, "github", cancellationToken);
             _outputWriter.WriteLine($"Registered service in updaemon config");
 
             // Enable the service

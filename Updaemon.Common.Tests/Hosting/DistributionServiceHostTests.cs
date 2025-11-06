@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Updaemon.Common;
 using Updaemon.Common.Hosting;
+using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
 
@@ -352,6 +353,18 @@ namespace Updaemon.Common.Tests.Hosting
             public string? LastDownloadTargetPath { get; private set; }
             public Version? LatestVersion { get; set; }
             public bool ShouldThrowException { get; set; }
+
+            public DistributionServiceInformation GetServiceInformation()
+            {
+                return new DistributionServiceInformation
+                {
+                    FullName = "Test Distribution Service",
+                    DefaultAlias = "test",
+                    Description = "Test distribution service for unit tests.",
+                    Version = "1.0.0",
+                    RequiredSecrets = new List<DistributionSecretInfo>()
+                };
+            }
 
             public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
             {
