@@ -30,10 +30,10 @@ namespace Updaemon.GithubDistributionService
         {
             return new DistributionServiceInformation
             {
-                FullName = "GitHub Distribution Service",
+                FullName = "GitHub Releases",
                 DefaultAlias = "github",
-                Description = "Distribution service that retrieves versioned releases from GitHub repositories.",
-                Version = "1.0.0",
+                Description = "Distribution service that uses GitHub Releases.",
+                Version = "0.2.0",
                 RequiredSecrets = new List<DistributionSecretInfo>
                 {
                     new DistributionSecretInfo

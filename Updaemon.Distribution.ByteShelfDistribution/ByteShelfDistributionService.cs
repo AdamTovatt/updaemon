@@ -29,10 +29,10 @@ namespace Updaemon.Distribution.ByteShelfDistribution
         {
             return new DistributionServiceInformation
             {
-                FullName = "ByteShelf Distribution Service",
+                FullName = "ByteShelf",
                 DefaultAlias = "byteshelf",
-                Description = "Distribution service that retrieves versioned releases from ByteShelf storage.",
-                Version = "1.0.0",
+                Description = "Distribution service that uses ByteShelf storage.",
+                Version = "0.2.0",
                 RequiredSecrets = new List<DistributionSecretInfo>
                 {
                     new DistributionSecretInfo
