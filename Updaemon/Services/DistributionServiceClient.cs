@@ -89,16 +89,10 @@ namespace Updaemon.Services
 
         public async Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)
         {
-            string? resultJson = await InvokeMethodAsync<string?>("GetServiceInformation", null, cancellationToken);
-            if (string.IsNullOrEmpty(resultJson))
-            {
-                throw new InvalidOperationException("Plugin returned null service information");
-            }
-
-            DistributionServiceInformation? info = JsonSerializer.Deserialize(resultJson, CommonJsonContext.Default.DistributionServiceInformation);
+            DistributionServiceInformation? info = await InvokeMethodAsync<DistributionServiceInformation>("GetServiceInformation", null, cancellationToken);
             if (info == null)
             {
-                throw new InvalidOperationException("Failed to deserialize service information");
+                throw new InvalidOperationException("Plugin returned null service information");
             }
 
             return info;
@@ -154,24 +148,29 @@ namespace Updaemon.Services
                 return default;
             }
 
+            // Handle string return types
             if (typeof(TResult) == typeof(string))
             {
                 object? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.String);
                 return (TResult?)result;
             }
 
-            // Special handling for nullable string return type
+            // Handle nullable string return type
             Type resultType = typeof(TResult);
             if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(Nullable<>) && resultType.GetGenericArguments()[0] == typeof(string))
             {
-                if (response.Result == null)
-                {
-                    return default;
-                }
                 object? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.String);
                 return (TResult?)result;
             }
 
+            // Handle DistributionServiceInformation (and other types from CommonJsonContext)
+            if (typeof(TResult) == typeof(DistributionServiceInformation))
+            {
+                DistributionServiceInformation? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.DistributionServiceInformation);
+                return (TResult?)(object?)result;
+            }
+
+            // Fallback: try to deserialize as object (may not work for all types)
             object? objResult = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.Object);
             return (TResult?)objResult;
         }
