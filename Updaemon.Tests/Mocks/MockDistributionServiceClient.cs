@@ -14,6 +14,8 @@ namespace Updaemon.Tests.Mocks
         public string? ConnectedPluginPath { get; private set; }
         public string? InitializedSecrets { get; private set; }
         public bool IsDisposed { get; private set; }
+        public bool GetServiceInformationAsyncThrows { get; set; }
+        public DistributionServiceInformation? CustomServiceInformation { get; set; }
 
         public Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
         {
@@ -45,6 +47,14 @@ namespace Updaemon.Tests.Mocks
         public Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(GetServiceInformationAsync));
+            if (GetServiceInformationAsyncThrows)
+            {
+                throw new InvalidOperationException("Failed to get service information");
+            }
+            if (CustomServiceInformation != null)
+            {
+                return Task.FromResult(CustomServiceInformation);
+            }
             return Task.FromResult(new DistributionServiceInformation
             {
                 FullName = "Mock Distribution Service",

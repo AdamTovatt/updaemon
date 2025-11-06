@@ -87,6 +87,29 @@ namespace Updaemon.Tests.Commands
                 Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:test-service:test-service"));
             }
         }
+
+        [Fact]
+        public async Task ExecuteAsync_PluginNotFound_ThrowsException()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager
+                {
+                    TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+                };
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+
+                NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
+
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    async () => await command.ExecuteAsync("my-service", "non-existent-plugin")
+                );
+            }
+        }
     }
 }
 

@@ -187,6 +187,69 @@ namespace Updaemon.Tests.Configuration
         }
 
         [Fact]
+        public async Task GetAllPluginsAsync_ReturnsAllInstalledPlugins()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/path/to/github" });
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = "/path/to/byteshelf" });
+
+                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
+
+                Assert.Equal(2, plugins.Count);
+                Assert.True(plugins.ContainsKey("github"));
+                Assert.True(plugins.ContainsKey("byteshelf"));
+                Assert.Equal("/path/to/github", plugins["github"].Path);
+                Assert.Equal("/path/to/byteshelf", plugins["byteshelf"].Path);
+            }
+        }
+
+        [Fact]
+        public async Task AddOrUpdatePluginAsync_UpdatesExistingPlugin()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/old/path" });
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/new/path" });
+
+                InstalledPluginInfo? plugin = await configManager.GetPluginAsync("github");
+                Assert.NotNull(plugin);
+                Assert.Equal("/new/path", plugin.Path);
+            }
+        }
+
+        [Fact]
+        public async Task RemovePluginAsync_RemovesPlugin()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/path/to/github" });
+                await configManager.RemovePluginAsync("github");
+
+                InstalledPluginInfo? plugin = await configManager.GetPluginAsync("github");
+                Assert.Null(plugin);
+            }
+        }
+
+        [Fact]
+        public async Task RemovePluginAsync_NonExistentPlugin_DoesNotThrow()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                // Should not throw when removing non-existent plugin
+                await configManager.RemovePluginAsync("non-existent");
+            }
+        }
+
+        [Fact]
         public async Task SetExecutableNameAsync_UpdatesExecutableName()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())

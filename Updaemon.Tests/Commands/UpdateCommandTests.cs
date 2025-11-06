@@ -578,6 +578,154 @@ namespace Updaemon.Tests.Commands
             string expectedServiceDirectory = Path.Combine(serviceBaseDirectory, "my-api");
             Assert.Contains(expectedServiceDirectory, filePermissionManager.DirectoryPermissionsCalls);
         }
+
+        [Fact]
+        public async Task ExecuteAsync_MultiplePlugins_GroupsByPluginAndInitializesWithPerPluginSecrets()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/plugins/github/bin" });
+            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = "/plugins/byteshelf/bin" });
+            await configManager.RegisterServiceAsync("svc1", "Svc1", "github");
+            await configManager.RegisterServiceAsync("svc2", "Svc2", "byteshelf");
+
+            MockSecretsManager secretsManager = new MockSecretsManager();
+            await secretsManager.SetSecretAsync("github", "token", "gh123");
+            await secretsManager.SetSecretAsync("byteshelf", "apiKey", "bs456");
+
+            MockServiceManager serviceManager = new MockServiceManager();
+            MockSymlinkManager symlinkManager = new MockSymlinkManager();
+            MockExecutableDetector executableDetector = new MockExecutableDetector();
+            executableDetector.SetExecutableResult("/opt/svc1/1.0.0", "svc1", "/opt/svc1/1.0.0/svc1");
+            executableDetector.SetExecutableResult("/opt/svc2/1.0.0", "svc2", "/opt/svc2/1.0.0/svc2");
+
+            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+            distributionClient.SetLatestVersion("Svc1", new Version(1, 0, 0));
+            distributionClient.SetLatestVersion("Svc2", new Version(1, 0, 0));
+
+            MockVersionExtractor versionExtractor = new MockVersionExtractor();
+            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+
+            UpdateCommand command = new UpdateCommand(
+                configManager,
+                secretsManager,
+                serviceManager,
+                symlinkManager,
+                executableDetector,
+                distributionClient,
+                new MockOutputWriter(),
+                versionExtractor,
+                filePermissionManager
+            );
+
+            await command.ExecuteAsync();
+
+            // One connect per plugin
+            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:/plugins/github/bin"));
+            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:/plugins/byteshelf/bin"));
+
+            // Initialize with per-plugin secrets
+            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:token=gh123"));
+            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:apiKey=bs456"));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ServiceWithoutPluginAlias_SkipsWithError()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" });
+            // Register service without DistributionPluginAlias (old format)
+            await configManager.RegisterServiceAsync("old-service", "OldService", "github");
+            // Manually create a service without plugin alias by directly modifying config
+            UpdaemonConfig config = await configManager.LoadConfigAsync();
+            RegisteredService serviceWithoutAlias = config.Services.First();
+            serviceWithoutAlias.DistributionPluginAlias = ""; // Clear the alias
+            await configManager.SaveConfigAsync(config);
+
+            MockSecretsManager secretsManager = new MockSecretsManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+
+            UpdateCommand command = new UpdateCommand(
+                configManager,
+                secretsManager,
+                new MockServiceManager(),
+                new MockSymlinkManager(),
+                new MockExecutableDetector(),
+                distributionClient,
+                outputWriter,
+                new MockVersionExtractor(),
+                new MockFilePermissionManager()
+            );
+
+            await command.ExecuteAsync();
+
+            // Should output error about missing plugin alias
+            Assert.Contains(outputWriter.Errors, e => e.Contains("does not have a distribution plugin assigned"));
+            // Should not try to connect
+            Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_PluginNotFound_SkipsWithError()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            // Register service with non-existent plugin
+            await configManager.RegisterServiceAsync("my-service", "MyService", "non-existent-plugin");
+
+            MockSecretsManager secretsManager = new MockSecretsManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+
+            UpdateCommand command = new UpdateCommand(
+                configManager,
+                secretsManager,
+                new MockServiceManager(),
+                new MockSymlinkManager(),
+                new MockExecutableDetector(),
+                distributionClient,
+                outputWriter,
+                new MockVersionExtractor(),
+                new MockFilePermissionManager()
+            );
+
+            await command.ExecuteAsync();
+
+            // Should output error about plugin not found
+            Assert.Contains(outputWriter.Errors, e => e.Contains("Plugin 'non-existent-plugin' not found"));
+            // Should not try to connect
+            Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_PluginExecutableNotFound_SkipsWithError()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/nonexistent/plugin/path" });
+            await configManager.RegisterServiceAsync("my-service", "MyService", "github");
+
+            MockSecretsManager secretsManager = new MockSecretsManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+
+            UpdateCommand command = new UpdateCommand(
+                configManager,
+                secretsManager,
+                new MockServiceManager(),
+                new MockSymlinkManager(),
+                new MockExecutableDetector(),
+                distributionClient,
+                outputWriter,
+                new MockVersionExtractor(),
+                new MockFilePermissionManager()
+            );
+
+            await command.ExecuteAsync();
+
+            // Should output error about plugin executable not found
+            Assert.Contains(outputWriter.Errors, e => e.Contains("Plugin executable not found"));
+            // Should not try to connect
+            Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+        }
     }
 }
 

@@ -169,6 +169,36 @@ namespace Updaemon.Tests.Configuration
                 Assert.Equal("byteshelf-key", byteshelfKey);
             }
         }
+
+        [Fact]
+        public void GetPluginSecretsPath_ReturnsCorrectPath()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+
+                string path = secretsManager.GetPluginSecretsPath("github");
+
+                string expectedPath = Path.Combine(tempHelper.TempDirectory, "plugins", "github", "secrets.txt");
+                Assert.Equal(expectedPath, path);
+            }
+        }
+
+        [Fact]
+        public void GetPluginSecretsPath_DifferentAliases_ReturnDifferentPaths()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+
+                string githubPath = secretsManager.GetPluginSecretsPath("github");
+                string byteshelfPath = secretsManager.GetPluginSecretsPath("byteshelf");
+
+                Assert.NotEqual(githubPath, byteshelfPath);
+                Assert.Contains("github", githubPath);
+                Assert.Contains("byteshelf", byteshelfPath);
+            }
+        }
     }
 }
 

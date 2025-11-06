@@ -32,6 +32,72 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task ExecuteAsync_UsesProvidedAlias_WhenAsSpecified()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+                HttpClient httpClient = new HttpClient(mockHandler);
+                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+
+                await command.ExecuteAsync("github", "https://example.com/path/to/plugin-bin");
+
+                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
+                Assert.True(plugins.ContainsKey("github"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_UsesDefaultAlias_WhenAliasNotProvided()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+                HttpClient httpClient = new HttpClient(mockHandler);
+                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+
+                // MockDistributionServiceClient returns DefaultAlias = "mock"
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+
+                await command.ExecuteAsync(null, "https://example.com/path/to/plugin-bin");
+
+                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
+                Assert.True(plugins.ContainsKey("mock"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_Throws_WhenAliasAlreadyExists()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                // Pre-register alias
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "dup", Path = "/existing/path" });
+
+                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+                HttpClient httpClient = new HttpClient(mockHandler);
+                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    async () => await command.ExecuteAsync("dup", "https://example.com/path/to/plugin-bin")
+                );
+            }
+        }
+
+        [Fact]
         public async Task ExecuteAsync_HandlesDownloadFailure()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
@@ -70,6 +136,36 @@ namespace Updaemon.Tests.Commands
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
                 Assert.NotEmpty(plugins);
                 Assert.Contains("byteshelf-dist", plugins.Values.First().Path);
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_Throws_WhenPluginHasEmptyDefaultAliasAndNoAliasProvided()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+                HttpClient httpClient = new HttpClient(mockHandler);
+                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                // Set custom service info with empty DefaultAlias
+                distributionClient.CustomServiceInformation = new Updaemon.Common.Models.DistributionServiceInformation
+                {
+                    FullName = "Test Plugin",
+                    DefaultAlias = "", // Empty alias
+                    Description = "Test",
+                    Version = "1.0.0",
+                    RequiredSecrets = new List<Updaemon.Common.Models.DistributionSecretInfo>()
+                };
+
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    async () => await command.ExecuteAsync(null, "https://example.com/path/to/plugin-bin")
+                );
             }
         }
     }

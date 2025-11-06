@@ -134,6 +134,110 @@ namespace Updaemon.Tests.Commands
             Assert.Contains(secretsManager.MethodCalls, call => call.StartsWith("SetSecretAsync:github"));
         }
 
+        [Fact]
+        public async Task ExecuteAsync_NewCommand_ParsesFromFlag()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            await configManager.AddOrUpdatePluginAsync(new Updaemon.Models.InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" });
+            MockServiceManager serviceManager = new MockServiceManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            MockUnitFileManager unitFileManager = new MockUnitFileManager
+            {
+                TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+            };
+
+            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager);
+            CommandExecutor executor = CreateCommandExecutor(configManager: configManager, serviceManager: serviceManager);
+
+            int exitCode = await executor.ExecuteAsync(new[] { "new", "my-service", "--from", "github" });
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:my-service:my-service:github"));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_NewCommand_WithoutFromFlag_ReturnsError()
+        {
+            CommandExecutor executor = CreateCommandExecutor();
+
+            int exitCode = await executor.ExecuteAsync(new[] { "new", "my-service" });
+
+            Assert.Equal(1, exitCode);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_DistInstallCommand_ParsesAsFlag()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+            mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+            HttpClient httpClient = new HttpClient(mockHandler);
+            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+
+            NewCommand newCommand = new NewCommand(configManager, new MockServiceManager(), outputWriter, new MockUnitFileManager { TemplateWithSubstitutions = "[Unit]\nDescription=test\n" });
+            UpdateCommand updateCommand = new UpdateCommand(configManager, new MockSecretsManager(), new MockServiceManager(), new MockSymlinkManager(), new MockExecutableDetector(), new MockDistributionServiceClient(), outputWriter, new MockVersionExtractor(), new MockFilePermissionManager());
+            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, httpClient, outputWriter, distributionClient);
+            DistListCommand distListCommand = new DistListCommand(configManager, outputWriter, new MockDistributionServiceClient());
+            SecretSetCommand secretSetCommand = new SecretSetCommand(new MockSecretsManager(), outputWriter);
+            TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
+
+            CommandExecutor executor = new CommandExecutor(
+                newCommand,
+                updateCommand,
+                new SetRemoteCommand(configManager, outputWriter),
+                new SetExecNameCommand(configManager, outputWriter),
+                distInstallCommand,
+                distListCommand,
+                secretSetCommand,
+                timerCommand,
+                outputWriter
+            );
+
+            int exitCode = await executor.ExecuteAsync(new[] { "dist-install", "--as", "github", "https://example.com/plugin" });
+
+            Assert.Equal(0, exitCode);
+            IReadOnlyDictionary<string, Updaemon.Models.InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
+            Assert.True(plugins.ContainsKey("github"));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_DistInstallCommand_WithoutAsFlag_UsesDefaultAlias()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+            mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+            HttpClient httpClient = new HttpClient(mockHandler);
+            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+
+            NewCommand newCommand = new NewCommand(configManager, new MockServiceManager(), outputWriter, new MockUnitFileManager { TemplateWithSubstitutions = "[Unit]\nDescription=test\n" });
+            UpdateCommand updateCommand = new UpdateCommand(configManager, new MockSecretsManager(), new MockServiceManager(), new MockSymlinkManager(), new MockExecutableDetector(), new MockDistributionServiceClient(), outputWriter, new MockVersionExtractor(), new MockFilePermissionManager());
+            DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, httpClient, outputWriter, distributionClient);
+            DistListCommand distListCommand = new DistListCommand(configManager, outputWriter, new MockDistributionServiceClient());
+            SecretSetCommand secretSetCommand = new SecretSetCommand(new MockSecretsManager(), outputWriter);
+            TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
+
+            CommandExecutor executor = new CommandExecutor(
+                newCommand,
+                updateCommand,
+                new SetRemoteCommand(configManager, outputWriter),
+                new SetExecNameCommand(configManager, outputWriter),
+                distInstallCommand,
+                distListCommand,
+                secretSetCommand,
+                timerCommand,
+                outputWriter
+            );
+
+            int exitCode = await executor.ExecuteAsync(new[] { "dist-install", "https://example.com/plugin" });
+
+            Assert.Equal(0, exitCode);
+            IReadOnlyDictionary<string, Updaemon.Models.InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
+            // MockDistributionServiceClient returns DefaultAlias = "mock"
+            Assert.True(plugins.ContainsKey("mock"));
+        }
+
         private CommandExecutor CreateCommandExecutor(
             MockConfigManager? configManager = null,
             MockSecretsManager? secretsManager = null,
