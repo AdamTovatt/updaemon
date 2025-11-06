@@ -49,10 +49,10 @@ namespace Updaemon.GithubDistributionService.Tests
             try
             {
                 await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
-                
+
                 // Get the latest version first
                 Version? version = await service.GetLatestVersionAsync("adamtovatt/netlifydnsmanager");
-                
+
                 if (version != null)
                 {
                     // Download using wildcard pattern (use more specific pattern to match only one)
@@ -97,17 +97,17 @@ namespace Updaemon.GithubDistributionService.Tests
             try
             {
                 await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
-                
+
                 // This tests the full flow that updaemon would use
                 Version? latestVersion = await service.GetLatestVersionAsync("curl/curl");
-                
+
                 if (latestVersion != null)
                 {
                     // Download using wildcard pattern to get the .zip file
                     await service.DownloadVersionAsync("curl/curl/*.zip", latestVersion, targetPath);
-                    
+
                     Assert.True(Directory.Exists(targetPath));
-                    
+
                     // After post-processing, the zip should be extracted
                     string[] allFiles = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories);
                     Assert.NotEmpty(allFiles);

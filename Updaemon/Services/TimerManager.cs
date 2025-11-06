@@ -66,7 +66,7 @@ namespace Updaemon.Services
                     return null;
 
                 string[] lines = await File.ReadAllLinesAsync(_timerUnitPath, cancellationToken);
-                
+
                 foreach (string line in lines)
                 {
                     if (line.StartsWith("OnCalendar=", StringComparison.OrdinalIgnoreCase))
@@ -99,7 +99,7 @@ ExecStart=/usr/local/bin/updaemon update
         private async Task CreateTimerUnitFileAsync(TimeSpan interval, CancellationToken cancellationToken)
         {
             string onCalendar = ConvertToSystemdCalendar(interval);
-            
+
             string timerContent = $@"[Unit]
 Description=Run updaemon update periodically
 
@@ -174,7 +174,7 @@ WantedBy=timers.target
 
         private async Task<string> RunCommandAsync(string command, string arguments, CancellationToken cancellationToken)
         {
-            using var process = new System.Diagnostics.Process();
+            using System.Diagnostics.Process process = new System.Diagnostics.Process();
             process.StartInfo.FileName = command;
             process.StartInfo.Arguments = arguments;
             process.StartInfo.UseShellExecute = false;

@@ -39,7 +39,7 @@ namespace Updaemon.Commands
         private async Task ShowCurrentStatusAsync(CancellationToken cancellationToken)
         {
             bool isEnabled = await _timerManager.IsTimerEnabledAsync(cancellationToken);
-            
+
             if (isEnabled)
             {
                 string? interval = await _timerManager.GetCurrentIntervalAsync(cancellationToken);

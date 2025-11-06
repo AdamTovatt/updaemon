@@ -1,7 +1,6 @@
 using ByteShelfCommon;
 using Updaemon.Common;
 using Updaemon.Common.Utilities;
-using Updaemon.Distribution.ByteShelfDistribution.Interfaces;
 
 namespace Updaemon.Distribution.ByteShelfDistribution.Tests
 {

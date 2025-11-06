@@ -19,20 +19,20 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = githubPath });
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = byteshelfPath });
 
-            MockOutputWriter output = new MockOutputWriter();
-            MockDistributionServiceClient client = new MockDistributionServiceClient();
+                MockOutputWriter output = new MockOutputWriter();
+                MockDistributionServiceClient client = new MockDistributionServiceClient();
 
-            DistListCommand command = new DistListCommand(configManager, output, client);
-            await command.ExecuteAsync();
+                DistListCommand command = new DistListCommand(configManager, output, client);
+                await command.ExecuteAsync();
 
-            // Should connect and request metadata twice
-            Assert.Contains(client.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
-            Assert.Contains(client.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("byteshelf"));
-            Assert.Equal(2, client.MethodCalls.Count(c => c == nameof(client.GetServiceInformationAsync)));
+                // Should connect and request metadata twice
+                Assert.Contains(client.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
+                Assert.Contains(client.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("byteshelf"));
+                Assert.Equal(2, client.MethodCalls.Count(c => c == nameof(client.GetServiceInformationAsync)));
 
-            // Output should include aliases
-            Assert.Contains(output.Messages, line => line.Contains("Alias: github"));
-            Assert.Contains(output.Messages, line => line.Contains("Alias: byteshelf"));
+                // Output should include aliases
+                Assert.Contains(output.Messages, line => line.Contains("Alias: github"));
+                Assert.Contains(output.Messages, line => line.Contains("Alias: byteshelf"));
             }
         }
 
@@ -66,17 +66,17 @@ namespace Updaemon.Tests.Commands
                 string pluginPath = tempHelper.CreateTempFile("plugins/error/bin", "fake-plugin");
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "error-plugin", Path = pluginPath });
 
-            MockOutputWriter output = new MockOutputWriter();
-            MockDistributionServiceClient client = new MockDistributionServiceClient();
-            // Make GetServiceInformationAsync throw
-            client.GetServiceInformationAsyncThrows = true;
+                MockOutputWriter output = new MockOutputWriter();
+                MockDistributionServiceClient client = new MockDistributionServiceClient();
+                // Make GetServiceInformationAsync throw
+                client.GetServiceInformationAsyncThrows = true;
 
-            DistListCommand command = new DistListCommand(configManager, output, client);
-            await command.ExecuteAsync();
+                DistListCommand command = new DistListCommand(configManager, output, client);
+                await command.ExecuteAsync();
 
-            // Should still output plugin info with error status
-            Assert.Contains(output.Messages, line => line.Contains("Alias: error-plugin"));
-            Assert.Contains(output.Messages, line => line.Contains("Error retrieving metadata"));
+                // Should still output plugin info with error status
+                Assert.Contains(output.Messages, line => line.Contains("Alias: error-plugin"));
+                Assert.Contains(output.Messages, line => line.Contains("Error retrieving metadata"));
             }
         }
     }

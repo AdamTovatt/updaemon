@@ -1,4 +1,3 @@
-using ByteShelfClient;
 using ByteShelfCommon;
 using Updaemon.Common.Utilities;
 using Updaemon.Distribution.ByteShelfDistribution.Interfaces;

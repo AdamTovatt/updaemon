@@ -1,7 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
-using Updaemon.Common;
 using Updaemon.Common.Hosting;
 using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;

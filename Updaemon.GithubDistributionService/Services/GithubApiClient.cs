@@ -28,7 +28,7 @@ namespace Updaemon.GithubDistributionService.Services
             string url = $"https://api.github.com/repos/{owner}/{repo}/releases/latest";
 
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
-            
+
             if (!string.IsNullOrWhiteSpace(token))
             {
                 request.Headers.Add("Authorization", $"Bearer {token}");
@@ -58,7 +58,7 @@ namespace Updaemon.GithubDistributionService.Services
             CancellationToken cancellationToken = default)
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
-            
+
             if (!string.IsNullOrWhiteSpace(token))
             {
                 request.Headers.Add("Authorization", $"Bearer {token}");

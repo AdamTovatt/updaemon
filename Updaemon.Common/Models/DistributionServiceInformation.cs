@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace Updaemon.Common.Models
 {
     /// <summary>

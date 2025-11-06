@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Updaemon.Common.Rpc;
 using Updaemon.Common.Models;
+using Updaemon.Common.Rpc;
 
 namespace Updaemon.Common.Serialization
 {

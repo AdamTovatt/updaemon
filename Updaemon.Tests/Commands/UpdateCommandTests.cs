@@ -202,43 +202,43 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
-            string currentExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
-            symlinkManager.Symlinks[currentSymlink] = currentExecutable;
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
+                string currentExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
+                symlinkManager.Symlinks[currentSymlink] = currentExecutable;
 
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager,
-                serviceBaseDirectory
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager,
+                    serviceBaseDirectory
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should not download if already up to date
-            Assert.Empty(distributionClient.Downloads);
+                // Should not download if already up to date
+                Assert.Empty(distributionClient.Downloads);
 
-            // Should not call any service manager methods (no restart/start)
-            Assert.Empty(serviceManager.MethodCalls.Where(call =>
-                call.Contains("Start") || call.Contains("Restart") || call.Contains("Stop")));
+                // Should not call any service manager methods (no restart/start)
+                Assert.Empty(serviceManager.MethodCalls.Where(call =>
+                    call.Contains("Start") || call.Contains("Restart") || call.Contains("Stop")));
             }
         }
 
@@ -255,48 +255,48 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            serviceManager.ServiceExistsStates["my-api"] = true;
-            serviceManager.ServiceRunningStates["my-api"] = true;
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = true;
 
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
-            string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
-            symlinkManager.Symlinks[currentSymlink] = oldExecutable;
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
+                string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
+                symlinkManager.Symlinks[currentSymlink] = oldExecutable;
 
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
-            string newExecutable = Path.Combine(newVersionDirectory, "my-api");
-            executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
+                string newExecutable = Path.Combine(newVersionDirectory, "my-api");
+                executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager,
-                serviceBaseDirectory
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager,
+                    serviceBaseDirectory
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should download new version
-            Assert.Single(distributionClient.Downloads);
-            Assert.Equal("MyApi", distributionClient.Downloads[0].ServiceName);
-            Assert.Equal(new Version(1, 1, 0), distributionClient.Downloads[0].Version);
+                // Should download new version
+                Assert.Single(distributionClient.Downloads);
+                Assert.Equal("MyApi", distributionClient.Downloads[0].ServiceName);
+                Assert.Equal(new Version(1, 1, 0), distributionClient.Downloads[0].Version);
             }
         }
 
@@ -313,47 +313,47 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            serviceManager.ServiceExistsStates["my-api"] = true;
-            serviceManager.ServiceRunningStates["my-api"] = true;
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = true;
 
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
-            string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
-            symlinkManager.Symlinks[currentSymlink] = oldExecutable;
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
+                string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
+                symlinkManager.Symlinks[currentSymlink] = oldExecutable;
 
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
-            string newExecutable = Path.Combine(newVersionDirectory, "my-api");
-            executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
+                string newExecutable = Path.Combine(newVersionDirectory, "my-api");
+                executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager,
-                serviceBaseDirectory
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager,
+                    serviceBaseDirectory
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should update symlink to point to version directory (not executable file)
-            string expectedCall = $"CreateOrUpdateSymlinkAsync:{currentSymlink}:{newVersionDirectory}";
-            Assert.Contains(symlinkManager.MethodCalls, call => call == expectedCall);
+                // Should update symlink to point to version directory (not executable file)
+                string expectedCall = $"CreateOrUpdateSymlinkAsync:{currentSymlink}:{newVersionDirectory}";
+                Assert.Contains(symlinkManager.MethodCalls, call => call == expectedCall);
             }
         }
 
@@ -370,46 +370,46 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            serviceManager.ServiceExistsStates["my-api"] = true;
-            serviceManager.ServiceRunningStates["my-api"] = true;
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = true;
 
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
-            string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
-            symlinkManager.Symlinks[currentSymlink] = oldExecutable;
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
+                string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
+                symlinkManager.Symlinks[currentSymlink] = oldExecutable;
 
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
-            string newExecutable = Path.Combine(newVersionDirectory, "my-api");
-            executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
+                string newExecutable = Path.Combine(newVersionDirectory, "my-api");
+                executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager,
-                serviceBaseDirectory
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager,
+                    serviceBaseDirectory
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should restart service
-            Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
+                // Should restart service
+                Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
             }
         }
 
@@ -426,47 +426,47 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            serviceManager.ServiceExistsStates["my-api"] = true;
-            serviceManager.ServiceRunningStates["my-api"] = false;
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = false;
 
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
-            string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
-            symlinkManager.Symlinks[currentSymlink] = oldExecutable;
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
+                string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
+                symlinkManager.Symlinks[currentSymlink] = oldExecutable;
 
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
-            string newExecutable = Path.Combine(newVersionDirectory, "my-api");
-            executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
+                string newExecutable = Path.Combine(newVersionDirectory, "my-api");
+                executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager,
-                serviceBaseDirectory
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager,
+                    serviceBaseDirectory
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should start (not restart) the stopped service
-            Assert.Contains(serviceManager.MethodCalls, call => call == "StartServiceAsync:my-api");
-            Assert.DoesNotContain(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
+                // Should start (not restart) the stopped service
+                Assert.Contains(serviceManager.MethodCalls, call => call == "StartServiceAsync:my-api");
+                Assert.DoesNotContain(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
             }
         }
 
@@ -481,35 +481,35 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
 
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            // Don't configure any result - detector will return null
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                // Don't configure any result - detector will return null
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should not create symlink if executable not found
-            Assert.DoesNotContain(symlinkManager.MethodCalls, call => call.StartsWith("CreateOrUpdateSymlinkAsync"));
+                // Should not create symlink if executable not found
+                Assert.DoesNotContain(symlinkManager.MethodCalls, call => call.StartsWith("CreateOrUpdateSymlinkAsync"));
             }
         }
 
@@ -524,39 +524,39 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
-            await secretsManager.SetSecretAsync("github", "tenantId", "550e8400");
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
+                await secretsManager.SetSecretAsync("github", "tenantId", "550e8400");
 
-            MockServiceManager serviceManager = new MockServiceManager();
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            executableDetector.SetExecutableResult("/opt/my-api/1.0.0", "my-api", "/opt/my-api/1.0.0/my-api");
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                executableDetector.SetExecutableResult("/opt/my-api/1.0.0", "my-api", "/opt/my-api/1.0.0/my-api");
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should initialize with formatted secrets
-            Assert.NotNull(distributionClient.InitializedSecrets);
-            Assert.Contains("apiKey=abc123", distributionClient.InitializedSecrets);
-            Assert.Contains("tenantId=550e8400", distributionClient.InitializedSecrets);
+                // Should initialize with formatted secrets
+                Assert.NotNull(distributionClient.InitializedSecrets);
+                Assert.Contains("apiKey=abc123", distributionClient.InitializedSecrets);
+                Assert.Contains("tenantId=550e8400", distributionClient.InitializedSecrets);
             }
         }
 
@@ -573,50 +573,50 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            serviceManager.ServiceExistsStates["my-api"] = true;
-            serviceManager.ServiceRunningStates["my-api"] = true;
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = true;
 
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
-            string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
-            symlinkManager.Symlinks[currentSymlink] = oldExecutable;
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                string currentSymlink = Path.Combine(serviceBaseDirectory, "my-api", "current");
+                string oldExecutable = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0", "my-api");
+                symlinkManager.Symlinks[currentSymlink] = oldExecutable;
 
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
-            string newExecutable = Path.Combine(newVersionDirectory, "my-api");
-            executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                string newVersionDirectory = Path.Combine(serviceBaseDirectory, "my-api", "1.1.0");
+                string newExecutable = Path.Combine(newVersionDirectory, "my-api");
+                executableDetector.SetExecutableResult(newVersionDirectory, "my-api", newExecutable);
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
 
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager,
-                serviceBaseDirectory
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager,
+                    serviceBaseDirectory
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            // Should set executable permissions on the downloaded executable
-            Assert.Contains(newExecutable, filePermissionManager.ExecutablePermissionsCalls);
+                // Should set executable permissions on the downloaded executable
+                Assert.Contains(newExecutable, filePermissionManager.ExecutablePermissionsCalls);
 
-            // Should set directory permissions on the service directory
-            string expectedServiceDirectory = Path.Combine(serviceBaseDirectory, "my-api");
-            Assert.Contains(expectedServiceDirectory, filePermissionManager.DirectoryPermissionsCalls);
+                // Should set directory permissions on the service directory
+                string expectedServiceDirectory = Path.Combine(serviceBaseDirectory, "my-api");
+                Assert.Contains(expectedServiceDirectory, filePermissionManager.DirectoryPermissionsCalls);
             }
         }
 
@@ -630,47 +630,47 @@ namespace Updaemon.Tests.Commands
                 string byteshelfPath = tempHelper.CreateTempFile("plugins/byteshelf/bin", "fake-plugin");
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = githubPath });
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = byteshelfPath });
-            await configManager.RegisterServiceAsync("svc1", "Svc1", "github");
-            await configManager.RegisterServiceAsync("svc2", "Svc2", "byteshelf");
+                await configManager.RegisterServiceAsync("svc1", "Svc1", "github");
+                await configManager.RegisterServiceAsync("svc2", "Svc2", "byteshelf");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            await secretsManager.SetSecretAsync("github", "token", "gh123");
-            await secretsManager.SetSecretAsync("byteshelf", "apiKey", "bs456");
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                await secretsManager.SetSecretAsync("github", "token", "gh123");
+                await secretsManager.SetSecretAsync("byteshelf", "apiKey", "bs456");
 
-            MockServiceManager serviceManager = new MockServiceManager();
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            executableDetector.SetExecutableResult("/opt/svc1/1.0.0", "svc1", "/opt/svc1/1.0.0/svc1");
-            executableDetector.SetExecutableResult("/opt/svc2/1.0.0", "svc2", "/opt/svc2/1.0.0/svc2");
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                executableDetector.SetExecutableResult("/opt/svc1/1.0.0", "svc1", "/opt/svc1/1.0.0/svc1");
+                executableDetector.SetExecutableResult("/opt/svc2/1.0.0", "svc2", "/opt/svc2/1.0.0/svc2");
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("Svc1", new Version(1, 0, 0));
-            distributionClient.SetLatestVersion("Svc2", new Version(1, 0, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("Svc1", new Version(1, 0, 0));
+                distributionClient.SetLatestVersion("Svc2", new Version(1, 0, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager
+                );
 
-            await command.ExecuteAsync();
+                await command.ExecuteAsync();
 
-            // One connect per plugin
-            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
-            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("byteshelf"));
+                // One connect per plugin
+                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
+                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("byteshelf"));
 
-            // Initialize with per-plugin secrets
-            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:token=gh123"));
-            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:apiKey=bs456"));
+                // Initialize with per-plugin secrets
+                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:token=gh123"));
+                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:apiKey=bs456"));
             }
         }
 
@@ -684,34 +684,34 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
                 // Register service without DistributionPluginAlias (old format)
                 await configManager.RegisterServiceAsync("old-service", "OldService", "github");
-            // Manually create a service without plugin alias by directly modifying config
-            UpdaemonConfig config = await configManager.LoadConfigAsync();
-            RegisteredService serviceWithoutAlias = config.Services.First();
-            serviceWithoutAlias.DistributionPluginAlias = ""; // Clear the alias
-            await configManager.SaveConfigAsync(config);
+                // Manually create a service without plugin alias by directly modifying config
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+                RegisteredService serviceWithoutAlias = config.Services.First();
+                serviceWithoutAlias.DistributionPluginAlias = ""; // Clear the alias
+                await configManager.SaveConfigAsync(config);
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                new MockServiceManager(),
-                new MockSymlinkManager(),
-                new MockExecutableDetector(),
-                distributionClient,
-                outputWriter,
-                new MockVersionExtractor(),
-                new MockFilePermissionManager()
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    new MockServiceManager(),
+                    new MockSymlinkManager(),
+                    new MockExecutableDetector(),
+                    distributionClient,
+                    outputWriter,
+                    new MockVersionExtractor(),
+                    new MockFilePermissionManager()
+                );
 
-            await command.ExecuteAsync();
+                await command.ExecuteAsync();
 
-            // Should output error about missing plugin alias
-            Assert.Contains(outputWriter.Errors, e => e.Contains("does not have a distribution plugin assigned"));
-            // Should not try to connect
-            Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+                // Should output error about missing plugin alias
+                Assert.Contains(outputWriter.Errors, e => e.Contains("does not have a distribution plugin assigned"));
+                // Should not try to connect
+                Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
             }
         }
 

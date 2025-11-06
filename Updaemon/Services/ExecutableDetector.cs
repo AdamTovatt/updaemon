@@ -22,7 +22,7 @@ namespace Updaemon.Services
             if (File.Exists(configPath))
             {
                 string configJson = await File.ReadAllTextAsync(configPath, cancellationToken);
-                
+
                 AppConfig? config;
                 try
                 {

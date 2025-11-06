@@ -1,5 +1,5 @@
-using System.Text.Json.Serialization;
 using ByteShelfCommon;
+using System.Text.Json.Serialization;
 
 namespace Updaemon.Distribution.ByteShelfDistribution.Serialization
 {
