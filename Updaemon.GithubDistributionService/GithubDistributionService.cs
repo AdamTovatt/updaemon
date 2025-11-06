@@ -34,7 +34,7 @@ namespace Updaemon.GithubDistributionService
                 DefaultAlias = "github",
                 Description = "Distribution service that uses GitHub Releases.",
                 Version = "0.2.0",
-                RequiredSecrets = new List<DistributionSecretInfo>
+                Secrets = new List<DistributionSecretInfo>
                 {
                     new DistributionSecretInfo
                     {

@@ -46,7 +46,7 @@ public class MyDistributionService : IDistributionService
             DefaultAlias = "mydist",
             Description = "Retrieves releases from MyDist.",
             Version = "1.0.0",
-            RequiredSecrets = new List<DistributionSecretInfo>
+            Secrets = new List<DistributionSecretInfo>
             {
                 new DistributionSecretInfo { Name = "apiKey", IsRequired = true, Description = "API key for authentication" },
             },

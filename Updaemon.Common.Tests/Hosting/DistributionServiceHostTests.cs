@@ -362,7 +362,7 @@ namespace Updaemon.Common.Tests.Hosting
                     DefaultAlias = "test",
                     Description = "Test distribution service for unit tests.",
                     Version = "1.0.0",
-                    RequiredSecrets = new List<DistributionSecretInfo>()
+                    Secrets = new List<DistributionSecretInfo>()
                 };
             }
 

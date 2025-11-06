@@ -16,8 +16,7 @@ namespace Updaemon.Common.Models
 
         public string Version { get; set; } = string.Empty;
 
-        public List<DistributionSecretInfo> RequiredSecrets { get; set; } = new List<DistributionSecretInfo>();
+        public List<DistributionSecretInfo> Secrets { get; set; } = new List<DistributionSecretInfo>();
     }
 }
-
 

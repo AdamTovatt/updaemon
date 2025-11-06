@@ -158,7 +158,7 @@ namespace Updaemon.Tests.Commands
                     DefaultAlias = "", // Empty alias
                     Description = "Test",
                     Version = "1.0.0",
-                    RequiredSecrets = new List<Updaemon.Common.Models.DistributionSecretInfo>()
+                    Secrets = new List<Updaemon.Common.Models.DistributionSecretInfo>()
                 };
 
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);

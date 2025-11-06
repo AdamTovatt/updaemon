@@ -33,7 +33,7 @@ namespace Updaemon.Distribution.ByteShelfDistribution
                 DefaultAlias = "byteshelf",
                 Description = "Distribution service that uses ByteShelf storage.",
                 Version = "0.2.0",
-                RequiredSecrets = new List<DistributionSecretInfo>
+                Secrets = new List<DistributionSecretInfo>
                 {
                     new DistributionSecretInfo
                     {

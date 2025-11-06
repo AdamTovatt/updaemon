@@ -57,6 +57,21 @@ namespace Updaemon.Commands
                     _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
                     _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
                     _outputWriter.WriteLine($"  Path: {plugin.Value.Path}");
+
+                    if (serviceInfo.Secrets.Count > 0)
+                    {
+                        _outputWriter.WriteLine("  Secrets:");
+                        foreach (DistributionSecretInfo secret in serviceInfo.Secrets)
+                        {
+                            string requiredLabel = secret.IsRequired ? "(required)" : "(optional)";
+                            _outputWriter.WriteLine($"    - {secret.Name} {requiredLabel}");
+                            if (!string.IsNullOrEmpty(secret.Description))
+                            {
+                                _outputWriter.WriteLine($"      {secret.Description}");
+                            }
+                        }
+                    }
+
                     _outputWriter.WriteLine("");
                 }
                 catch (Exception ex)

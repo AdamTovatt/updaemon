@@ -61,7 +61,7 @@ namespace Updaemon.Tests.Mocks
                 DefaultAlias = "mock",
                 Description = "Mock distribution service for testing",
                 Version = "1.0.0",
-                RequiredSecrets = new List<DistributionSecretInfo>()
+                Secrets = new List<DistributionSecretInfo>()
             });
         }
 
