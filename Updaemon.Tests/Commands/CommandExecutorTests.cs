@@ -1,4 +1,5 @@
 using Updaemon.Commands;
+using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
@@ -137,22 +138,42 @@ namespace Updaemon.Tests.Commands
         [Fact]
         public async Task ExecuteAsync_NewCommand_ParsesFromFlag()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            await configManager.AddOrUpdatePluginAsync(new Updaemon.Models.InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" });
-            MockServiceManager serviceManager = new MockServiceManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            MockUnitFileManager unitFileManager = new MockUnitFileManager
+            using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
-            };
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new Updaemon.Models.InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager
+                {
+                    TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+                };
 
-            NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager);
-            CommandExecutor executor = CreateCommandExecutor(configManager: configManager, serviceManager: serviceManager);
+                NewCommand newCommand = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, tempHelper.TempDirectory, tempHelper.CreateTempDirectory("systemd"));
+                UpdateCommand updateCommand = new UpdateCommand(configManager, new MockSecretsManager(), serviceManager, new MockSymlinkManager(), new MockExecutableDetector(), new MockDistributionServiceClient(), outputWriter, new MockVersionExtractor(), new MockFilePermissionManager());
+                DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, new HttpClient(), outputWriter, new MockDistributionServiceClient());
+                DistListCommand distListCommand = new DistListCommand(configManager, outputWriter, new MockDistributionServiceClient());
+                SecretSetCommand secretSetCommand = new SecretSetCommand(new MockSecretsManager(), outputWriter);
+                TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
 
-            int exitCode = await executor.ExecuteAsync(new[] { "new", "my-service", "--from", "github" });
+                CommandExecutor executor = new CommandExecutor(
+                    newCommand,
+                    updateCommand,
+                    new SetRemoteCommand(configManager, outputWriter),
+                    new SetExecNameCommand(configManager, outputWriter),
+                    distInstallCommand,
+                    distListCommand,
+                    secretSetCommand,
+                    timerCommand,
+                    outputWriter
+                );
 
-            Assert.Equal(0, exitCode);
-            Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:my-service:my-service:github"));
+                int exitCode = await executor.ExecuteAsync(new[] { "new", "my-service", "--from", "github" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:my-service:my-service:github"));
+            }
         }
 
         [Fact]

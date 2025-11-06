@@ -1,5 +1,6 @@
 using Updaemon.Commands;
 using Updaemon.Models;
+using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
@@ -105,90 +106,101 @@ namespace Updaemon.Tests.Commands
         [Fact]
         public async Task ExecuteAsync_UpdatesSpecificServiceWhenAppNameProvided()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            executableDetector.SetExecutableResult("/opt/my-api/1.0.0", "my-api", "/opt/my-api/1.0.0/my-api");
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                executableDetector.SetExecutableResult("/opt/my-api/1.0.0", "my-api", "/opt/my-api/1.0.0/my-api");
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager
+                );
 
-            await command.ExecuteAsync("my-api");
+                await command.ExecuteAsync("my-api");
 
-            Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:MyApi");
+                Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:MyApi");
+            }
         }
 
         [Fact]
         public async Task ExecuteAsync_UpdatesAllServicesWhenNoAppNameProvided()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("service1", "Service1", "github");
-            await configManager.RegisterServiceAsync("service2", "Service2", "github");
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("service1", "Service1", "github");
+                await configManager.RegisterServiceAsync("service2", "Service2", "github");
 
-            MockSecretsManager secretsManager = new MockSecretsManager();
-            MockServiceManager serviceManager = new MockServiceManager();
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            MockExecutableDetector executableDetector = new MockExecutableDetector();
-            executableDetector.SetExecutableResult("/opt/service1/1.0.0", "service1", "/opt/service1/1.0.0/service1");
-            executableDetector.SetExecutableResult("/opt/service2/1.0.0", "service2", "/opt/service2/1.0.0/service2");
+                MockSecretsManager secretsManager = new MockSecretsManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                MockExecutableDetector executableDetector = new MockExecutableDetector();
+                executableDetector.SetExecutableResult("/opt/service1/1.0.0", "service1", "/opt/service1/1.0.0/service1");
+                executableDetector.SetExecutableResult("/opt/service2/1.0.0", "service2", "/opt/service2/1.0.0/service2");
 
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-            distributionClient.SetLatestVersion("Service1", new Version(1, 0, 0));
-            distributionClient.SetLatestVersion("Service2", new Version(1, 0, 0));
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("Service1", new Version(1, 0, 0));
+                distributionClient.SetLatestVersion("Service2", new Version(1, 0, 0));
 
-            MockVersionExtractor versionExtractor = new MockVersionExtractor();
-            MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                secretsManager,
-                serviceManager,
-                symlinkManager,
-                executableDetector,
-                distributionClient,
-                new MockOutputWriter(),
-                versionExtractor,
-                filePermissionManager
-            );
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    secretsManager,
+                    serviceManager,
+                    symlinkManager,
+                    executableDetector,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    filePermissionManager
+                );
 
-            await command.ExecuteAsync();
+                await command.ExecuteAsync();
 
-            Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service1");
-            Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service2");
+                Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service1");
+                Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service2");
+            }
         }
 
         [Fact]
         public async Task UpdateService_AlreadyUpToDate_SkipsUpdate()
         {
-            string serviceBaseDirectory = "/opt";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = "/opt";
 
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -227,17 +239,21 @@ namespace Updaemon.Tests.Commands
             // Should not call any service manager methods (no restart/start)
             Assert.Empty(serviceManager.MethodCalls.Where(call =>
                 call.Contains("Start") || call.Contains("Restart") || call.Contains("Stop")));
+            }
         }
 
         [Fact]
         public async Task UpdateService_NewerVersionAvailable_DownloadsAndInstalls()
         {
-            string serviceBaseDirectory = "/opt";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = "/opt";
 
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -281,17 +297,21 @@ namespace Updaemon.Tests.Commands
             Assert.Single(distributionClient.Downloads);
             Assert.Equal("MyApi", distributionClient.Downloads[0].ServiceName);
             Assert.Equal(new Version(1, 1, 0), distributionClient.Downloads[0].Version);
+            }
         }
 
         [Fact]
         public async Task UpdateService_UpdatesSymlinkToNewExecutable()
         {
-            string serviceBaseDirectory = "/opt";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = "/opt";
 
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -334,17 +354,21 @@ namespace Updaemon.Tests.Commands
             // Should update symlink to point to version directory (not executable file)
             string expectedCall = $"CreateOrUpdateSymlinkAsync:{currentSymlink}:{newVersionDirectory}";
             Assert.Contains(symlinkManager.MethodCalls, call => call == expectedCall);
+            }
         }
 
         [Fact]
         public async Task UpdateService_RestartsRunningService()
         {
-            string serviceBaseDirectory = "/opt";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = "/opt";
 
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -386,17 +410,21 @@ namespace Updaemon.Tests.Commands
 
             // Should restart service
             Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
+            }
         }
 
         [Fact]
         public async Task UpdateService_StartsStoppedService()
         {
-            string serviceBaseDirectory = "/opt";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = "/opt";
 
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -439,15 +467,19 @@ namespace Updaemon.Tests.Commands
             // Should start (not restart) the stopped service
             Assert.Contains(serviceManager.MethodCalls, call => call == "StartServiceAsync:my-api");
             Assert.DoesNotContain(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
+            }
         }
 
         [Fact]
         public async Task UpdateService_MissingExecutable_DoesNotUpdateSymlink()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -478,15 +510,19 @@ namespace Updaemon.Tests.Commands
 
             // Should not create symlink if executable not found
             Assert.DoesNotContain(symlinkManager.MethodCalls, call => call.StartsWith("CreateOrUpdateSymlinkAsync"));
+            }
         }
 
         [Fact]
         public async Task UpdateService_InitializesDistributionClientWithSecrets()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
@@ -521,17 +557,21 @@ namespace Updaemon.Tests.Commands
             Assert.NotNull(distributionClient.InitializedSecrets);
             Assert.Contains("apiKey=abc123", distributionClient.InitializedSecrets);
             Assert.Contains("tenantId=550e8400", distributionClient.InitializedSecrets);
+            }
         }
 
         [Fact]
         public async Task UpdateService_SetsFilePermissions()
         {
-            string serviceBaseDirectory = "/opt";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = "/opt";
 
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
             MockSecretsManager secretsManager = new MockSecretsManager();
             MockServiceManager serviceManager = new MockServiceManager();
@@ -577,14 +617,19 @@ namespace Updaemon.Tests.Commands
             // Should set directory permissions on the service directory
             string expectedServiceDirectory = Path.Combine(serviceBaseDirectory, "my-api");
             Assert.Contains(expectedServiceDirectory, filePermissionManager.DirectoryPermissionsCalls);
+            }
         }
 
         [Fact]
         public async Task ExecuteAsync_MultiplePlugins_GroupsByPluginAndInitializesWithPerPluginSecrets()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/plugins/github/bin" });
-            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = "/plugins/byteshelf/bin" });
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string githubPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                string byteshelfPath = tempHelper.CreateTempFile("plugins/byteshelf/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = githubPath });
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = byteshelfPath });
             await configManager.RegisterServiceAsync("svc1", "Svc1", "github");
             await configManager.RegisterServiceAsync("svc2", "Svc2", "byteshelf");
 
@@ -620,21 +665,25 @@ namespace Updaemon.Tests.Commands
             await command.ExecuteAsync();
 
             // One connect per plugin
-            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:/plugins/github/bin"));
-            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:/plugins/byteshelf/bin"));
+            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
+            Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("byteshelf"));
 
             // Initialize with per-plugin secrets
             Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:token=gh123"));
             Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:apiKey=bs456"));
+            }
         }
 
         [Fact]
         public async Task ExecuteAsync_ServiceWithoutPluginAlias_SkipsWithError()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" });
-            // Register service without DistributionPluginAlias (old format)
-            await configManager.RegisterServiceAsync("old-service", "OldService", "github");
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                // Register service without DistributionPluginAlias (old format)
+                await configManager.RegisterServiceAsync("old-service", "OldService", "github");
             // Manually create a service without plugin alias by directly modifying config
             UpdaemonConfig config = await configManager.LoadConfigAsync();
             RegisteredService serviceWithoutAlias = config.Services.First();
@@ -663,6 +712,7 @@ namespace Updaemon.Tests.Commands
             Assert.Contains(outputWriter.Errors, e => e.Contains("does not have a distribution plugin assigned"));
             // Should not try to connect
             Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+            }
         }
 
         [Fact]
