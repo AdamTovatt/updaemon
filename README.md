@@ -69,7 +69,7 @@ That's it! You can now use the `updaemon` command.
 A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases).
 
 ```bash
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
 ```
 
 If you want to use multiple different distribution plugins you can do that too. See the cli documentation for the [dist-install](#dist-install-command) command for more details on that.
@@ -180,7 +180,7 @@ Downloads and installs a distribution service plugin from a URL. If `--as` is om
 **Examples:**
 ```bash
 sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
 ```
 
 #### Secret-Set Command

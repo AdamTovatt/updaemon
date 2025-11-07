@@ -20,7 +20,7 @@ This plugin enables Updaemon to download and manage applications distributed via
 > [!NOTE] If the pre built version is not the correct one for the system you're using you might have to build it from source.
 
 ```bash
-sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
+sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
 ```
 
 ## Configuration

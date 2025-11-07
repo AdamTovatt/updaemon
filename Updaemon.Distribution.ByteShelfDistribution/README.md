@@ -31,7 +31,7 @@ Root Tenant (authenticated with API key)
 ## Installation
 
 ```bash
-sudo updaemon dist-install --as byteshelf https://github.com/AdamTovatt/updaemon/releases/download/v0.3.1/Updaemon.Distribution.ByteShelfDistribution
+sudo updaemon dist-install --as byteshelf https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.Distribution.ByteShelfDistribution
 ```
 
 ## Configuration
