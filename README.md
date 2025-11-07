@@ -487,6 +487,7 @@ graph TB
         SetRemoteCmd[Set Remote Command]
         SetExecNameCmd[Set Exec Name Command]
         DistInstallCmd[Dist Install Command]
+        DistListCmd[Dist List Command]
         SecretSetCmd[Secret Set Command]
     end
     
@@ -500,13 +501,12 @@ graph TB
     
     subgraph Distribution
         DistClient[Distribution Service Client]
-        Plugin[Distribution Plugin Process]
+        Plugins[Multiple Plugin Processes]
     end
     
     subgraph Storage
-        ConfigFile["config.json"]
-        SecretsFile["secrets.txt"]
-        PluginFiles["plugins/"]
+        ConfigFile["config.json<br/>• Services<br/>• Installed plugins"]
+        PluginFiles["plugins/<br/>• Plugin executables<br/>• Per-plugin secrets"]
     end
     
     subgraph System
@@ -521,6 +521,7 @@ graph TB
     Executor --> SetRemoteCmd
     Executor --> SetExecNameCmd
     Executor --> DistInstallCmd
+    Executor --> DistListCmd
     Executor --> SecretSetCmd
     
     NewCmd --> ConfigMgr
@@ -532,9 +533,9 @@ graph TB
     UpdateCmd --> DistClient
     
     ConfigMgr --> ConfigFile
-    SecretsMgr --> SecretsFile
+    SecretsMgr --> PluginFiles
     
-    DistClient -->|Named Pipe RPC| Plugin
+    DistClient -->|Named Pipe RPC| Plugins
     DistClient --> PluginFiles
     
     NewCmd --> Systemd
@@ -559,11 +560,13 @@ sequenceDiagram
     participant Systemd
     
     User->>UpdateCmd: updaemon update app-name
+    UpdateCmd->>UpdateCmd: Group services by plugin
+    UpdateCmd->>UpdateCmd: Select plugin for service
     UpdateCmd->>DistClient: Connect to plugin
     DistClient->>Plugin: Start process via named pipe
     Plugin-->>DistClient: Connected
     
-    UpdateCmd->>DistClient: InitializeAsync(secrets)
+    UpdateCmd->>DistClient: InitializeAsync(plugin secrets)
     DistClient->>Plugin: RPC: InitializeAsync
     Plugin-->>DistClient: Initialized
     
@@ -630,9 +633,8 @@ graph LR
 ```mermaid
 graph TB
     subgraph "/var/lib/updaemon/ - Configuration"
-        ConfigJson["config.json<br/>• Registered services<br/>• Plugin path"]
-        SecretsFile["secrets.txt<br/>• API keys<br/>• Credentials"]
-        PluginsDir["plugins/<br/>• Distribution executables"]
+        ConfigJson["config.json<br/>• Registered services<br/>• Installed plugins"]
+        PluginsDir["plugins/<br/>• Plugin executables<br/>• Per-plugin secrets.txt"]
     end
     
     subgraph "/opt/app-name/ - Application Versions"
@@ -645,9 +647,9 @@ graph TB
         UnitFile["app-name.service<br/>ExecStart=/opt/app-name/current"]
     end
     
-    ConfigJson -.->|Reads service list| Updaemon[Updaemon CLI Process]
-    SecretsFile -.->|Loads credentials| Updaemon
-    PluginsDir -.->|Executes plugin| Updaemon
+    ConfigJson -.->|Reads services & plugins| Updaemon[Updaemon CLI Process]
+    PluginsDir -.->|Loads plugin secrets| Updaemon
+    PluginsDir -.->|Executes plugins| Updaemon
     
     Updaemon -->|Creates/Updates| V110
     Updaemon -->|Updates symlink| Current
@@ -671,14 +673,16 @@ graph TD
     SetRemote{set-remote?}
     SetExecName{set-exec-name?}
     DistInstall{dist-install?}
+    DistList{dist-list?}
     SecretSet{secret-set?}
     
-    NewAction[Create directory<br/>Generate systemd unit<br/>Register service<br/>Enable service]
-    UpdateAction[Connect to plugin<br/>Check versions<br/>Download if newer<br/>Update symlink<br/>Restart service]
+    NewAction[Create directory<br/>Generate systemd unit<br/>Register service with plugin<br/>Enable service]
+    UpdateAction[Group by plugin<br/>Connect to each plugin<br/>Check versions<br/>Download if newer<br/>Update symlink<br/>Restart service]
     SetRemoteAction[Update remote name<br/>in config.json]
     SetExecNameAction[Update executable name<br/>in config.json]
-    DistInstallAction[Download plugin<br/>Make executable<br/>Save to plugins dir<br/>Update config]
-    SecretSetAction[Add/update secret<br/>in secrets.txt]
+    DistInstallAction[Download plugin<br/>Get metadata<br/>Save to plugins/<alias>/<br/>Update config]
+    DistListAction[List installed plugins<br/>Show metadata & secrets]
+    SecretSetAction[Add/update secret<br/>in plugins/<alias>/secrets.txt]
     
     Success([Exit 0])
     Error([Exit 1])
@@ -694,7 +698,9 @@ graph TD
     SetExecName -->|Yes| SetExecNameAction
     SetExecName -->|No| DistInstall
     DistInstall -->|Yes| DistInstallAction
-    DistInstall -->|No| SecretSet
+    DistInstall -->|No| DistList
+    DistList -->|Yes| DistListAction
+    DistList -->|No| SecretSet
     SecretSet -->|Yes| SecretSetAction
     SecretSet -->|No| Error
     
@@ -703,6 +709,7 @@ graph TD
     SetRemoteAction --> Success
     SetExecNameAction --> Success
     DistInstallAction --> Success
+    DistListAction --> Success
     SecretSetAction --> Success
 ```
 
@@ -713,7 +720,7 @@ graph TD
 ```mermaid
 graph LR
     A([Sleep for a while])
-    subgraph Distribution Plugin
+    subgraph Distribution Plugins
         B{New release exists?}
         C[Download new release]
     end
