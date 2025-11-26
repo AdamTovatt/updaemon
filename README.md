@@ -34,6 +34,10 @@ Updaemon makes it easy to keep your applications and services up to date on Linu
 - **Simple Setup**: Just install once and add your services with a single command
 - **Supports rollback**: Keeps multiple versions so you can rollback if needed
 
+## Publishing with Updaemon
+
+If you're interested in publishing your application to work with Updaemon, see [PublishingWithUpdaemon.md](PublishingWithUpdaemon.md) for details about how to structure your releases and use the `updaemon.json` configuration file. Using the `updaemon.json` file is optional, but could be useful.
+
 ## Table of Contents
 
 **Getting Started:**
@@ -68,10 +72,9 @@ That's it! You can now use the `updaemon` command.
 
 A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases).
 
-You can install plugins using either a plugin name (from the registry) or a full URL:
+To install the distribution plugin for publishing using GitHub releases run this:
 
 ```bash
-# Install using plugin name (recommended)
 sudo updaemon dist-install github
 ```
 
