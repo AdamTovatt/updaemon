@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Updaemon.Interfaces;
+using Updaemon.Serialization;
 
 namespace Updaemon.Services
 {
@@ -26,7 +27,7 @@ namespace Updaemon.Services
             try
             {
                 string jsonContent = await _httpClient.GetStringAsync(RegistryUrl, cancellationToken);
-                Dictionary<string, string>? registry = JsonSerializer.Deserialize<Dictionary<string, string>>(jsonContent);
+                Dictionary<string, string>? registry = JsonSerializer.Deserialize(jsonContent, UpdaemonJsonContext.Default.DictionaryStringString);
 
                 if (registry == null)
                 {
