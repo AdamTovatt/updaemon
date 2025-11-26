@@ -1,0 +1,5 @@
+{
+  "github": "https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService",
+  "byteshelf": "https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.Distribution.ByteShelfDistribution"
+}
+

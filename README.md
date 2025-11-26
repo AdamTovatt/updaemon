@@ -68,7 +68,13 @@ That's it! You can now use the `updaemon` command.
 
 A distribution plugin is like an extension for Updaemon that knows how to check for new versions and download files from a specific source (like GitHub releases).
 
+You can install plugins using either a plugin name (from the registry) or a full URL:
+
 ```bash
+# Install using plugin name (recommended)
+sudo updaemon dist-install github
+
+# Or install using full URL
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
 ```
 
@@ -172,16 +178,23 @@ sudo updaemon set-exec-name my-api -
 
 #### Dist-Install Command
 ```bash
-updaemon dist-install [--as <alias>] <url>
+updaemon dist-install [--as <alias>] <plugin-name|url>
 ```
 
-Downloads and installs a distribution service plugin from a URL. If `--as` is omitted, the plugin's default alias will be used.
+Downloads and installs a distribution service plugin. You can specify either a plugin name (which will be resolved from the registry) or a full URL. If `--as` is omitted, the plugin's default alias will be used.
 
 **Examples:**
 ```bash
+# Install using plugin name (resolved from registry)
+sudo updaemon dist-install github
+
+# Install using full URL
 sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
 ```
+
+> [!NOTE]
+> Plugin names are resolved from the registry file at https://github.com/AdamTovatt/updaemon/blob/master/PluginRegistry.json. If a plugin name is not found in the registry, you can still install it using the full URL.
 
 #### Secret-Set Command
 `updaemon secret-set <plugin-alias> <key> <value>`

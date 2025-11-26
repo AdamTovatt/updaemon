@@ -16,6 +16,7 @@ namespace Updaemon.Commands
         private readonly SecretSetCommand _secretSetCommand;
         private readonly TimerCommand _timerCommand;
         private readonly IOutputWriter _outputWriter;
+        private readonly IPluginUrlResolver _pluginUrlResolver;
 
         public CommandExecutor(
             NewCommand newCommand,
@@ -26,7 +27,8 @@ namespace Updaemon.Commands
             DistListCommand distListCommand,
             SecretSetCommand secretSetCommand,
             TimerCommand timerCommand,
-            IOutputWriter outputWriter)
+            IOutputWriter outputWriter,
+            IPluginUrlResolver pluginUrlResolver)
         {
             _newCommand = newCommand;
             _updateCommand = updateCommand;
@@ -37,6 +39,7 @@ namespace Updaemon.Commands
             _secretSetCommand = secretSetCommand;
             _timerCommand = timerCommand;
             _outputWriter = outputWriter;
+            _pluginUrlResolver = pluginUrlResolver;
         }
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
@@ -115,14 +118,14 @@ namespace Updaemon.Commands
                     case "dist-install":
                         if (args.Length < 2)
                         {
-                            _outputWriter.WriteError("Error: 'dist-install' command requires a URL");
-                            _outputWriter.WriteLine("Usage: updaemon dist-install [--as <alias>] <url>");
+                            _outputWriter.WriteError("Error: 'dist-install' command requires a plugin name or URL");
+                            _outputWriter.WriteLine("Usage: updaemon dist-install [--as <alias>] <plugin-name|url>");
                             return 1;
                         }
 
                         // Parse --as flag
                         string? alias = null;
-                        string? url = null;
+                        string? urlOrName = null;
 
                         for (int i = 1; i < args.Length; i++)
                         {
@@ -133,18 +136,35 @@ namespace Updaemon.Commands
                             }
                             else if (!args[i].StartsWith("--"))
                             {
-                                url = args[i];
+                                urlOrName = args[i];
                             }
                         }
 
-                        if (string.IsNullOrEmpty(url))
+                        if (string.IsNullOrEmpty(urlOrName))
                         {
-                            _outputWriter.WriteError("Error: 'dist-install' command requires a URL");
-                            _outputWriter.WriteLine("Usage: updaemon dist-install [--as <alias>] <url>");
+                            _outputWriter.WriteError("Error: 'dist-install' command requires a plugin name or URL");
+                            _outputWriter.WriteLine("Usage: updaemon dist-install [--as <alias>] <plugin-name|url>");
                             return 1;
                         }
 
-                        await _distInstallCommand.ExecuteAsync(alias, url, cancellationToken);
+                        // Determine if input is a URL or a plugin name
+                        string finalUrl = urlOrName;
+                        if (!urlOrName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                            !urlOrName.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // It's a plugin name, resolve it to a URL
+                            try
+                            {
+                                finalUrl = await _pluginUrlResolver.ResolveAsync(urlOrName, cancellationToken);
+                            }
+                            catch (InvalidOperationException)
+                            {
+                                // Re-throw to preserve the helpful error message from the resolver
+                                throw;
+                            }
+                        }
+
+                        await _distInstallCommand.ExecuteAsync(alias, finalUrl, cancellationToken);
                         return 0;
 
                     case "dist-list":
@@ -189,7 +209,7 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine("  updaemon update [app-name]                Update all services or a specific service");
             _outputWriter.WriteLine("  updaemon set-remote <app> <remote>        Set remote name for a service");
             _outputWriter.WriteLine("  updaemon set-exec-name <app> <exec-name>  Set executable name for a service");
-            _outputWriter.WriteLine("  updaemon dist-install [--as <alias>] <url> Install a distribution service plugin");
+            _outputWriter.WriteLine("  updaemon dist-install [--as <alias>] <plugin-name|url> Install a distribution service plugin");
             _outputWriter.WriteLine("  updaemon dist-list                        List installed distribution plugins");
             _outputWriter.WriteLine("  updaemon secret-set <plugin> <key> <value> Set a secret for a plugin");
             _outputWriter.WriteLine("  updaemon timer [interval]                 Manage automatic update timer");
@@ -201,6 +221,7 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine("  updaemon set-remote my-api Dev.MyApi");
             _outputWriter.WriteLine("  updaemon set-exec-name my-api MyApiExecutable");
             _outputWriter.WriteLine("  updaemon set-exec-name my-api -");
+            _outputWriter.WriteLine("  updaemon dist-install github");
             _outputWriter.WriteLine("  updaemon dist-install --as github https://example.com/plugin");
             _outputWriter.WriteLine("  updaemon dist-install https://example.com/plugin");
             _outputWriter.WriteLine("  updaemon dist-list");

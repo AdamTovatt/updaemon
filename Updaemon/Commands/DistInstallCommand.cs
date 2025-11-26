@@ -19,7 +19,8 @@ namespace Updaemon.Commands
             IConfigManager configManager,
             HttpClient httpClient,
             IOutputWriter outputWriter,
-            IDistributionServiceClient distributionClient)
+            IDistributionServiceClient distributionClient,
+            IPluginUrlResolver pluginUrlResolver)
         {
             _configManager = configManager;
             _httpClient = httpClient;
@@ -33,6 +34,7 @@ namespace Updaemon.Commands
             HttpClient httpClient,
             IOutputWriter outputWriter,
             IDistributionServiceClient distributionClient,
+            IPluginUrlResolver pluginUrlResolver,
             string pluginsDirectory)
         {
             _configManager = configManager;

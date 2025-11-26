@@ -20,7 +20,7 @@ namespace Updaemon.Tests.Commands
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await command.ExecuteAsync(null, "https://example.com/plugins/my-plugin");
 
@@ -43,7 +43,7 @@ namespace Updaemon.Tests.Commands
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await command.ExecuteAsync("github", "https://example.com/path/to/plugin-bin");
 
@@ -65,7 +65,7 @@ namespace Updaemon.Tests.Commands
 
                 // MockDistributionServiceClient returns DefaultAlias = "mock"
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await command.ExecuteAsync(null, "https://example.com/path/to/plugin-bin");
 
@@ -89,7 +89,7 @@ namespace Updaemon.Tests.Commands
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await Assert.ThrowsAsync<InvalidOperationException>(
                     async () => await command.ExecuteAsync("dup", "https://example.com/path/to/plugin-bin")
@@ -109,7 +109,7 @@ namespace Updaemon.Tests.Commands
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await Assert.ThrowsAsync<HttpRequestException>(
                     async () => await command.ExecuteAsync(null, "https://example.com/invalid-plugin")
@@ -129,7 +129,7 @@ namespace Updaemon.Tests.Commands
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await command.ExecuteAsync(null, "https://example.com/path/to/byteshelf-dist");
 
@@ -161,7 +161,7 @@ namespace Updaemon.Tests.Commands
                     Secrets = new List<Updaemon.Common.Models.DistributionSecretInfo>()
                 };
 
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await Assert.ThrowsAsync<InvalidOperationException>(
                     async () => await command.ExecuteAsync(null, "https://example.com/path/to/plugin-bin")

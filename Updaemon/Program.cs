@@ -67,6 +67,9 @@ namespace Updaemon
             // HTTP client for downloading plugins
             services.AddSingleton<HttpClient>();
 
+            // Plugin URL resolver
+            services.AddSingleton<IPluginUrlResolver, GitHubPluginUrlResolver>();
+
             // Commands
             services.AddSingleton<NewCommand>();
             services.AddSingleton<UpdateCommand>();
