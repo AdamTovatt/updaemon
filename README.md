@@ -73,12 +73,11 @@ You can install plugins using either a plugin name (from the registry) or a full
 ```bash
 # Install using plugin name (recommended)
 sudo updaemon dist-install github
-
-# Or install using full URL
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
 ```
 
-If you want to use multiple different distribution plugins you can do that too. See the cli documentation for the [dist-install](#dist-install-command) command for more details on that.
+If you want to use multiple different distribution plugins you can do that too.
+If you want to install a distribution plugin using a direct downloadlink you can do that too.
+See the cli documentation for the [dist-install](#dist-install-command) command for more in depth information.
 
 ### Configuring Secrets For Distribution Plugins
 
@@ -181,16 +180,21 @@ sudo updaemon set-exec-name my-api -
 updaemon dist-install [--as <alias>] <plugin-name|url>
 ```
 
-Downloads and installs a distribution service plugin. You can specify either a plugin name (which will be resolved from the registry) or a full URL. If `--as` is omitted, the plugin's default alias will be used.
+Downloads and installs a distribution service plugin. You can specify either a plugin name (which will be resolved from the registry) or a full URL. If `--as` is omitted, the plugin's default alias will be used. The registry can be found [here](./PluginRegistry.json).
 
 **Examples:**
 ```bash
 # Install using plugin name (resolved from registry)
 sudo updaemon dist-install github
 
+# Install using plugin name with alias (resolved from registry)
+sudo updaemon dist-install --as github github
+
 # Install using full URL
-sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.3.0/Updaemon.GithubDistributionService
 sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
+
+# Install using full URL with alias
+sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
 ```
 
 > [!NOTE]
@@ -296,9 +300,9 @@ Updaemon stores its configuration in `/var/lib/updaemon/`:
 
 **Note:** The `executableName` field is optional. If not specified, the `localName` is used when searching for the executable.
 
-### /var/lib/updaemon/plugins/<alias>/secrets.txt
+### /var/lib/updaemon/plugins/(alias)/secrets.txt
 
-Each plugin has its own `secrets.txt` with `key=value` pairs. Example for `github`:
+Each plugin has its own `secrets.txt` with `key=value` pairs. Example for `github` is found at /var/lib/updaemon/plugins/(alias)/secrets.txt and contains something like:
 
 ```
 githubToken=ghp_abc123
