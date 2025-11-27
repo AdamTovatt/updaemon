@@ -46,6 +46,16 @@ namespace Updaemon.Commands
 
         public async Task ExecuteAsync(string? alias, string url, CancellationToken cancellationToken = default)
         {
+            // If alias is explicitly provided, check if it already exists before downloading
+            if (alias != null)
+            {
+                InstalledPluginInfo? existingPlugin = await _configManager.GetPluginAsync(alias, cancellationToken);
+                if (existingPlugin != null)
+                {
+                    throw new InvalidOperationException($"Plugin with alias '{alias}' is already installed. Use a different alias or remove the existing plugin first.");
+                }
+            }
+
             _outputWriter.WriteLine($"Downloading distribution plugin from: {url}");
 
             // Download the plugin
