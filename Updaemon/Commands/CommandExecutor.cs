@@ -155,6 +155,7 @@ namespace Updaemon.Commands
                             // It's a plugin name, resolve it to a URL
                             try
                             {
+                                alias = urlOrName;
                                 finalUrl = await _pluginUrlResolver.ResolveAsync(urlOrName, cancellationToken);
                             }
                             catch (InvalidOperationException)

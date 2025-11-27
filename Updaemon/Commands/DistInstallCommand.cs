@@ -45,7 +45,7 @@ namespace Updaemon.Commands
         }
 
         public async Task ExecuteAsync(string? alias, string url, CancellationToken cancellationToken = default)
-        {
+        {            
             // If alias is explicitly provided, check if it already exists before downloading
             if (alias != null)
             {

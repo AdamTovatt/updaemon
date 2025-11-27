@@ -309,10 +309,15 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await executor.ExecuteAsync(new[] { "dist-install", "github" });
 
                 Assert.Equal(0, exitCode);
+                // Check for errors
+                Assert.Empty(outputWriter.Errors);
                 Assert.Contains(pluginUrlResolver.MethodCalls, call => call == "ResolveAsync:github");
+                // Debug: check what AddOrUpdatePluginAsync was called with
+                string addOrUpdateCalls = string.Join(", ", configManager.MethodCalls.Where(c => c.StartsWith("AddOrUpdatePluginAsync")));
                 IReadOnlyDictionary<string, Updaemon.Models.InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
                 // When using a plugin name without --as, the plugin name becomes the alias
-                Assert.True(plugins.ContainsKey("github"));
+                Assert.Single(plugins);
+                Assert.True(plugins.ContainsKey("github"), $"Expected 'github' but AddOrUpdatePluginAsync was called with: {addOrUpdateCalls}. Keys: {string.Join(", ", plugins.Keys)}");
             }
         }
 
