@@ -98,6 +98,32 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task ExecuteAsync_DoesNotDownload_WhenExplicitAliasAlreadyExists()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                // Pre-register alias
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/existing/path" });
+
+                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+                HttpClient httpClient = new HttpClient(mockHandler);
+                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    async () => await command.ExecuteAsync("github", "https://example.com/path/to/plugin-bin")
+                );
+
+                // Verify that the HTTP handler was never called (no download occurred)
+                Assert.Equal(0, mockHandler.CallCount);
+            }
+        }
+
+        [Fact]
         public async Task ExecuteAsync_HandlesDownloadFailure()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
@@ -177,6 +203,9 @@ namespace Updaemon.Tests.Commands
     {
         private byte[]? _response;
         private Exception? _exception;
+        private int _callCount = 0;
+
+        public int CallCount => _callCount;
 
         public void SetResponse(byte[] response)
         {
@@ -194,6 +223,8 @@ namespace Updaemon.Tests.Commands
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            _callCount++;
+
             if (_exception != null)
             {
                 throw _exception;

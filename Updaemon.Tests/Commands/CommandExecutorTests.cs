@@ -309,9 +309,62 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await executor.ExecuteAsync(new[] { "dist-install", "github" });
 
                 Assert.Equal(0, exitCode);
+                // Check for errors
+                Assert.Empty(outputWriter.Errors);
                 Assert.Contains(pluginUrlResolver.MethodCalls, call => call == "ResolveAsync:github");
+                // Debug: check what AddOrUpdatePluginAsync was called with
+                string addOrUpdateCalls = string.Join(", ", configManager.MethodCalls.Where(c => c.StartsWith("AddOrUpdatePluginAsync")));
                 IReadOnlyDictionary<string, Updaemon.Models.InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
-                Assert.True(plugins.ContainsKey("mock"));
+                // When using a plugin name without --as, the plugin name becomes the alias
+                Assert.Single(plugins);
+                Assert.True(plugins.ContainsKey("github"), $"Expected 'github' but AddOrUpdatePluginAsync was called with: {addOrUpdateCalls}. Keys: {string.Join(", ", plugins.Keys)}");
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_DistInstallCommand_WithPluginName_DoesNotDownload_WhenPluginNameAliasAlreadyExists()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                // Pre-register plugin with alias "github"
+                await configManager.AddOrUpdatePluginAsync(new Updaemon.Models.InstalledPluginInfo { Alias = "github", Path = "/existing/path" });
+
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+                HttpClient httpClient = new HttpClient(mockHandler);
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                MockPluginUrlResolver pluginUrlResolver = new MockPluginUrlResolver();
+                pluginUrlResolver.SetPluginUrl("github", "https://example.com/resolved-plugin");
+
+                NewCommand newCommand = new NewCommand(configManager, new MockServiceManager(), outputWriter, new MockUnitFileManager { TemplateWithSubstitutions = "[Unit]\nDescription=test\n" });
+                UpdateCommand updateCommand = new UpdateCommand(configManager, new MockSecretsManager(), new MockServiceManager(), new MockSymlinkManager(), new MockExecutableDetector(), new MockDistributionServiceClient(), outputWriter, new MockVersionExtractor(), new MockFilePermissionManager());
+                DistInstallCommand distInstallCommand = new DistInstallCommand(configManager, httpClient, outputWriter, distributionClient, pluginUrlResolver, pluginsDirectory);
+                DistListCommand distListCommand = new DistListCommand(configManager, outputWriter, new MockDistributionServiceClient());
+                SecretSetCommand secretSetCommand = new SecretSetCommand(new MockSecretsManager(), outputWriter);
+                TimerCommand timerCommand = new TimerCommand(new MockTimerManager(), outputWriter);
+
+                CommandExecutor executor = new CommandExecutor(
+                    newCommand,
+                    updateCommand,
+                    new SetRemoteCommand(configManager, outputWriter),
+                    new SetExecNameCommand(configManager, outputWriter),
+                    distInstallCommand,
+                    distListCommand,
+                    secretSetCommand,
+                    timerCommand,
+                    outputWriter,
+                    pluginUrlResolver
+                );
+
+                int exitCode = await executor.ExecuteAsync(new[] { "dist-install", "github" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains("already installed", outputWriter.Errors.First());
+                // Verify that the HTTP handler was never called (no download occurred)
+                Assert.Equal(0, mockHandler.CallCount);
             }
         }
 
