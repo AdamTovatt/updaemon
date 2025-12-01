@@ -14,7 +14,7 @@ Running `updaemon new my-service` creates a new systemctl service called `my-ser
 
 Then, `updaemon update` checks for new releases for all created services and updates them automatically if needed.
 
-The new release is downloaded to a versioned folder and the symlink used by the service is updated to point to the new version.
+The new release is downloaded to a versioned folder and the symlink used by the service is updated to point to the new version. This allows for both rollbacks and zero downtime.
 
 
 Updaemon is extremely easy to [install](#getting-started) and can use any release distribution source (GitHub releases, custom servers, etc.). It handles the entire update process - from checking for new versions to restarting your services.
@@ -24,15 +24,18 @@ Updaemon is extremely easy to [install](#getting-started) and can use any releas
   <img src="Art/UpdaemonIcon/Export/1024w/Updaemon.png" alt="Updaemon Logo" width="128" height="128">
 </div>
 
-## What Updaemon Does
+## Features of Updaemon
+
+Updaemon consists of two parts: the core part and the distribution plugin(s). One or more distribution plugins can be installed after the core part has been installed. Custom distribution plugins can also be developed and installed.
 
 Updaemon makes it easy to keep your applications and services up to date on Linux:
 
 - **Automatic Updates**: Checks for new versions and updates your services automatically
 - **Zero Downtime**: Uses symlinks so your services keep running during updates
 - **Works with Any Source**: Supports GitHub releases, custom servers, or any distribution method
-- **Simple Setup**: Just install once and add your services with a single command
+- **Simple Setup**: Just install once with a single command, absolutely zero dependencies
 - **Supports rollback**: Keeps multiple versions so you can rollback if needed
+- **Native binary code**: Complied to native code that has low memory and CPU overhead
 
 ## Publishing with Updaemon
 
@@ -48,7 +51,7 @@ If you're interested in publishing your application to work with Updaemon, see [
 **User Guide:**
 - [CLI Commands](#cli-commands)
 - [Configuration](#configuration)
-- [Scheduling Updates](#scheduling-updates)
+- [Scheduling Updates (Timer command)](#timer-command)
 
 **For Developers:**
 - [Creating Distribution Plugins](#creating-distribution-plugins)
@@ -57,6 +60,10 @@ If you're interested in publishing your application to work with Updaemon, see [
 
 ## Getting Started
 ### Installation
+> [!NOTE]
+> Updaemon is still in early and active development. Commands and ways of doing things could change.
+> Don't hesitate to reach out if there is a specific feature you think is missing.
+
 To install Updaemon, run the following command:
 
 ```bash
