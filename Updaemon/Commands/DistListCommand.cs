@@ -7,7 +7,7 @@ namespace Updaemon.Commands
     /// <summary>
     /// Handles the 'dist-list' command to list installed distribution plugins.
     /// </summary>
-    public class DistListCommand
+    public class DistListCommand : ICommand
     {
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
@@ -20,7 +20,13 @@ namespace Updaemon.Commands
             _distributionClient = distributionClient;
         }
 
-        public async Task ExecuteAsync(CancellationToken cancellationToken = default)
+        public string Name => "dist-list";
+
+        public string Description => "List installed distribution plugins";
+
+        public string Usage => "updaemon dist-list";
+
+        public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
             IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await _configManager.GetAllPluginsAsync(cancellationToken);
 
@@ -28,7 +34,7 @@ namespace Updaemon.Commands
             {
                 _outputWriter.WriteLine("No distribution plugins installed.");
                 _outputWriter.WriteLine("Use 'updaemon dist-install <url>' to install a plugin.");
-                return;
+                return 0;
             }
 
             _outputWriter.WriteLine($"Installed distribution plugins ({plugins.Count}):");
@@ -82,6 +88,25 @@ namespace Updaemon.Commands
                     _outputWriter.WriteLine("");
                 }
             }
+
+            return 0;
+        }
+
+        public string GetDetailedHelp()
+        {
+            return """
+                Dist-List Command
+
+                Usage:
+                  updaemon dist-list
+
+                Description:
+                  Lists all installed distribution service plugins with their metadata,
+                  including name, version, description, and required secrets.
+
+                Examples:
+                  updaemon dist-list
+                """;
         }
     }
 }

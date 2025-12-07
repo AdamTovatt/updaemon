@@ -31,7 +31,8 @@ namespace Updaemon.Tests.Commands
                 filePermissionManager
             );
 
-            await command.ExecuteAsync();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(0, exitCode);
 
             // Should not connect to distribution client when no plugin configured
             Assert.DoesNotContain(distributionClient.MethodCalls, call => call.StartsWith("ConnectAsync"));
@@ -64,7 +65,8 @@ namespace Updaemon.Tests.Commands
                 filePermissionManager
             );
 
-            await command.ExecuteAsync("non-existent-service");
+            int exitCode = await command.ExecuteAsync(new[] { "non-existent-service" });
+            Assert.Equal(1, exitCode);
 
             // Should not try to get latest version if service not registered
             Assert.DoesNotContain(distributionClient.MethodCalls, call => call.StartsWith("GetLatestVersionAsync"));
@@ -97,7 +99,8 @@ namespace Updaemon.Tests.Commands
                 filePermissionManager
             );
 
-            await command.ExecuteAsync();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(0, exitCode);
 
             // Should not try to get latest version if no services registered
             Assert.DoesNotContain(distributionClient.MethodCalls, call => call.StartsWith("GetLatestVersionAsync"));
@@ -138,7 +141,8 @@ namespace Updaemon.Tests.Commands
                     filePermissionManager
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:MyApi");
             }
@@ -182,7 +186,8 @@ namespace Updaemon.Tests.Commands
                     filePermissionManager
                 );
 
-                await command.ExecuteAsync();
+                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(0, exitCode);
 
                 Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service1");
                 Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service2");
@@ -231,7 +236,8 @@ namespace Updaemon.Tests.Commands
                     serviceBaseDirectory
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should not download if already up to date
                 Assert.Empty(distributionClient.Downloads);
@@ -291,7 +297,8 @@ namespace Updaemon.Tests.Commands
                     serviceBaseDirectory
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should download new version
                 Assert.Single(distributionClient.Downloads);
@@ -349,7 +356,8 @@ namespace Updaemon.Tests.Commands
                     serviceBaseDirectory
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should update symlink to point to version directory (not executable file)
                 string expectedCall = $"CreateOrUpdateSymlinkAsync:{currentSymlink}:{newVersionDirectory}";
@@ -406,7 +414,8 @@ namespace Updaemon.Tests.Commands
                     serviceBaseDirectory
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should restart service
                 Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
@@ -462,7 +471,8 @@ namespace Updaemon.Tests.Commands
                     serviceBaseDirectory
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should start (not restart) the stopped service
                 Assert.Contains(serviceManager.MethodCalls, call => call == "StartServiceAsync:my-api");
@@ -506,7 +516,8 @@ namespace Updaemon.Tests.Commands
                     filePermissionManager
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should not create symlink if executable not found
                 Assert.DoesNotContain(symlinkManager.MethodCalls, call => call.StartsWith("CreateOrUpdateSymlinkAsync"));
@@ -551,7 +562,8 @@ namespace Updaemon.Tests.Commands
                     filePermissionManager
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should initialize with formatted secrets
                 Assert.NotNull(distributionClient.InitializedSecrets);
@@ -609,7 +621,8 @@ namespace Updaemon.Tests.Commands
                     serviceBaseDirectory
                 );
 
-                await command.ExecuteAsync("my-api");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
 
                 // Should set executable permissions on the downloaded executable
                 Assert.Contains(newExecutable, filePermissionManager.ExecutablePermissionsCalls);
@@ -662,7 +675,8 @@ namespace Updaemon.Tests.Commands
                     filePermissionManager
                 );
 
-                await command.ExecuteAsync();
+                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(0, exitCode);
 
                 // One connect per plugin
                 Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
@@ -706,7 +720,8 @@ namespace Updaemon.Tests.Commands
                     new MockFilePermissionManager()
                 );
 
-                await command.ExecuteAsync();
+                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(1, exitCode);
 
                 // Should output error about missing plugin alias
                 Assert.Contains(outputWriter.Errors, e => e.Contains("does not have a distribution plugin assigned"));
@@ -738,7 +753,8 @@ namespace Updaemon.Tests.Commands
                 new MockFilePermissionManager()
             );
 
-            await command.ExecuteAsync();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(0, exitCode);
 
             // Should output error about plugin not found
             Assert.Contains(outputWriter.Errors, e => e.Contains("Plugin 'non-existent-plugin' not found"));
@@ -769,7 +785,8 @@ namespace Updaemon.Tests.Commands
                 new MockFilePermissionManager()
             );
 
-            await command.ExecuteAsync();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(0, exitCode);
 
             // Should output error about plugin executable not found
             Assert.Contains(outputWriter.Errors, e => e.Contains("Plugin executable not found"));

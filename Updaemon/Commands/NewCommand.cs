@@ -6,7 +6,7 @@ namespace Updaemon.Commands
     /// <summary>
     /// Handles the 'new' command to create a new service.
     /// </summary>
-    public class NewCommand
+    public class NewCommand : ICommand
     {
         private readonly IConfigManager _configManager;
         private readonly IServiceManager _serviceManager;
@@ -45,13 +45,34 @@ namespace Updaemon.Commands
             _systemdUnitDirectory = systemdUnitDirectory;
         }
 
-        public async Task ExecuteAsync(string appName, string distributionPluginAlias, CancellationToken cancellationToken = default)
+        public string Name => "new";
+
+        public string Description => "Create a new service";
+
+        public string Usage => "updaemon new <app-name> --from <plugin-alias>";
+
+        public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
+            ArgumentParser parser = new ArgumentParser(args, _outputWriter);
+
+            if (!parser.TryGetRequiredPositional(0, "app-name", out string appName, out int errorCode))
+            {
+                _outputWriter.WriteLine(Usage);
+                return errorCode;
+            }
+
+            if (!parser.TryGetRequiredFlag("--from", out string distributionPluginAlias, out errorCode))
+            {
+                _outputWriter.WriteLine(Usage);
+                return errorCode;
+            }
+
             // Verify plugin exists
             InstalledPluginInfo? pluginInfo = await _configManager.GetPluginAsync(distributionPluginAlias, cancellationToken);
             if (pluginInfo == null)
             {
-                throw new InvalidOperationException($"Distribution plugin '{distributionPluginAlias}' is not installed. Use 'updaemon dist-install' to install a plugin first.");
+                _outputWriter.WriteError($"Distribution plugin '{distributionPluginAlias}' is not installed. Use 'updaemon dist-install' to install a plugin first.");
+                return 1;
             }
 
             _outputWriter.WriteLine($"Creating new service: {appName}");
@@ -79,6 +100,26 @@ namespace Updaemon.Commands
 
             _outputWriter.WriteLine($"Service '{appName}' created successfully!");
             _outputWriter.WriteLine($"Note: Run 'updaemon update {appName}' to download and install the service.");
+            return 0;
+        }
+
+        public string GetDetailedHelp()
+        {
+            return """
+                New Command
+
+                Usage:
+                  updaemon new <app-name> --from <plugin-alias>
+
+                Description:
+                  Creates a new service with the specified name. The service will use the
+                  specified distribution plugin to check for updates. A systemd unit file
+                  is created and the service is registered in the updaemon configuration.
+
+                Examples:
+                  updaemon new my-api --from github
+                  updaemon new my-service --from byteshelf
+                """;
         }
     }
 }

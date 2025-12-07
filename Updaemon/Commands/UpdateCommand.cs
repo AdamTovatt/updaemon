@@ -6,7 +6,7 @@ namespace Updaemon.Commands
     /// <summary>
     /// Handles the 'update' command to update services.
     /// </summary>
-    public class UpdateCommand
+    public class UpdateCommand : ICommand
     {
         private readonly IConfigManager _configManager;
         private readonly ISecretsManager _secretsManager;
@@ -66,8 +66,16 @@ namespace Updaemon.Commands
             _serviceBaseDirectory = serviceBaseDirectory;
         }
 
-        public async Task ExecuteAsync(string? specificAppName = null, CancellationToken cancellationToken = default)
+        public string Name => "update";
+
+        public string Description => "Update all services or a specific service";
+
+        public string Usage => "updaemon update [app-name]";
+
+        public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
+            string? specificAppName = args.Length > 0 ? args[0] : null;
+
             // Get services to update
             IReadOnlyList<RegisteredService> services;
             if (specificAppName != null)
@@ -76,7 +84,7 @@ namespace Updaemon.Commands
                 if (service == null)
                 {
                     _outputWriter.WriteError($"Error: Service '{specificAppName}' is not registered.");
-                    return;
+                    return 1;
                 }
 
                 services = new[] { service };
@@ -89,7 +97,7 @@ namespace Updaemon.Commands
             if (services.Count == 0)
             {
                 _outputWriter.WriteLine("No services registered. Use 'updaemon new <app-name> --from <plugin>' to create a service.");
-                return;
+                return 0;
             }
 
             // Group services by plugin alias
@@ -113,7 +121,7 @@ namespace Updaemon.Commands
             if (servicesByPlugin.Count == 0)
             {
                 _outputWriter.WriteError("Error: No valid services to update.");
-                return;
+                return 1;
             }
 
             // Update services grouped by plugin
@@ -124,6 +132,8 @@ namespace Updaemon.Commands
 
                 await UpdateServicesForPluginAsync(pluginAlias, pluginServices, cancellationToken);
             }
+
+            return 0;
         }
 
         private async Task UpdateServicesForPluginAsync(string pluginAlias, List<RegisteredService> services, CancellationToken cancellationToken)
@@ -260,6 +270,25 @@ namespace Updaemon.Commands
             string? target = await _symlinkManager.ReadSymlinkAsync(symlinkPath, cancellationToken);
 
             return _versionExtractor.ExtractVersionFromPath(target);
+        }
+
+        public string GetDetailedHelp()
+        {
+            return """
+                Update Command
+
+                Usage:
+                  updaemon update [app-name]
+
+                Description:
+                  Updates all registered services to their latest versions. If an app-name
+                  is provided, only that specific service is updated. Services are grouped
+                  by distribution plugin and updated efficiently.
+
+                Examples:
+                  updaemon update          # Update all services
+                  updaemon update my-api  # Update only my-api
+                """;
         }
     }
 }

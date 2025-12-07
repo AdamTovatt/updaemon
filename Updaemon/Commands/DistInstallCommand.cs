@@ -7,12 +7,13 @@ namespace Updaemon.Commands
     /// <summary>
     /// Handles the 'dist-install' command to install a distribution service plugin.
     /// </summary>
-    public class DistInstallCommand
+    public class DistInstallCommand : ICommand
     {
         private readonly IConfigManager _configManager;
         private readonly HttpClient _httpClient;
         private readonly IOutputWriter _outputWriter;
         private readonly IDistributionServiceClient _distributionClient;
+        private readonly IPluginUrlResolver _pluginUrlResolver;
         private readonly string _pluginsDirectory;
 
         public DistInstallCommand(
@@ -26,6 +27,7 @@ namespace Updaemon.Commands
             _httpClient = httpClient;
             _outputWriter = outputWriter;
             _distributionClient = distributionClient;
+            _pluginUrlResolver = pluginUrlResolver;
             _pluginsDirectory = "/var/lib/updaemon/plugins";
         }
 
@@ -41,29 +43,73 @@ namespace Updaemon.Commands
             _httpClient = httpClient;
             _outputWriter = outputWriter;
             _distributionClient = distributionClient;
+            _pluginUrlResolver = pluginUrlResolver;
             _pluginsDirectory = pluginsDirectory;
         }
 
-        public async Task ExecuteAsync(string? alias, string url, CancellationToken cancellationToken = default)
-        {            
-            // If alias is explicitly provided, check if it already exists before downloading
-            if (alias != null)
+        public string Name => "dist-install";
+
+        public string Description => "Install a distribution service plugin";
+
+        public string Usage => "updaemon dist-install [--as <alias>] <plugin-name|url>";
+
+        public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
+        {
+            ArgumentParser parser = new ArgumentParser(args, _outputWriter);
+
+            // Parse --as flag
+            string? alias = parser.GetFlag("--as");
+            string? urlOrName = parser.GetFirstNonFlag();
+
+            if (string.IsNullOrEmpty(urlOrName))
             {
-                InstalledPluginInfo? existingPlugin = await _configManager.GetPluginAsync(alias, cancellationToken);
-                if (existingPlugin != null)
+                _outputWriter.WriteError("Error: 'dist-install' command requires a plugin name or URL");
+                _outputWriter.WriteLine($"Usage: {Usage}");
+                return 1;
+            }
+
+            // Determine if input is a URL or a plugin name
+            string finalUrl = urlOrName;
+            string? finalAlias = alias;
+            if (!urlOrName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !urlOrName.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                // It's a plugin name, resolve it to a URL
+                try
                 {
-                    throw new InvalidOperationException($"Plugin with alias '{alias}' is already installed. Use a different alias or remove the existing plugin first.");
+                    finalUrl = await _pluginUrlResolver.ResolveAsync(urlOrName, cancellationToken);
+                    // If no explicit alias was provided, use the plugin name as the alias
+                    if (finalAlias == null)
+                    {
+                        finalAlias = urlOrName;
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // Re-throw to preserve the helpful error message from the resolver
+                    throw;
                 }
             }
 
-            _outputWriter.WriteLine($"Downloading distribution plugin from: {url}");
+            // If alias is explicitly provided, check if it already exists before downloading
+            if (finalAlias != null)
+            {
+                InstalledPluginInfo? existingPlugin = await _configManager.GetPluginAsync(finalAlias, cancellationToken);
+                if (existingPlugin != null)
+                {
+                    _outputWriter.WriteError($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
+                    return 1;
+                }
+            }
+
+            _outputWriter.WriteLine($"Downloading distribution plugin from: {finalUrl}");
 
             // Download the plugin
-            byte[] pluginData = await _httpClient.GetByteArrayAsync(url, cancellationToken);
+            byte[] pluginData = await _httpClient.GetByteArrayAsync(finalUrl, cancellationToken);
             _outputWriter.WriteLine($"Downloaded {pluginData.Length} bytes");
 
             // Determine filename from URL
-            string filename = Path.GetFileName(new Uri(url).LocalPath);
+            string filename = Path.GetFileName(new Uri(finalUrl).LocalPath);
             if (string.IsNullOrEmpty(filename))
             {
                 filename = "distribution-plugin";
@@ -91,18 +137,24 @@ namespace Updaemon.Commands
             DistributionServiceInformation serviceInfo = await _distributionClient.GetServiceInformationAsync(cancellationToken);
             await _distributionClient.DisposeAsync();
 
-            // Determine alias
-            string finalAlias = alias ?? serviceInfo.DefaultAlias;
-            if (string.IsNullOrEmpty(finalAlias))
+            // Determine alias (if not already set from plugin name resolution)
+            if (finalAlias == null)
             {
-                throw new InvalidOperationException("Plugin does not provide a default alias and none was specified. Use --as to specify an alias.");
+                finalAlias = serviceInfo.DefaultAlias;
             }
 
-            // Check if alias already exists
+            if (string.IsNullOrEmpty(finalAlias))
+            {
+                _outputWriter.WriteError("Plugin does not provide a default alias and none was specified. Use --as to specify an alias.");
+                return 1;
+            }
+
+            // Check if alias already exists (double-check in case it was set from plugin name)
             InstalledPluginInfo? existing = await _configManager.GetPluginAsync(finalAlias, cancellationToken);
             if (existing != null)
             {
-                throw new InvalidOperationException($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
+                _outputWriter.WriteError($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
+                return 1;
             }
 
             // Create plugin-specific directory
@@ -125,6 +177,28 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine($"  Name: {serviceInfo.FullName}");
             _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
             _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
+            return 0;
+        }
+
+        public string GetDetailedHelp()
+        {
+            return """
+                Dist-Install Command
+
+                Usage:
+                  updaemon dist-install [--as <alias>] <plugin-name|url>
+
+                Description:
+                  Installs a distribution service plugin. The plugin can be specified as a URL
+                  or as a plugin name (e.g., "github") which will be resolved to a URL. If
+                  --as is not specified and a plugin name is used, the plugin name becomes the
+                  alias. If a URL is used without --as, the plugin's default alias is used.
+
+                Examples:
+                  updaemon dist-install github
+                  updaemon dist-install --as github https://example.com/plugin
+                  updaemon dist-install https://example.com/plugin
+                """;
         }
     }
 }

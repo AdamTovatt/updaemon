@@ -13,8 +13,9 @@ namespace Updaemon.Tests.Commands
             SetRemoteCommand command = new SetRemoteCommand(configManager, outputWriter);
 
             await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-            await command.ExecuteAsync("my-api", "UpdatedApi");
+            int exitCode = await command.ExecuteAsync(new[] { "my-api", "UpdatedApi" });
 
+            Assert.Equal(0, exitCode);
             Assert.Contains(configManager.MethodCalls, call => call == "SetRemoteNameAsync:my-api:UpdatedApi");
         }
 
@@ -25,9 +26,22 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SetRemoteCommand command = new SetRemoteCommand(configManager, outputWriter);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await command.ExecuteAsync("non-existent", "RemoteName")
-            );
+            int exitCode = await command.ExecuteAsync(new[] { "non-existent", "RemoteName" });
+
+            Assert.Equal(1, exitCode);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WithoutRequiredArgs_ReturnsErrorCode()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            SetRemoteCommand command = new SetRemoteCommand(configManager, outputWriter);
+
+            int exitCode = await command.ExecuteAsync(new[] { "app-name" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Contains(outputWriter.Errors, e => e.Contains("Insufficient arguments"));
         }
     }
 }
