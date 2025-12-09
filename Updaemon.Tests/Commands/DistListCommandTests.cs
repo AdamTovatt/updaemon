@@ -23,7 +23,8 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
 
                 DistListCommand command = new DistListCommand(configManager, output, client);
-                await command.ExecuteAsync();
+                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+                Assert.Equal(0, exitCode);
 
                 // Should connect and request metadata twice
                 Assert.Contains(client.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
@@ -47,7 +48,8 @@ namespace Updaemon.Tests.Commands
             MockDistributionServiceClient client = new MockDistributionServiceClient();
 
             DistListCommand command = new DistListCommand(configManager, output, client);
-            await command.ExecuteAsync();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+            Assert.Equal(0, exitCode);
 
             // Should not try to connect to missing file
             Assert.DoesNotContain(client.MethodCalls, c => c.StartsWith("ConnectAsync:/nonexistent/path/bin"));
@@ -72,7 +74,8 @@ namespace Updaemon.Tests.Commands
                 client.GetServiceInformationAsyncThrows = true;
 
                 DistListCommand command = new DistListCommand(configManager, output, client);
-                await command.ExecuteAsync();
+                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+                Assert.Equal(0, exitCode);
 
                 // Should still output plugin info with error status
                 Assert.Contains(output.Messages, line => line.Contains("Alias: error-plugin"));

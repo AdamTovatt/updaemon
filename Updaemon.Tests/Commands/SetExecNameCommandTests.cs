@@ -16,7 +16,8 @@ namespace Updaemon.Tests.Commands
             await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
             // Act
-            await command.ExecuteAsync("test-service", "TestServiceExecutable");
+            int exitCode = await command.ExecuteAsync(new[] { "test-service", "TestServiceExecutable" });
+            Assert.Equal(0, exitCode);
 
             // Assert
             Assert.Contains("SetExecutableNameAsync:test-service:TestServiceExecutable", configManager.MethodCalls);
@@ -35,7 +36,8 @@ namespace Updaemon.Tests.Commands
             await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
             // Act
-            await command.ExecuteAsync("test-service", "-");
+            int exitCode = await command.ExecuteAsync(new[] { "test-service", "-" });
+            Assert.Equal(0, exitCode);
 
             // Assert
             Assert.Contains("SetExecutableNameAsync:test-service:null", configManager.MethodCalls);
@@ -51,11 +53,24 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
 
-            // Act & Assert
-            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => command.ExecuteAsync("non-existent-service", "SomeExecutable"));
+            // Act
+            int exitCode = await command.ExecuteAsync(new[] { "non-existent-service", "SomeExecutable" });
 
-            Assert.Contains("not registered", exception.Message);
+            // Assert
+            Assert.Equal(1, exitCode);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WithoutRequiredArgs_ReturnsErrorCode()
+        {
+            MockConfigManager configManager = new MockConfigManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
+
+            int exitCode = await command.ExecuteAsync(new[] { "app-name" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Contains(outputWriter.Errors, e => e.Contains("Insufficient arguments"));
         }
     }
 }

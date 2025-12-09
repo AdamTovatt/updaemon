@@ -22,7 +22,8 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
-                await command.ExecuteAsync(null, "https://example.com/plugins/my-plugin");
+                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/plugins/my-plugin" });
+                Assert.Equal(0, exitCode);
 
                 Assert.Contains(configManager.MethodCalls, call => call.StartsWith("AddOrUpdatePluginAsync:"));
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
@@ -45,7 +46,8 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
-                await command.ExecuteAsync("github", "https://example.com/path/to/plugin-bin");
+                int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
+                Assert.Equal(0, exitCode);
 
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
                 Assert.True(plugins.ContainsKey("github"));
@@ -67,7 +69,8 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
-                await command.ExecuteAsync(null, "https://example.com/path/to/plugin-bin");
+                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
+                Assert.Equal(0, exitCode);
 
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
                 Assert.True(plugins.ContainsKey("mock"));
@@ -91,9 +94,8 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
-                await Assert.ThrowsAsync<InvalidOperationException>(
-                    async () => await command.ExecuteAsync("dup", "https://example.com/path/to/plugin-bin")
-                );
+                int exitCode = await command.ExecuteAsync(new[] { "--as", "dup", "https://example.com/path/to/plugin-bin" });
+                Assert.Equal(1, exitCode);
             }
         }
 
@@ -112,14 +114,15 @@ namespace Updaemon.Tests.Commands
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, outputWriter, distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
-                await Assert.ThrowsAsync<InvalidOperationException>(
-                    async () => await command.ExecuteAsync("github", "https://example.com/path/to/plugin-bin")
-                );
+                int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
+                Assert.Equal(1, exitCode);
 
                 // Verify that the HTTP handler was never called (no download occurred)
                 Assert.Equal(0, mockHandler.CallCount);
+                Assert.Contains(outputWriter.Errors, e => e.Contains("already installed"));
             }
         }
 
@@ -138,7 +141,7 @@ namespace Updaemon.Tests.Commands
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
                 await Assert.ThrowsAsync<HttpRequestException>(
-                    async () => await command.ExecuteAsync(null, "https://example.com/invalid-plugin")
+                    async () => await command.ExecuteAsync(new[] { "https://example.com/invalid-plugin" })
                 );
             }
         }
@@ -157,7 +160,8 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
-                await command.ExecuteAsync(null, "https://example.com/path/to/byteshelf-dist");
+                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/byteshelf-dist" });
+                Assert.Equal(0, exitCode);
 
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
                 Assert.NotEmpty(plugins);
@@ -189,9 +193,11 @@ namespace Updaemon.Tests.Commands
 
                 DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
 
-                await Assert.ThrowsAsync<InvalidOperationException>(
-                    async () => await command.ExecuteAsync(null, "https://example.com/path/to/plugin-bin")
-                );
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                DistInstallCommand commandWithOutput = new DistInstallCommand(configManager, httpClient, outputWriter, distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                int exitCode = await commandWithOutput.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
+                Assert.Equal(1, exitCode);
+                Assert.Contains(outputWriter.Errors, e => e.Contains("does not provide a default alias"));
             }
         }
     }

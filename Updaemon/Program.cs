@@ -70,17 +70,18 @@ namespace Updaemon
             // Plugin URL resolver
             services.AddSingleton<IPluginUrlResolver, GitHubPluginUrlResolver>();
 
-            // Commands
-            services.AddSingleton<NewCommand>();
-            services.AddSingleton<UpdateCommand>();
-            services.AddSingleton<SetRemoteCommand>();
-            services.AddSingleton<SetExecNameCommand>();
-            services.AddSingleton<DistInstallCommand>();
-            services.AddSingleton<DistListCommand>();
-            services.AddSingleton<SecretSetCommand>();
-            services.AddSingleton<TimerCommand>();
+            // Commands - transient (created per invocation)
+            services.AddTransient<NewCommand>();
+            services.AddTransient<UpdateCommand>();
+            services.AddTransient<SetRemoteCommand>();
+            services.AddTransient<SetExecNameCommand>();
+            services.AddTransient<DistInstallCommand>();
+            services.AddTransient<DistListCommand>();
+            services.AddTransient<SecretSetCommand>();
+            services.AddTransient<TimerCommand>();
 
-            // Command executor
+            // Command infrastructure
+            services.AddSingleton<ICommandFactory, CommandFactory>();
             services.AddSingleton<CommandExecutor>();
         }
     }

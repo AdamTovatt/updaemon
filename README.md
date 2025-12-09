@@ -73,7 +73,7 @@ curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.
 That's it! You can now use the `updaemon` command.
 
 > [!TIP]
-> Running the command `updaemon` without anything more will show a help section that explains usage.
+> Running the command `updaemon` without arguments will show a help section. You can also use `updaemon help` for general help or `updaemon help <command>` for detailed help on a specific command.
 
 ### Installing a Distribution Plugin
 
@@ -127,6 +127,7 @@ Commands that change files in the system usually require `sudo` to run.
 | [dist-list](#dist-list-command) | List installed distribution plugins and their metadata. |
 | [secret-set](#secret-set-command) | Set a secret key-value pair for a specific plugin. |
 | [timer](#timer-command) | Manage automatic update scheduling using systemd timers. |
+| [help](#help-command) | Show help information for commands. |
 
 ### New Command
 ```bash
@@ -249,6 +250,23 @@ sudo updaemon timer -            # Disable automatic timer
 - `1h` - 1 hour
 
 The timer will automatically run `updaemon update` at the specified interval.
+
+#### Help Command
+```bash
+updaemon help [command]
+```
+
+Shows help information. Without arguments, displays general help with all available commands. With a command name, shows detailed help for that specific command.
+
+**Examples:**
+```bash
+updaemon help              # Show general help
+updaemon help update       # Show detailed help for update command
+updaemon help new          # Show detailed help for new command
+```
+
+> [!NOTE]
+> The help output includes the updaemon version at the top.
 
 [↑ Back to top](#updaemon)
 

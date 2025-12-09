@@ -28,8 +28,9 @@ namespace Updaemon.Tests.Commands
                 InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
-                await command.ExecuteAsync("my-api", "github");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api", "--from", "github" });
 
+                Assert.Equal(0, exitCode);
                 Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:my-api:my-api"));
             }
         }
@@ -55,8 +56,9 @@ namespace Updaemon.Tests.Commands
                 InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
-                await command.ExecuteAsync("my-api", "github");
+                int exitCode = await command.ExecuteAsync(new[] { "my-api", "--from", "github" });
 
+                Assert.Equal(0, exitCode);
                 Assert.Contains(serviceManager.MethodCalls, call => call == "EnableServiceAsync:my-api");
             }
         }
@@ -82,8 +84,9 @@ namespace Updaemon.Tests.Commands
                 InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
-                await command.ExecuteAsync("test-service", "github");
+                int exitCode = await command.ExecuteAsync(new[] { "test-service", "--from", "github" });
 
+                Assert.Equal(0, exitCode);
                 Assert.Contains(configManager.MethodCalls, call => call.Contains("RegisterServiceAsync:test-service:test-service"));
             }
         }
@@ -105,9 +108,58 @@ namespace Updaemon.Tests.Commands
 
                 NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
 
-                await Assert.ThrowsAsync<InvalidOperationException>(
-                    async () => await command.ExecuteAsync("my-service", "non-existent-plugin")
-                );
+                int exitCode = await command.ExecuteAsync(new[] { "my-service", "--from", "non-existent-plugin" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(outputWriter.Errors, e => e.Contains("not installed"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WithoutAppName_ReturnsErrorCode()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager
+                {
+                    TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+                };
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+
+                NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
+
+                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(outputWriter.Errors, e => e.Contains("Missing required argument"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WithoutFromFlag_ReturnsErrorCode()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager
+                {
+                    TemplateWithSubstitutions = "[Unit]\nDescription=test\n",
+                };
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+
+                NewCommand command = new NewCommand(configManager, serviceManager, outputWriter, unitFileManager, serviceDirectory, systemdDirectory);
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-service" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(outputWriter.Errors, e => e.Contains("Missing required flag"));
             }
         }
     }

@@ -12,7 +12,8 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SecretSetCommand command = new SecretSetCommand(secretsManager, outputWriter);
 
-            await command.ExecuteAsync("github", "apiKey", "abc123");
+            int exitCode = await command.ExecuteAsync(new[] { "github", "apiKey", "abc123" });
+            Assert.Equal(0, exitCode);
 
             Assert.Contains(secretsManager.MethodCalls, call => call == "SetSecretAsync:github:apiKey:abc123");
         }
@@ -24,11 +25,26 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter outputWriter = new MockOutputWriter();
             SecretSetCommand command = new SecretSetCommand(secretsManager, outputWriter);
 
-            await command.ExecuteAsync("github", "apiKey", "oldValue");
-            await command.ExecuteAsync("github", "apiKey", "newValue");
+            int exitCode1 = await command.ExecuteAsync(new[] { "github", "apiKey", "oldValue" });
+            int exitCode2 = await command.ExecuteAsync(new[] { "github", "apiKey", "newValue" });
+            Assert.Equal(0, exitCode1);
+            Assert.Equal(0, exitCode2);
 
             string? value = await secretsManager.GetSecretAsync("github", "apiKey");
             Assert.Equal("newValue", value);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WithoutRequiredArgs_ReturnsErrorCode()
+        {
+            MockSecretsManager secretsManager = new MockSecretsManager();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            SecretSetCommand command = new SecretSetCommand(secretsManager, outputWriter);
+
+            int exitCode = await command.ExecuteAsync(new[] { "plugin", "key" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Contains(outputWriter.Errors, e => e.Contains("Insufficient arguments"));
         }
     }
 }
