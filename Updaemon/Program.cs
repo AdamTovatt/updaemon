@@ -60,6 +60,7 @@ namespace Updaemon
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<ITimerManager, TimerManager>();
+            services.AddSingleton<ISelfUpdateService, SelfUpdateService>();
 
             // Distribution service client
             services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();

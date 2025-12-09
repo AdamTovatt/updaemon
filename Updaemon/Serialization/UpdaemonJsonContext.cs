@@ -13,6 +13,9 @@ namespace Updaemon.Serialization
     [JsonSerializable(typeof(Dictionary<string, InstalledPluginInfo>))]
     [JsonSerializable(typeof(Dictionary<string, string>))]
     [JsonSerializable(typeof(AppConfig))]
+    [JsonSerializable(typeof(GitHubRelease))]
+    [JsonSerializable(typeof(GitHubAsset))]
+    [JsonSerializable(typeof(GitHubAsset[]))]
     [JsonSourceGenerationOptions(
         WriteIndented = true,
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

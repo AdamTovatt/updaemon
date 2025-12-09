@@ -17,6 +17,7 @@ namespace Updaemon.Commands
         private readonly IOutputWriter _outputWriter;
         private readonly IVersionExtractor _versionExtractor;
         private readonly IFilePermissionManager _filePermissionManager;
+        private readonly ISelfUpdateService _selfUpdateService;
         private readonly string _serviceBaseDirectory;
 
         public UpdateCommand(
@@ -28,7 +29,8 @@ namespace Updaemon.Commands
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
             IVersionExtractor versionExtractor,
-            IFilePermissionManager filePermissionManager)
+            IFilePermissionManager filePermissionManager,
+            ISelfUpdateService selfUpdateService)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
@@ -39,6 +41,7 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
             _versionExtractor = versionExtractor;
             _filePermissionManager = filePermissionManager;
+            _selfUpdateService = selfUpdateService;
             _serviceBaseDirectory = "/opt";
         }
 
@@ -52,6 +55,7 @@ namespace Updaemon.Commands
             IOutputWriter outputWriter,
             IVersionExtractor versionExtractor,
             IFilePermissionManager filePermissionManager,
+            ISelfUpdateService selfUpdateService,
             string serviceBaseDirectory)
         {
             _configManager = configManager;
@@ -63,6 +67,7 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
             _versionExtractor = versionExtractor;
             _filePermissionManager = filePermissionManager;
+            _selfUpdateService = selfUpdateService;
             _serviceBaseDirectory = serviceBaseDirectory;
         }
 
@@ -131,6 +136,15 @@ namespace Updaemon.Commands
                 List<RegisteredService> pluginServices = pluginGroup.Value;
 
                 await UpdateServicesForPluginAsync(pluginAlias, pluginServices, cancellationToken);
+            }
+
+            // Check and update updaemon itself
+            bool selfUpdateTriggered = await _selfUpdateService.CheckAndUpdateAsync(cancellationToken);
+            if (selfUpdateTriggered)
+            {
+                // Self-update was triggered, process will exit soon
+                // Return success code as the update process has started
+                return 0;
             }
 
             return 0;
