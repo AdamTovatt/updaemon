@@ -151,9 +151,9 @@ namespace Updaemon.GithubDistributionService.Tests
                 TagName = "v1.2.3",
                 Assets = new[]
                 {
-                    new GithubAsset { Name = "app-linux-arm.zip", BrowserDownloadUrl = "https://example.com/app-linux-arm.zip" },
-                    new GithubAsset { Name = "app-linux-x64.zip", BrowserDownloadUrl = "https://example.com/app-linux-x64.zip" },
-                    new GithubAsset { Name = "app-windows.zip", BrowserDownloadUrl = "https://example.com/app-windows.zip" },
+                    new GithubAsset { Id = 101, Name = "app-linux-arm.zip", BrowserDownloadUrl = "https://example.com/app-linux-arm.zip" },
+                    new GithubAsset { Id = 102, Name = "app-linux-x64.zip", BrowserDownloadUrl = "https://example.com/app-linux-x64.zip" },
+                    new GithubAsset { Id = 103, Name = "app-windows.zip", BrowserDownloadUrl = "https://example.com/app-windows.zip" },
                 },
             };
             apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
@@ -163,8 +163,10 @@ namespace Updaemon.GithubDistributionService.Tests
 
             await service.DownloadVersionAsync("owner/repo/*-linux-arm.zip", new Version(1, 2, 3), targetPath);
 
-            await apiClient.Received(1).DownloadAssetAsync(
-                Arg.Is<string>(url => url == "https://example.com/app-linux-arm.zip"),
+            await apiClient.Received(1).DownloadReleaseAssetAsync(
+                Arg.Is<string>(value => value == "owner"),
+                Arg.Is<string>(value => value == "repo"),
+                Arg.Is<long>(value => value == 101),
                 Arg.Any<string>(),
                 Arg.Is<string?>(token => token == null),
                 Arg.Any<CancellationToken>());
@@ -181,8 +183,8 @@ namespace Updaemon.GithubDistributionService.Tests
                 TagName = "v1.2.3",
                 Assets = new[]
                 {
-                    new GithubAsset { Name = "app.zip", BrowserDownloadUrl = "https://example.com/app.zip" },
-                    new GithubAsset { Name = "app.tar.gz", BrowserDownloadUrl = "https://example.com/app.tar.gz" },
+                    new GithubAsset { Id = 201, Name = "app.zip", BrowserDownloadUrl = "https://example.com/app.zip" },
+                    new GithubAsset { Id = 202, Name = "app.tar.gz", BrowserDownloadUrl = "https://example.com/app.tar.gz" },
                 },
             };
             apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
@@ -192,8 +194,10 @@ namespace Updaemon.GithubDistributionService.Tests
 
             await service.DownloadVersionAsync("owner/repo/*.zip", new Version(1, 2, 3), targetPath);
 
-            await apiClient.Received(1).DownloadAssetAsync(
-                Arg.Is<string>(url => url == "https://example.com/app.zip"),
+            await apiClient.Received(1).DownloadReleaseAssetAsync(
+                Arg.Is<string>(value => value == "owner"),
+                Arg.Is<string>(value => value == "repo"),
+                Arg.Is<long>(value => value == 201),
                 Arg.Any<string>(),
                 Arg.Is<string?>(token => token == null),
                 Arg.Any<CancellationToken>());
@@ -208,7 +212,7 @@ namespace Updaemon.GithubDistributionService.Tests
             GithubRelease release = new GithubRelease
             {
                 TagName = "v1.2.3",
-                Assets = new[] { new GithubAsset { Name = "app.zip", BrowserDownloadUrl = "https://example.com/app.zip" } },
+                Assets = new[] { new GithubAsset { Id = 301, Name = "app.zip", BrowserDownloadUrl = "https://example.com/app.zip" } },
             };
             apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
                 .Returns(release);
@@ -217,8 +221,10 @@ namespace Updaemon.GithubDistributionService.Tests
 
             await service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), targetPath);
 
-            await apiClient.Received(1).DownloadAssetAsync(
-                Arg.Is<string>(url => url == "https://example.com/app.zip"),
+            await apiClient.Received(1).DownloadReleaseAssetAsync(
+                Arg.Is<string>(value => value == "owner"),
+                Arg.Is<string>(value => value == "repo"),
+                Arg.Is<long>(value => value == 301),
                 Arg.Any<string>(),
                 Arg.Is<string?>(token => token == null),
                 Arg.Any<CancellationToken>());

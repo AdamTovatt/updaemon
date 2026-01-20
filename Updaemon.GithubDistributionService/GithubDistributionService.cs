@@ -93,7 +93,7 @@ namespace Updaemon.GithubDistributionService
 
             // Download the asset
             string targetFilePath = Path.Combine(targetPath, asset.Name);
-            await _apiClient.DownloadAssetAsync(asset.BrowserDownloadUrl, targetFilePath, _githubToken, cancellationToken);
+            await _apiClient.DownloadReleaseAssetAsync(owner, repo, asset.Id, targetFilePath, _githubToken, cancellationToken);
 
             // Post-process (extract if zip)
             await _postProcessor.ProcessAsync(targetPath, cancellationToken);

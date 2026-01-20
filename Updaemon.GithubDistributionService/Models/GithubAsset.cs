@@ -7,6 +7,9 @@ namespace Updaemon.GithubDistributionService.Models
     /// </summary>
     public class GithubAsset
     {
+        [JsonPropertyName("id")]
+        public long Id { get; set; }
+
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 

@@ -51,6 +51,44 @@ namespace Updaemon.GithubDistributionService.Services
             return release;
         }
 
+        public async Task DownloadReleaseAssetAsync(
+            string owner,
+            string repo,
+            long assetId,
+            string targetFilePath,
+            string? token,
+            CancellationToken cancellationToken = default)
+        {
+            string url = $"https://api.github.com/repos/{owner}/{repo}/releases/assets/{assetId}";
+
+            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("Accept", "application/octet-stream");
+
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                request.Headers.Add("Authorization", $"Bearer {token}");
+            }
+
+            HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            response.EnsureSuccessStatusCode();
+
+            string? directory = Path.GetDirectoryName(targetFilePath);
+            if (directory != null && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using (Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            using (FileStream fileStream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, useAsync: true))
+            {
+                await contentStream.CopyToAsync(fileStream, cancellationToken);
+            }
+        }
+
         public async Task DownloadAssetAsync(
             string url,
             string targetFilePath,

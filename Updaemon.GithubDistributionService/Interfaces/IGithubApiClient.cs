@@ -18,6 +18,24 @@ namespace Updaemon.GithubDistributionService.Interfaces
         Task<GithubRelease?> GetLatestReleaseAsync(string owner, string repo, string? token, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Downloads a release asset via the GitHub API to a target file path.
+        /// Works for private repositories when authenticated.
+        /// </summary>
+        /// <param name="owner">The repository owner</param>
+        /// <param name="repo">The repository name</param>
+        /// <param name="assetId">The release asset id</param>
+        /// <param name="targetFilePath">The path where the file should be saved</param>
+        /// <param name="token">Optional GitHub token for authentication</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        Task DownloadReleaseAssetAsync(
+            string owner,
+            string repo,
+            long assetId,
+            string targetFilePath,
+            string? token,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Downloads an asset from a URL to a target file path.
         /// </summary>
         /// <param name="url">The download URL</param>
