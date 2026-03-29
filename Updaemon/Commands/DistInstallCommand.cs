@@ -10,40 +10,35 @@ namespace Updaemon.Commands
     public class DistInstallCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly HttpClient _httpClient;
         private readonly IOutputWriter _outputWriter;
-        private readonly IDistributionServiceClient _distributionClient;
         private readonly IPluginUrlResolver _pluginUrlResolver;
+        private readonly IPluginDownloader _pluginDownloader;
         private readonly string _pluginsDirectory;
 
         public DistInstallCommand(
             IConfigManager configManager,
-            HttpClient httpClient,
             IOutputWriter outputWriter,
-            IDistributionServiceClient distributionClient,
-            IPluginUrlResolver pluginUrlResolver)
+            IPluginUrlResolver pluginUrlResolver,
+            IPluginDownloader pluginDownloader)
         {
             _configManager = configManager;
-            _httpClient = httpClient;
             _outputWriter = outputWriter;
-            _distributionClient = distributionClient;
             _pluginUrlResolver = pluginUrlResolver;
+            _pluginDownloader = pluginDownloader;
             _pluginsDirectory = "/var/lib/updaemon/plugins";
         }
 
         public DistInstallCommand(
             IConfigManager configManager,
-            HttpClient httpClient,
             IOutputWriter outputWriter,
-            IDistributionServiceClient distributionClient,
             IPluginUrlResolver pluginUrlResolver,
+            IPluginDownloader pluginDownloader,
             string pluginsDirectory)
         {
             _configManager = configManager;
-            _httpClient = httpClient;
             _outputWriter = outputWriter;
-            _distributionClient = distributionClient;
             _pluginUrlResolver = pluginUrlResolver;
+            _pluginDownloader = pluginDownloader;
             _pluginsDirectory = pluginsDirectory;
         }
 
@@ -104,80 +99,70 @@ namespace Updaemon.Commands
 
             _outputWriter.WriteLine($"Downloading distribution plugin from: {finalUrl}");
 
-            // Download the plugin
-            byte[] pluginData = await _httpClient.GetByteArrayAsync(finalUrl, cancellationToken);
-            _outputWriter.WriteLine($"Downloaded {pluginData.Length} bytes");
-
-            // Determine filename from URL
-            string filename = Path.GetFileName(new Uri(finalUrl).LocalPath);
-            if (string.IsNullOrEmpty(filename))
-            {
-                filename = "distribution-plugin";
-            }
-
-            // Create plugins directory
-            Directory.CreateDirectory(_pluginsDirectory);
-
-            // Temporarily save the plugin to get metadata
-            string tempPluginPath = Path.Combine(_pluginsDirectory, $"temp_{Guid.NewGuid():N}_{filename}");
-            await File.WriteAllBytesAsync(tempPluginPath, pluginData, cancellationToken);
-
-            // Make it executable (on Linux)
+            PluginDownloadResult downloadResult = await _pluginDownloader.DownloadAndInspectAsync(finalUrl, _pluginsDirectory, cancellationToken);
             try
             {
-                System.Diagnostics.Process.Start("chmod", $"+x {tempPluginPath}")?.WaitForExit();
+                DistributionServiceInformation serviceInfo = downloadResult.ServiceInformation;
+
+                // Determine alias (if not already set from plugin name resolution)
+                if (finalAlias == null)
+                {
+                    finalAlias = serviceInfo.DefaultAlias;
+                }
+
+                if (string.IsNullOrEmpty(finalAlias))
+                {
+                    _outputWriter.WriteError("Plugin does not provide a default alias and none was specified. Use --as to specify an alias.");
+                    return 1;
+                }
+
+                // Check if alias already exists (double-check in case it was set from plugin name)
+                InstalledPluginInfo? existing = await _configManager.GetPluginAsync(finalAlias, cancellationToken);
+                if (existing != null)
+                {
+                    _outputWriter.WriteError($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
+                    return 1;
+                }
+
+                // Determine filename from URL
+                string filename = Path.GetFileName(new Uri(finalUrl).LocalPath);
+                if (string.IsNullOrEmpty(filename))
+                {
+                    filename = "distribution-plugin";
+                }
+
+                // Create plugin-specific directory
+                string pluginDirectory = Path.Combine(_pluginsDirectory, finalAlias);
+                Directory.CreateDirectory(pluginDirectory);
+
+                // Move plugin to final location
+                string finalPluginPath = Path.Combine(pluginDirectory, filename);
+                File.Move(downloadResult.TempFilePath, finalPluginPath, overwrite: true);
+                _outputWriter.WriteLine($"Saved plugin to: {finalPluginPath}");
+
+                // Register plugin
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo
+                {
+                    Alias = finalAlias,
+                    Path = finalPluginPath
+                };
+                await _configManager.AddOrUpdatePluginAsync(pluginInfo, cancellationToken);
+                _outputWriter.WriteLine($"Distribution plugin '{finalAlias}' installed successfully");
+                _outputWriter.WriteLine($"  Name: {serviceInfo.FullName}");
+                _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
+                _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
+                return 0;
             }
-            catch
+            finally
             {
-                _outputWriter.WriteLine("Warning: Could not make plugin executable. You may need to run 'chmod +x' manually.");
+                // Clean up temp file if it wasn't moved
+                try
+                {
+                    if (File.Exists(downloadResult.TempFilePath))
+                        File.Delete(downloadResult.TempFilePath);
+                }
+                catch { }
             }
-
-            // Get plugin metadata
-            await _distributionClient.ConnectAsync(tempPluginPath, cancellationToken);
-            DistributionServiceInformation serviceInfo = await _distributionClient.GetServiceInformationAsync(cancellationToken);
-            await _distributionClient.DisposeAsync();
-
-            // Determine alias (if not already set from plugin name resolution)
-            if (finalAlias == null)
-            {
-                finalAlias = serviceInfo.DefaultAlias;
-            }
-
-            if (string.IsNullOrEmpty(finalAlias))
-            {
-                _outputWriter.WriteError("Plugin does not provide a default alias and none was specified. Use --as to specify an alias.");
-                return 1;
-            }
-
-            // Check if alias already exists (double-check in case it was set from plugin name)
-            InstalledPluginInfo? existing = await _configManager.GetPluginAsync(finalAlias, cancellationToken);
-            if (existing != null)
-            {
-                _outputWriter.WriteError($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
-                return 1;
-            }
-
-            // Create plugin-specific directory
-            string pluginDirectory = Path.Combine(_pluginsDirectory, finalAlias);
-            Directory.CreateDirectory(pluginDirectory);
-
-            // Move plugin to final location
-            string finalPluginPath = Path.Combine(pluginDirectory, filename);
-            File.Move(tempPluginPath, finalPluginPath, overwrite: true);
-            _outputWriter.WriteLine($"Saved plugin to: {finalPluginPath}");
-
-            // Register plugin
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo
-            {
-                Alias = finalAlias,
-                Path = finalPluginPath
-            };
-            await _configManager.AddOrUpdatePluginAsync(pluginInfo, cancellationToken);
-            _outputWriter.WriteLine($"Distribution plugin '{finalAlias}' installed successfully");
-            _outputWriter.WriteLine($"  Name: {serviceInfo.FullName}");
-            _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
-            _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
-            return 0;
         }
 
         public string GetDetailedHelp()
@@ -202,4 +187,3 @@ namespace Updaemon.Commands
         }
     }
 }
-

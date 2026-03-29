@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Updaemon.Services;
-using Updaemon.Tests.Commands;
+using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Services
 {

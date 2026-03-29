@@ -30,6 +30,27 @@ namespace Updaemon.Services
                 throw new FileNotFoundException($"Plugin executable not found: {pluginExecutablePath}");
             }
 
+            // Clean up any existing connection before establishing a new one
+            if (_pipeClient != null)
+            {
+                await _pipeClient.DisposeAsync();
+                _pipeClient = null;
+            }
+
+            if (_pluginProcess != null)
+            {
+                if (!_pluginProcess.HasExited)
+                {
+                    _pluginProcess.Kill();
+                    await _pluginProcess.WaitForExitAsync();
+                }
+
+                _pluginProcess.Dispose();
+                _pluginProcess = null;
+            }
+
+            _disposed = false;
+
             // Generate a unique pipe name
             string pipeName = $"updaemon_dist_{Guid.NewGuid():N}";
 
@@ -214,10 +235,14 @@ namespace Updaemon.Services
                 await _pipeClient.DisposeAsync();
             }
 
-            if (_pluginProcess != null && !_pluginProcess.HasExited)
+            if (_pluginProcess != null)
             {
-                _pluginProcess.Kill();
-                await _pluginProcess.WaitForExitAsync();
+                if (!_pluginProcess.HasExited)
+                {
+                    _pluginProcess.Kill();
+                    await _pluginProcess.WaitForExitAsync();
+                }
+
                 _pluginProcess.Dispose();
             }
         }

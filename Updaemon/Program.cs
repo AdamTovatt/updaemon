@@ -68,8 +68,9 @@ namespace Updaemon
             // HTTP client for downloading plugins
             services.AddSingleton<HttpClient>();
 
-            // Plugin URL resolver
+            // Plugin URL resolver and downloader
             services.AddSingleton<IPluginUrlResolver, GitHubPluginUrlResolver>();
+            services.AddTransient<IPluginDownloader, PluginDownloader>();
 
             // Commands - transient (created per invocation)
             services.AddTransient<NewCommand>();
@@ -78,6 +79,7 @@ namespace Updaemon
             services.AddTransient<SetRemoteCommand>();
             services.AddTransient<SetExecNameCommand>();
             services.AddTransient<DistInstallCommand>();
+            services.AddTransient<DistUpdateCommand>();
             services.AddTransient<DistListCommand>();
             services.AddTransient<SecretSetCommand>();
             services.AddTransient<TimerCommand>();

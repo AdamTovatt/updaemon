@@ -1,5 +1,5 @@
-using System.Net;
 using Updaemon.Commands;
+using Updaemon.Common.Models;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
@@ -14,13 +14,10 @@ namespace Updaemon.Tests.Commands
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 }); // ELF header bytes
-                HttpClient httpClient = new HttpClient(mockHandler);
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "https://example.com/plugins/my-plugin" });
                 Assert.Equal(0, exitCode);
@@ -38,13 +35,10 @@ namespace Updaemon.Tests.Commands
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
-                HttpClient httpClient = new HttpClient(mockHandler);
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(0, exitCode);
@@ -60,14 +54,11 @@ namespace Updaemon.Tests.Commands
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
-                HttpClient httpClient = new HttpClient(mockHandler);
+                // MockPluginDownloader returns DefaultAlias = "mock" by default
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                // MockDistributionServiceClient returns DefaultAlias = "mock"
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(0, exitCode);
@@ -86,13 +77,10 @@ namespace Updaemon.Tests.Commands
                 // Pre-register alias
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "dup", Path = "/existing/path" });
 
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
-                HttpClient httpClient = new HttpClient(mockHandler);
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "--as", "dup", "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(1, exitCode);
@@ -108,20 +96,17 @@ namespace Updaemon.Tests.Commands
                 // Pre-register alias
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/existing/path" });
 
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
-                HttpClient httpClient = new HttpClient(mockHandler);
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
+                MockOutputWriter outputWriter = new MockOutputWriter();
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, outputWriter, distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(1, exitCode);
 
-                // Verify that the HTTP handler was never called (no download occurred)
-                Assert.Equal(0, mockHandler.CallCount);
+                // Verify that the downloader was never called (no download occurred)
+                Assert.Empty(pluginDownloader.MethodCalls);
                 Assert.Contains(outputWriter.Errors, e => e.Contains("already installed"));
             }
         }
@@ -132,13 +117,11 @@ namespace Updaemon.Tests.Commands
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetException(new HttpRequestException("Network error"));
-                HttpClient httpClient = new HttpClient(mockHandler);
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
+                pluginDownloader.ExceptionToThrow = new HttpRequestException("Network error");
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
 
                 await Assert.ThrowsAsync<HttpRequestException>(
                     async () => await command.ExecuteAsync(new[] { "https://example.com/invalid-plugin" })
@@ -152,13 +135,10 @@ namespace Updaemon.Tests.Commands
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
-                HttpClient httpClient = new HttpClient(mockHandler);
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
                 string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/byteshelf-dist" });
                 Assert.Equal(0, exitCode);
@@ -175,74 +155,24 @@ namespace Updaemon.Tests.Commands
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-                mockHandler.SetResponse(new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
-                HttpClient httpClient = new HttpClient(mockHandler);
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                // Set custom service info with empty DefaultAlias
-                distributionClient.CustomServiceInformation = new Updaemon.Common.Models.DistributionServiceInformation
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
+                pluginDownloader.ServiceInformation = new DistributionServiceInformation
                 {
                     FullName = "Test Plugin",
                     DefaultAlias = "", // Empty alias
                     Description = "Test",
                     Version = "1.0.0",
-                    Secrets = new List<Updaemon.Common.Models.DistributionSecretInfo>()
+                    Secrets = new List<DistributionSecretInfo>()
                 };
-
-                DistInstallCommand command = new DistInstallCommand(configManager, httpClient, new MockOutputWriter(), distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
+                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                DistInstallCommand commandWithOutput = new DistInstallCommand(configManager, httpClient, outputWriter, distributionClient, new MockPluginUrlResolver(), pluginsDirectory);
-                int exitCode = await commandWithOutput.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
+                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+
+                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(1, exitCode);
                 Assert.Contains(outputWriter.Errors, e => e.Contains("does not provide a default alias"));
             }
         }
     }
-
-    /// <summary>
-    /// Mock HttpMessageHandler for testing HTTP requests without network calls.
-    /// </summary>
-    public class MockHttpMessageHandler : HttpMessageHandler
-    {
-        private byte[]? _response;
-        private Exception? _exception;
-        private int _callCount = 0;
-
-        public int CallCount => _callCount;
-
-        public void SetResponse(byte[] response)
-        {
-            _response = response;
-            _exception = null;
-        }
-
-        public void SetException(Exception exception)
-        {
-            _exception = exception;
-            _response = null;
-        }
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            _callCount++;
-
-            if (_exception != null)
-            {
-                throw _exception;
-            }
-
-            HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new ByteArrayContent(_response ?? Array.Empty<byte>()),
-            };
-
-            return Task.FromResult(response);
-        }
-    }
 }
-

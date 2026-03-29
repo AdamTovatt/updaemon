@@ -18,7 +18,10 @@ namespace Updaemon.Services
         {
             try
             {
-                System.Diagnostics.Process? process = System.Diagnostics.Process.Start("chmod", $"+x {executablePath}");
+                System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo("chmod") { UseShellExecute = false };
+                startInfo.ArgumentList.Add("+x");
+                startInfo.ArgumentList.Add(executablePath);
+                System.Diagnostics.Process? process = System.Diagnostics.Process.Start(startInfo);
                 process?.WaitForExit();
                 _outputWriter.WriteLine($"Set executable permissions on: {executablePath}");
             }
@@ -34,7 +37,11 @@ namespace Updaemon.Services
         {
             try
             {
-                System.Diagnostics.Process? process = System.Diagnostics.Process.Start("chmod", $"-R a+rX {directoryPath}");
+                System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo("chmod") { UseShellExecute = false };
+                startInfo.ArgumentList.Add("-R");
+                startInfo.ArgumentList.Add("a+rX");
+                startInfo.ArgumentList.Add(directoryPath);
+                System.Diagnostics.Process? process = System.Diagnostics.Process.Start(startInfo);
                 process?.WaitForExit();
                 _outputWriter.WriteLine($"Set directory permissions on: {directoryPath}");
             }
