@@ -19,6 +19,11 @@ namespace Updaemon.Interfaces
         /// <param name="executableName">The name of the executable file.</param>
         /// <returns>The unit file content with substitutions applied.</returns>
         Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Generates a unit file from the template and writes it to the specified path.
+        /// </summary>
+        Task WriteUnitFileAsync(string unitFilePath, string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default);
     }
 }
 

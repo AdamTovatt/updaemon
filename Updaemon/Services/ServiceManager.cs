@@ -61,6 +61,31 @@ namespace Updaemon.Services
             }
         }
 
+        public async Task DaemonReloadAsync(CancellationToken cancellationToken = default)
+        {
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = "systemctl",
+                Arguments = "daemon-reload",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using (Process process = Process.Start(startInfo)!)
+            {
+                await process.StandardOutput.ReadToEndAsync(cancellationToken);
+                string error = await process.StandardError.ReadToEndAsync(cancellationToken);
+                await process.WaitForExitAsync(cancellationToken);
+
+                if (process.ExitCode != 0)
+                {
+                    throw new InvalidOperationException($"systemctl daemon-reload failed: {error}");
+                }
+            }
+        }
+
         public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             try

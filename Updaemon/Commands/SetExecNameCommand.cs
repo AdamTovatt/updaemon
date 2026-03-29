@@ -9,11 +9,39 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
+        private readonly IUnitFileManager _unitFileManager;
+        private readonly IServiceManager _serviceManager;
+        private readonly string _serviceBaseDirectory;
+        private readonly string _systemdUnitDirectory;
 
-        public SetExecNameCommand(IConfigManager configManager, IOutputWriter outputWriter)
+        public SetExecNameCommand(
+            IConfigManager configManager,
+            IOutputWriter outputWriter,
+            IUnitFileManager unitFileManager,
+            IServiceManager serviceManager)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
+            _unitFileManager = unitFileManager;
+            _serviceManager = serviceManager;
+            _serviceBaseDirectory = "/opt";
+            _systemdUnitDirectory = "/etc/systemd/system";
+        }
+
+        public SetExecNameCommand(
+            IConfigManager configManager,
+            IOutputWriter outputWriter,
+            IUnitFileManager unitFileManager,
+            IServiceManager serviceManager,
+            string serviceBaseDirectory,
+            string systemdUnitDirectory)
+        {
+            _configManager = configManager;
+            _outputWriter = outputWriter;
+            _unitFileManager = unitFileManager;
+            _serviceManager = serviceManager;
+            _serviceBaseDirectory = serviceBaseDirectory;
+            _systemdUnitDirectory = systemdUnitDirectory;
         }
 
         public string Name => "set-exec-name";
@@ -57,6 +85,20 @@ namespace Updaemon.Commands
             }
 
             _outputWriter.WriteLine("Executable name updated successfully");
+
+            // Regenerate unit file if the service is initialized
+            string unitFilePath = Path.Combine(_systemdUnitDirectory, $"{localName}.service");
+            if (File.Exists(unitFilePath))
+            {
+                string symlinkPath = Path.Combine(_serviceBaseDirectory, localName, "current");
+                string effectiveExecName = executableNameToSet ?? localName;
+
+                await _unitFileManager.WriteUnitFileAsync(
+                    unitFilePath, localName, symlinkPath, effectiveExecName, cancellationToken);
+                await _serviceManager.DaemonReloadAsync(cancellationToken);
+                _outputWriter.WriteLine("Updated systemd unit file");
+            }
+
             return 0;
         }
 

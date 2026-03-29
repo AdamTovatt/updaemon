@@ -9,47 +9,33 @@ namespace Updaemon.Commands
     public class NewCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly IServiceManager _serviceManager;
         private readonly IOutputWriter _outputWriter;
-        private readonly IUnitFileManager _unitFileManager;
         private readonly string _serviceBaseDirectory;
-        private readonly string _systemdUnitDirectory;
 
         public NewCommand(
             IConfigManager configManager,
-            IServiceManager serviceManager,
-            IOutputWriter outputWriter,
-            IUnitFileManager unitFileManager)
+            IOutputWriter outputWriter)
         {
             _configManager = configManager;
-            _serviceManager = serviceManager;
             _outputWriter = outputWriter;
-            _unitFileManager = unitFileManager;
             _serviceBaseDirectory = "/opt";
-            _systemdUnitDirectory = "/etc/systemd/system";
         }
 
         public NewCommand(
             IConfigManager configManager,
-            IServiceManager serviceManager,
             IOutputWriter outputWriter,
-            IUnitFileManager unitFileManager,
-            string serviceBaseDirectory,
-            string systemdUnitDirectory)
+            string serviceBaseDirectory)
         {
             _configManager = configManager;
-            _serviceManager = serviceManager;
             _outputWriter = outputWriter;
-            _unitFileManager = unitFileManager;
             _serviceBaseDirectory = serviceBaseDirectory;
-            _systemdUnitDirectory = systemdUnitDirectory;
         }
 
         public string Name => "new";
 
         public string Description => "Create a new service";
 
-        public string Usage => "updaemon new <app-name> --from <plugin-alias>";
+        public string Usage => "updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>]";
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
@@ -67,6 +53,8 @@ namespace Updaemon.Commands
                 return errorCode;
             }
 
+            string? remoteName = parser.GetFlag("--remote");
+
             // Verify plugin exists
             InstalledPluginInfo? pluginInfo = await _configManager.GetPluginAsync(distributionPluginAlias, cancellationToken);
             if (pluginInfo == null)
@@ -82,24 +70,19 @@ namespace Updaemon.Commands
             Directory.CreateDirectory(serviceDirectory);
             _outputWriter.WriteLine($"Created directory: {serviceDirectory}");
 
-            // Create systemd unit file
-            string unitFilePath = Path.Combine(_systemdUnitDirectory, $"{appName}.service");
-            string symlinkPath = Path.Combine(_serviceBaseDirectory, appName, "current");
-
-            string unitFileContent = await _unitFileManager.ReadTemplateWithSubstitutionsAsync(appName, symlinkPath, appName, cancellationToken);
-            await File.WriteAllTextAsync(unitFilePath, unitFileContent, cancellationToken);
-            _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");
-
-            // Register the service (local name = remote name initially)
-            await _configManager.RegisterServiceAsync(appName, appName, distributionPluginAlias, cancellationToken);
+            // Register the service
+            string effectiveRemoteName = remoteName ?? appName;
+            await _configManager.RegisterServiceAsync(appName, effectiveRemoteName, distributionPluginAlias, cancellationToken);
             _outputWriter.WriteLine($"Registered service in updaemon config");
 
-            // Enable the service
-            await _serviceManager.EnableServiceAsync(appName, cancellationToken);
-            _outputWriter.WriteLine($"Enabled service: {appName}");
+            _outputWriter.WriteLine($"Service '{appName}' registered successfully!");
 
-            _outputWriter.WriteLine($"Service '{appName}' created successfully!");
-            _outputWriter.WriteLine($"Note: Run 'updaemon update {appName}' to download and install the service.");
+            if (remoteName == null)
+            {
+                _outputWriter.WriteLine($"Note: Remote name defaults to '{appName}'. Use 'updaemon set-remote {appName} <remote-name>' to change it.");
+            }
+
+            _outputWriter.WriteLine($"Run 'updaemon init {appName}' to download and set up the service.");
             return 0;
         }
 
@@ -109,15 +92,19 @@ namespace Updaemon.Commands
                 New Command
 
                 Usage:
-                  updaemon new <app-name> --from <plugin-alias>
+                  updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>]
 
                 Description:
-                  Creates a new service with the specified name. The service will use the
-                  specified distribution plugin to check for updates. A systemd unit file
-                  is created and the service is registered in the updaemon configuration.
+                  Registers a new service with the specified name. The service will use the
+                  specified distribution plugin to check for updates. After registering,
+                  run 'updaemon init <app-name>' to download and set up the service.
+
+                Options:
+                  --remote <remote-name>  Set the remote name (defaults to app-name)
 
                 Examples:
                   updaemon new my-api --from github
+                  updaemon new my-api --from github --remote owner/repo
                   updaemon new my-service --from byteshelf
                 """;
         }

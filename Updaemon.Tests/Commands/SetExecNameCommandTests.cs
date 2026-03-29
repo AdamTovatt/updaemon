@@ -1,4 +1,5 @@
 using Updaemon.Commands;
+using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
@@ -8,70 +9,159 @@ namespace Updaemon.Tests.Commands
         [Fact]
         public async Task ExecuteAsync_WithValidExecutableName_SetsExecutableName()
         {
-            // Arrange
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
-            await configManager.RegisterServiceAsync("test-service", "TestService", "github");
+                SetExecNameCommand command = new SetExecNameCommand(
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
 
-            // Act
-            int exitCode = await command.ExecuteAsync(new[] { "test-service", "TestServiceExecutable" });
-            Assert.Equal(0, exitCode);
+                await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
-            // Assert
-            Assert.Contains("SetExecutableNameAsync:test-service:TestServiceExecutable", configManager.MethodCalls);
-            Assert.Contains("Setting executable name for 'test-service' to 'TestServiceExecutable'", outputWriter.Messages);
-            Assert.Contains("Executable name updated successfully", outputWriter.Messages);
+                int exitCode = await command.ExecuteAsync(new[] { "test-service", "TestServiceExecutable" });
+                Assert.Equal(0, exitCode);
+
+                Assert.Contains("SetExecutableNameAsync:test-service:TestServiceExecutable", configManager.MethodCalls);
+                Assert.Contains("Setting executable name for 'test-service' to 'TestServiceExecutable'", outputWriter.Messages);
+                Assert.Contains("Executable name updated successfully", outputWriter.Messages);
+            }
         }
 
         [Fact]
         public async Task ExecuteAsync_WithDash_ClearsExecutableName()
         {
-            // Arrange
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
-            await configManager.RegisterServiceAsync("test-service", "TestService", "github");
+                SetExecNameCommand command = new SetExecNameCommand(
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
 
-            // Act
-            int exitCode = await command.ExecuteAsync(new[] { "test-service", "-" });
-            Assert.Equal(0, exitCode);
+                await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
-            // Assert
-            Assert.Contains("SetExecutableNameAsync:test-service:null", configManager.MethodCalls);
-            Assert.Contains("Clearing executable name for 'test-service' (will use local name)", outputWriter.Messages);
-            Assert.Contains("Executable name updated successfully", outputWriter.Messages);
+                int exitCode = await command.ExecuteAsync(new[] { "test-service", "-" });
+                Assert.Equal(0, exitCode);
+
+                Assert.Contains("SetExecutableNameAsync:test-service:null", configManager.MethodCalls);
+                Assert.Contains("Clearing executable name for 'test-service' (will use local name)", outputWriter.Messages);
+                Assert.Contains("Executable name updated successfully", outputWriter.Messages);
+            }
         }
 
         [Fact]
-        public async Task ExecuteAsync_WithNonExistentService_ThrowsException()
+        public async Task ExecuteAsync_WithNonExistentService_ReturnsError()
         {
-            // Arrange
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
-            // Act
-            int exitCode = await command.ExecuteAsync(new[] { "non-existent-service", "SomeExecutable" });
+                SetExecNameCommand command = new SetExecNameCommand(
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
 
-            // Assert
-            Assert.Equal(1, exitCode);
+                int exitCode = await command.ExecuteAsync(new[] { "non-existent-service", "SomeExecutable" });
+
+                Assert.Equal(1, exitCode);
+            }
         }
 
         [Fact]
         public async Task ExecuteAsync_WithoutRequiredArgs_ReturnsErrorCode()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetExecNameCommand command = new SetExecNameCommand(configManager, outputWriter);
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
-            int exitCode = await command.ExecuteAsync(new[] { "app-name" });
+                SetExecNameCommand command = new SetExecNameCommand(
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
 
-            Assert.Equal(1, exitCode);
-            Assert.Contains(outputWriter.Errors, e => e.Contains("Insufficient arguments"));
+                int exitCode = await command.ExecuteAsync(new[] { "app-name" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(outputWriter.Errors, e => e.Contains("Insufficient arguments"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WhenUnitFileExists_RegeneratesUnitFile()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager
+                {
+                    TemplateWithSubstitutions = "[Unit]\nDescription=test\nExecStart=updated\n",
+                };
+                MockServiceManager serviceManager = new MockServiceManager();
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+
+                SetExecNameCommand command = new SetExecNameCommand(
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                // Create an existing unit file to simulate an initialized service
+                string unitFilePath = Path.Combine(systemdDirectory, "my-api.service");
+                await File.WriteAllTextAsync(unitFilePath, "[Unit]\nDescription=old\n");
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-api", "NewExecutable" });
+                Assert.Equal(0, exitCode);
+
+                // Unit file should have been rewritten
+                string updatedContent = await File.ReadAllTextAsync(unitFilePath);
+                Assert.Equal("[Unit]\nDescription=test\nExecStart=updated\n", updatedContent);
+                Assert.Contains(outputWriter.Messages, m => m.Contains("Updated systemd unit file"));
+                Assert.Contains(serviceManager.MethodCalls, c => c == "DaemonReloadAsync");
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_WhenNoUnitFile_DoesNotAttemptRegeneration()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                MockServiceManager serviceManager = new MockServiceManager();
+                string serviceDirectory = tempHelper.TempDirectory;
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+
+                SetExecNameCommand command = new SetExecNameCommand(
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                // No unit file exists
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-api", "NewExecutable" });
+                Assert.Equal(0, exitCode);
+
+                // Should not mention unit file update or reload
+                Assert.DoesNotContain(outputWriter.Messages, m => m.Contains("Updated systemd unit file"));
+                Assert.DoesNotContain(serviceManager.MethodCalls, c => c == "DaemonReloadAsync");
+            }
         }
     }
 }
-

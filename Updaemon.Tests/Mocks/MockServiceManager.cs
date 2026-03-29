@@ -10,6 +10,7 @@ namespace Updaemon.Tests.Mocks
         public List<string> MethodCalls { get; } = new List<string>();
         public Dictionary<string, bool> ServiceRunningStates { get; } = new Dictionary<string, bool>();
         public Dictionary<string, bool> ServiceExistsStates { get; } = new Dictionary<string, bool>();
+        public bool ThrowOnEnable { get; set; }
 
         public Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
@@ -35,6 +36,8 @@ namespace Updaemon.Tests.Mocks
         public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(EnableServiceAsync)}:{serviceName}");
+            if (ThrowOnEnable)
+                throw new InvalidOperationException("Simulated enable failure");
             return Task.CompletedTask;
         }
 
@@ -48,6 +51,12 @@ namespace Updaemon.Tests.Mocks
         {
             MethodCalls.Add($"{nameof(IsServiceRunningAsync)}:{serviceName}");
             return Task.FromResult(ServiceRunningStates.GetValueOrDefault(serviceName, false));
+        }
+
+        public Task DaemonReloadAsync(CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add(nameof(DaemonReloadAsync));
+            return Task.CompletedTask;
         }
 
         public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)

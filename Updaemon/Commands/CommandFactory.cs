@@ -18,6 +18,7 @@ namespace Updaemon.Commands
             _commandTypes = new Dictionary<string, Type>
             {
                 ["new"] = typeof(NewCommand),
+                ["init"] = typeof(InitCommand),
                 ["update"] = typeof(UpdateCommand),
                 ["set-remote"] = typeof(SetRemoteCommand),
                 ["set-exec-name"] = typeof(SetExecNameCommand),

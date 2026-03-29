@@ -39,6 +39,11 @@ namespace Updaemon.Interfaces
         /// Checks if a systemd service exists.
         /// </summary>
         Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Reloads systemd manager configuration (equivalent to systemctl daemon-reload).
+        /// </summary>
+        Task DaemonReloadAsync(CancellationToken cancellationToken = default);
     }
 }
 

@@ -10,9 +10,9 @@
 
 For example:
 
-Running `updaemon new my-service` creates a new systemctl service called `my-service` that is managed by Updaemon.
+Running `updaemon new my-service --from github` registers a new service called `my-service`, then `updaemon init my-service` downloads the latest version, creates the systemd unit file, and starts it.
 
-Then, `updaemon update` checks for new releases for all created services and updates them automatically if needed.
+After that, `updaemon update` checks for new releases for all services and updates them automatically if needed.
 
 The new release is downloaded to a versioned folder and the symlink used by the service is updated to point to the new version. This allows for both rollbacks and zero downtime.
 

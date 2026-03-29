@@ -46,6 +46,12 @@ namespace Updaemon.Services
             return result;
         }
 
+        public async Task WriteUnitFileAsync(string unitFilePath, string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default)
+        {
+            string content = await ReadTemplateWithSubstitutionsAsync(serviceName, symlinkPath, executableName, cancellationToken);
+            await File.WriteAllTextAsync(unitFilePath, content, cancellationToken);
+        }
+
         private async Task EnsureTemplateExistsAsync(CancellationToken cancellationToken = default)
         {
             if (File.Exists(_templateFilePath))

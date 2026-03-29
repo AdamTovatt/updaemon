@@ -11,59 +11,27 @@ namespace Updaemon.Commands
         private readonly IConfigManager _configManager;
         private readonly ISecretsManager _secretsManager;
         private readonly IServiceManager _serviceManager;
-        private readonly ISymlinkManager _symlinkManager;
-        private readonly IExecutableDetector _executableDetector;
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IOutputWriter _outputWriter;
         private readonly IVersionExtractor _versionExtractor;
-        private readonly IFilePermissionManager _filePermissionManager;
-        private readonly string _serviceBaseDirectory;
+        private readonly IServiceDeployer _serviceDeployer;
 
         public UpdateCommand(
             IConfigManager configManager,
             ISecretsManager secretsManager,
             IServiceManager serviceManager,
-            ISymlinkManager symlinkManager,
-            IExecutableDetector executableDetector,
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
             IVersionExtractor versionExtractor,
-            IFilePermissionManager filePermissionManager)
+            IServiceDeployer serviceDeployer)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
             _serviceManager = serviceManager;
-            _symlinkManager = symlinkManager;
-            _executableDetector = executableDetector;
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
             _versionExtractor = versionExtractor;
-            _filePermissionManager = filePermissionManager;
-            _serviceBaseDirectory = "/opt";
-        }
-
-        public UpdateCommand(
-            IConfigManager configManager,
-            ISecretsManager secretsManager,
-            IServiceManager serviceManager,
-            ISymlinkManager symlinkManager,
-            IExecutableDetector executableDetector,
-            IDistributionServiceClient distributionClient,
-            IOutputWriter outputWriter,
-            IVersionExtractor versionExtractor,
-            IFilePermissionManager filePermissionManager,
-            string serviceBaseDirectory)
-        {
-            _configManager = configManager;
-            _secretsManager = secretsManager;
-            _serviceManager = serviceManager;
-            _symlinkManager = symlinkManager;
-            _executableDetector = executableDetector;
-            _distributionClient = distributionClient;
-            _outputWriter = outputWriter;
-            _versionExtractor = versionExtractor;
-            _filePermissionManager = filePermissionManager;
-            _serviceBaseDirectory = serviceBaseDirectory;
+            _serviceDeployer = serviceDeployer;
         }
 
         public string Name => "update";
@@ -177,8 +145,16 @@ namespace Updaemon.Commands
 
             try
             {
+                // Check if service is initialized
+                string? currentTarget = await _serviceDeployer.ReadCurrentTargetAsync(service.LocalName, cancellationToken);
+                if (currentTarget == null)
+                {
+                    _outputWriter.WriteLine($"Skipping '{service.LocalName}': not initialized. Run 'updaemon init {service.LocalName}' first.");
+                    return;
+                }
+
                 // Get current version
-                Version? currentVersion = await GetCurrentVersionAsync(service.LocalName, cancellationToken);
+                Version? currentVersion = _versionExtractor.ExtractVersionFromPath(currentTarget);
                 if (currentVersion != null)
                 {
                     _outputWriter.WriteLine($"Current version: {currentVersion}");
@@ -205,34 +181,12 @@ namespace Updaemon.Commands
                     return;
                 }
 
-                // Download new version
-                string versionDirectory = Path.Combine(_serviceBaseDirectory, service.LocalName, latestVersion.ToString());
-                _outputWriter.WriteLine($"Downloading to: {versionDirectory}");
-
-                Directory.CreateDirectory(versionDirectory);
-                await _distributionClient.DownloadVersionAsync(service.RemoteName, latestVersion, versionDirectory, cancellationToken);
-                _outputWriter.WriteLine("Download complete");
-
-                // Find executable
-                string executableName = service.ExecutableName ?? service.LocalName;
-                string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, executableName, cancellationToken);
-                if (executablePath == null)
+                // Deploy new version (download, find executable, set permissions, update symlink)
+                DeployResult? result = await _serviceDeployer.DeployVersionAsync(service, latestVersion, _distributionClient, cancellationToken);
+                if (result == null)
                 {
-                    _outputWriter.WriteError($"Error: Could not find executable in {versionDirectory} with name {executableName}");
                     return;
                 }
-
-                _outputWriter.WriteLine($"Found executable: {executablePath}");
-
-                // Set file permissions
-                await _filePermissionManager.SetExecutablePermissionsAsync(executablePath, cancellationToken);
-                string serviceDirectory = Path.Combine(_serviceBaseDirectory, service.LocalName);
-                await _filePermissionManager.SetDirectoryPermissionsAsync(serviceDirectory, cancellationToken);
-
-                // Update symlink
-                string symlinkPath = Path.Combine(_serviceBaseDirectory, service.LocalName, "current");
-                await _symlinkManager.CreateOrUpdateSymlinkAsync(symlinkPath, versionDirectory, cancellationToken);
-                _outputWriter.WriteLine($"Updated symlink: {symlinkPath} -> {versionDirectory}");
 
                 // Restart service
                 bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName, cancellationToken);
@@ -263,15 +217,6 @@ namespace Updaemon.Commands
             }
         }
 
-        private async Task<Version?> GetCurrentVersionAsync(string localName, CancellationToken cancellationToken)
-        {
-            // Check symlink target
-            string symlinkPath = Path.Combine(_serviceBaseDirectory, localName, "current");
-            string? target = await _symlinkManager.ReadSymlinkAsync(symlinkPath, cancellationToken);
-
-            return _versionExtractor.ExtractVersionFromPath(target);
-        }
-
         public string GetDetailedHelp()
         {
             return """
@@ -292,4 +237,3 @@ namespace Updaemon.Commands
         }
     }
 }
-
