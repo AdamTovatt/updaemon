@@ -99,12 +99,13 @@ Adjust the asset list to include only the binaries being published.
 
 ## Updating installed plugins
 
-There is currently no `dist-update` command. Users who already have a plugin installed must manually replace the binary at the installed path (shown by `updaemon dist-list`), or uninstall and reinstall.
+Users who already have a plugin installed can update it with `updaemon dist-update`.
 
 ## Version history
 
 | Release | Updaemon | GithubDist | ByteShelfDist |
 |---------|----------|------------|---------------|
+| v0.7.0 | 0.7.0 | 0.4.0 | - |
 | v0.6.0 | 0.6.0 | - | - |
 | v0.5.1 | 0.5.1 | 0.3.0 | 0.2.1 |
 | v0.5.0 | 0.5.0 | 0.3.0 | 0.2.1 |
