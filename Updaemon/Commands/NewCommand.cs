@@ -33,7 +33,7 @@ namespace Updaemon.Commands
 
         public string Name => "new";
 
-        public string Description => "Create a new service";
+        public string Description => "Register a new service";
 
         public string Usage => "updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>]";
 
@@ -63,7 +63,7 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            _outputWriter.WriteLine($"Creating new service: {appName}");
+            _outputWriter.WriteLine($"Registering new service: {appName}");
 
             // Create the service directory
             string serviceDirectory = Path.Combine(_serviceBaseDirectory, appName);

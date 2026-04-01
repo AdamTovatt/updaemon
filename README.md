@@ -119,11 +119,13 @@ Commands that change files in the system usually require `sudo` to run.
 
 | Command | Description |
 | --- | --- |
-| [new](#new-command) | Create a new managed service. |
+| [new](#new-command) | Register a new managed service. |
+| [init](#init-command) | Download and set up a registered service for the first time. |
 | [update](#update-command) | Update all or a specific service to the latest version. |
 | [set-remote](#set-remote-command) | Set the remote name used by the distribution plugin. |
 | [set-exec-name](#set-exec-command) | Set or clear the executable name for a service. |
 | [dist-install](#dist-install-command) | Download and install a distribution plugin (supports `--as`). |
+| [dist-update](#dist-update-command) | Update installed distribution plugins. |
 | [dist-list](#dist-list-command) | List installed distribution plugins and their metadata. |
 | [secret-set](#secret-set-command) | Set a secret key-value pair for a specific plugin. |
 | [timer](#timer-command) | Manage automatic update scheduling using systemd timers. |
@@ -131,12 +133,30 @@ Commands that change files in the system usually require `sudo` to run.
 
 ### New Command
 ```bash
-updaemon new <app-name> --from <plugin-alias>
+updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>]
 ```
 
-Creates a new managed service with the specified name and associates it with the distribution plugin identified by `<plugin-alias>`. Should be run with `sudo`.
+Registers a new service with the specified name and associates it with the distribution plugin identified by `<plugin-alias>`. This only creates the service directory and registers it in the updaemon config — it does not download anything or create a systemd unit file. Run `updaemon init <app-name>` after this to download and set up the service.
 
-### Update Command 
+**Examples:**
+```bash
+sudo updaemon new my-api --from github
+sudo updaemon new my-api --from github --remote owner/repo
+```
+
+### Init Command
+```bash
+updaemon init <app-name>
+```
+
+Downloads and sets up a registered service for the first time. This command downloads the latest version, detects the executable, creates the systemd unit file, and starts the service. The service must first be registered with `updaemon new`. If the service is already initialized, this command does nothing. Should be run with `sudo`.
+
+**Example:**
+```bash
+sudo updaemon init my-api
+```
+
+### Update Command
 
 ```bash
 updaemon update [app-name]
@@ -186,7 +206,7 @@ sudo updaemon set-exec-name my-api MyApi
 sudo updaemon set-exec-name my-api -
 ```
 
-#### Dist-Install Command
+### Dist-Install Command
 ```bash
 updaemon dist-install [--as <alias>] <plugin-name|url>
 ```
@@ -202,16 +222,31 @@ sudo updaemon dist-install github
 sudo updaemon dist-install --as github github
 
 # Install using full URL
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.7.0/Updaemon.GithubDistributionService
 
 # Install using full URL with alias
-sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
+sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.7.0/Updaemon.GithubDistributionService
 ```
 
 > [!NOTE]
 > Plugin names are resolved from the registry file at https://github.com/AdamTovatt/updaemon/blob/master/PluginRegistry.json. If a plugin name is not found in the registry, you can still install it using the full URL.
 
-#### Secret-Set Command
+### Dist-Update Command
+```bash
+updaemon dist-update [alias]
+```
+
+Updates installed distribution plugins to the latest version from the plugin registry. If an alias is provided, only that plugin is updated. Otherwise, all installed plugins are checked.
+
+Plugins that were installed via a direct URL and are not in the registry will be skipped with a message.
+
+**Examples:**
+```bash
+sudo updaemon dist-update           # Update all plugins
+sudo updaemon dist-update github    # Update only the github plugin
+```
+
+### Secret-Set Command
 `updaemon secret-set <plugin-alias> <key> <value>`
 
 Sets a secret key-value pair for a specific distribution plugin.
@@ -221,14 +256,14 @@ Sets a secret key-value pair for a specific distribution plugin.
 sudo updaemon secret-set github githubToken your-github-token-here
 ```
 
-#### Dist-List Command
+### Dist-List Command
 ```bash
 updaemon dist-list
 ```
 
 Lists installed distribution plugins with their alias, full name, version, description, and required/optional secrets.
 
-#### Timer Command
+### Timer Command
 ```bash
 updaemon timer [interval]
 ```
@@ -251,7 +286,7 @@ sudo updaemon timer -            # Disable automatic timer
 
 The timer will automatically run `updaemon update` at the specified interval.
 
-#### Help Command
+### Help Command
 ```bash
 updaemon help [command]
 ```
@@ -338,7 +373,7 @@ githubToken=ghp_abc123
 
 ### /var/lib/updaemon/default-unit.template
 
-This file contains the systemd unit file template used when creating new services with `updaemon new`. It is automatically created from an embedded default on first use, but you can customize it to match your needs.
+This file contains the systemd unit file template used when initializing services with `updaemon init`. It is automatically created from an embedded default on first use, but you can customize it to match your needs.
 
 **Placeholders:**
 - `{SERVICE_NAME}` - The name of the service
@@ -366,7 +401,7 @@ SyslogIdentifier={SERVICE_NAME}
 WantedBy=multi-user.target
 ```
 
-You can edit this file to add custom systemd directives like environment variables, resource limits, or security settings that will apply to all new services created with updaemon.
+You can edit this file to add custom systemd directives like environment variables, resource limits, or security settings that will apply to all services initialized with updaemon.
 
 ### App-specific Configuration (Optional)
 
@@ -528,10 +563,12 @@ graph TB
     
     subgraph Commands
         NewCmd[New Command]
+        InitCmd[Init Command]
         UpdateCmd[Update Command]
         SetRemoteCmd[Set Remote Command]
         SetExecNameCmd[Set Exec Name Command]
         DistInstallCmd[Dist Install Command]
+        DistUpdateCmd[Dist Update Command]
         DistListCmd[Dist List Command]
         SecretSetCmd[Secret Set Command]
     end
@@ -562,33 +599,38 @@ graph TB
     
     CLI --> Executor
     Executor --> NewCmd
+    Executor --> InitCmd
     Executor --> UpdateCmd
     Executor --> SetRemoteCmd
     Executor --> SetExecNameCmd
     Executor --> DistInstallCmd
+    Executor --> DistUpdateCmd
     Executor --> DistListCmd
     Executor --> SecretSetCmd
-    
+
     NewCmd --> ConfigMgr
+    InitCmd --> ConfigMgr
+    InitCmd --> SecretsMgr
+    InitCmd --> ServiceMgr
+    InitCmd --> DistClient
     UpdateCmd --> ConfigMgr
     UpdateCmd --> SecretsMgr
     UpdateCmd --> ServiceMgr
-    UpdateCmd --> SymlinkMgr
-    UpdateCmd --> ExecDetector
     UpdateCmd --> DistClient
-    
+
     ConfigMgr --> ConfigFile
     SecretsMgr --> PluginFiles
-    
+
     DistClient -->|Named Pipe RPC| Plugins
     DistClient --> PluginFiles
-    
-    NewCmd --> Systemd
+
+    InitCmd --> Systemd
     UpdateCmd --> Systemd
     ServiceMgr --> Systemd
     NewCmd --> OptDir
+    InitCmd --> OptDir
     UpdateCmd --> OptDir
-    NewCmd --> EtcDir
+    InitCmd --> EtcDir
 ```
 
 [↑ Back to top](#updaemon)
@@ -714,18 +756,22 @@ graph TD
     Parse[Parse Arguments]
     
     New{new?}
+    Init{init?}
     Update{update?}
     SetRemote{set-remote?}
     SetExecName{set-exec-name?}
     DistInstall{dist-install?}
+    DistUpdate{dist-update?}
     DistList{dist-list?}
     SecretSet{secret-set?}
     
-    NewAction[Create directory<br/>Generate systemd unit<br/>Register service with plugin<br/>Enable service]
+    NewAction[Create directory<br/>Register service with plugin]
+    InitAction[Look up service<br/>Connect to plugin<br/>Download latest version<br/>Create systemd unit<br/>Enable & start service]
     UpdateAction[Group by plugin<br/>Connect to each plugin<br/>Check versions<br/>Download if newer<br/>Update symlink<br/>Restart service]
     SetRemoteAction[Update remote name<br/>in config.json]
     SetExecNameAction[Update executable name<br/>in config.json]
     DistInstallAction[Download plugin<br/>Get metadata<br/>Save to plugins/<alias>/<br/>Update config]
+    DistUpdateAction[Resolve URL from registry<br/>Download new binary<br/>Compare versions<br/>Replace if newer]
     DistListAction[List installed plugins<br/>Show metadata & secrets]
     SecretSetAction[Add/update secret<br/>in plugins/<alias>/secrets.txt]
     
@@ -735,7 +781,9 @@ graph TD
     Start --> Parse
     Parse --> New
     New -->|Yes| NewAction
-    New -->|No| Update
+    New -->|No| Init
+    Init -->|Yes| InitAction
+    Init -->|No| Update
     Update -->|Yes| UpdateAction
     Update -->|No| SetRemote
     SetRemote -->|Yes| SetRemoteAction
@@ -743,17 +791,21 @@ graph TD
     SetExecName -->|Yes| SetExecNameAction
     SetExecName -->|No| DistInstall
     DistInstall -->|Yes| DistInstallAction
-    DistInstall -->|No| DistList
+    DistInstall -->|No| DistUpdate
+    DistUpdate -->|Yes| DistUpdateAction
+    DistUpdate -->|No| DistList
     DistList -->|Yes| DistListAction
     DistList -->|No| SecretSet
     SecretSet -->|Yes| SecretSetAction
     SecretSet -->|No| Error
-    
+
     NewAction --> Success
+    InitAction --> Success
     UpdateAction --> Success
     SetRemoteAction --> Success
     SetExecNameAction --> Success
     DistInstallAction --> Success
+    DistUpdateAction --> Success
     DistListAction --> Success
     SecretSetAction --> Success
 ```
