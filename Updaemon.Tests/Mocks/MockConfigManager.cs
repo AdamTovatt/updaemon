@@ -24,9 +24,9 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
-        public async Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, CancellationToken cancellationToken = default)
+        public async Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, ServiceType serviceType = ServiceType.Service, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}:{distributionPluginAlias}");
+            MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}:{distributionPluginAlias}:{serviceType}");
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
 
             RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
@@ -40,6 +40,7 @@ namespace Updaemon.Tests.Mocks
                 LocalName = localName,
                 RemoteName = remoteName,
                 DistributionPluginAlias = distributionPluginAlias,
+                ServiceType = serviceType,
             });
 
             await SaveConfigAsync(config, cancellationToken);

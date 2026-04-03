@@ -47,7 +47,7 @@ namespace Updaemon.Configuration
             await File.WriteAllTextAsync(_configFilePath, json, cancellationToken);
         }
 
-        public async Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, CancellationToken cancellationToken = default)
+        public async Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, ServiceType serviceType = ServiceType.Service, CancellationToken cancellationToken = default)
         {
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
 
@@ -62,6 +62,7 @@ namespace Updaemon.Configuration
                 LocalName = localName,
                 RemoteName = remoteName,
                 DistributionPluginAlias = distributionPluginAlias,
+                ServiceType = serviceType,
             });
 
             await SaveConfigAsync(config, cancellationToken);

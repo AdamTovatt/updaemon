@@ -25,6 +25,12 @@ namespace Updaemon.Models
         /// Alias of the distribution plugin to use for this service.
         /// </summary>
         public string DistributionPluginAlias { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The type of this entry: Service (systemd managed) or Cli (PATH symlink only).
+        /// Defaults to Service for backwards compatibility with existing configs.
+        /// </summary>
+        public ServiceType ServiceType { get; set; } = ServiceType.Service;
     }
 }
 

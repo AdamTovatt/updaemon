@@ -13,6 +13,7 @@ namespace Updaemon.Serialization
     [JsonSerializable(typeof(Dictionary<string, InstalledPluginInfo>))]
     [JsonSerializable(typeof(Dictionary<string, string>))]
     [JsonSerializable(typeof(AppConfig))]
+    [JsonSerializable(typeof(ServiceType))]
     [JsonSourceGenerationOptions(
         WriteIndented = true,
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

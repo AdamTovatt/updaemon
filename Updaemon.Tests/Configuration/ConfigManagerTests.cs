@@ -326,6 +326,49 @@ namespace Updaemon.Tests.Configuration
                 Assert.Null(config.Services[0].ExecutableName);
             }
         }
+
+        [Fact]
+        public async Task LoadConfigAsync_OldConfigWithoutServiceType_DefaultsToService()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string configPath = Path.Combine(tempHelper.TempDirectory, "config.json");
+                string oldConfigJson = @"{
+  ""installedPlugins"": {},
+  ""services"": [
+    {
+      ""localName"": ""test-service"",
+      ""remoteName"": ""TestService"",
+      ""distributionPluginAlias"": ""github""
+    }
+  ]
+}";
+                Directory.CreateDirectory(tempHelper.TempDirectory);
+                await File.WriteAllTextAsync(configPath, oldConfigJson);
+
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+
+                Assert.NotNull(config);
+                Assert.Single(config.Services);
+                Assert.Equal(ServiceType.Service, config.Services[0].ServiceType);
+            }
+        }
+
+        [Fact]
+        public async Task RegisterServiceAsync_WithCliType_PersistsType()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                await configManager.RegisterServiceAsync("my-tool", "owner/tool", "github", ServiceType.Cli);
+
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+                Assert.Single(config.Services);
+                Assert.Equal(ServiceType.Cli, config.Services[0].ServiceType);
+            }
+        }
     }
 }
 

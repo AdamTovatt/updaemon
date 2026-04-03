@@ -17,12 +17,15 @@ namespace Updaemon.Tests.Commands
             public MockOutputWriter OutputWriter { get; } = new MockOutputWriter();
             public MockUnitFileManager UnitFileManager { get; } = new MockUnitFileManager();
             public MockServiceDeployer ServiceDeployer { get; } = new MockServiceDeployer();
+            public MockSymlinkManager SymlinkManager { get; } = new MockSymlinkManager();
             public TempFileHelper TempHelper { get; } = new TempFileHelper();
             public string SystemdDirectory { get; }
+            public string BinDirectory { get; }
 
             public InitCommandTestBuilder()
             {
                 SystemdDirectory = TempHelper.CreateTempDirectory("systemd");
+                BinDirectory = TempHelper.CreateTempDirectory("bin");
                 ServiceDeployer.ServiceBaseDirectory = TempHelper.TempDirectory;
             }
 
@@ -31,7 +34,7 @@ namespace Updaemon.Tests.Commands
                 return new InitCommand(
                     ConfigManager, SecretsManager, ServiceManager,
                     DistributionClient, OutputWriter, UnitFileManager,
-                    ServiceDeployer, SystemdDirectory);
+                    ServiceDeployer, SymlinkManager, SystemdDirectory, BinDirectory);
             }
 
             /// <summary>
@@ -46,6 +49,20 @@ namespace Updaemon.Tests.Commands
                 InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = pluginAlias, Path = pluginPath };
                 await ConfigManager.AddOrUpdatePluginAsync(pluginInfo);
                 await ConfigManager.RegisterServiceAsync(localName, remoteName, pluginAlias);
+            }
+
+            /// <summary>
+            /// Registers a CLI tool with a valid plugin so the command passes validation.
+            /// </summary>
+            public async Task RegisterCliToolWithPluginAsync(
+                string localName = "my-tool",
+                string remoteName = "owner/tool",
+                string pluginAlias = "github")
+            {
+                string pluginPath = TempHelper.CreateTempFile("plugin/github-dist", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = pluginAlias, Path = pluginPath };
+                await ConfigManager.AddOrUpdatePluginAsync(pluginInfo);
+                await ConfigManager.RegisterServiceAsync(localName, remoteName, pluginAlias, ServiceType.Cli);
             }
 
             public void Dispose()
@@ -202,7 +219,7 @@ namespace Updaemon.Tests.Commands
                 InitCommand command = new InitCommand(
                     b.ConfigManager, b.SecretsManager, b.ServiceManager,
                     b.DistributionClient, b.OutputWriter, capturingManager,
-                    b.ServiceDeployer, b.SystemdDirectory);
+                    b.ServiceDeployer, b.SymlinkManager, b.SystemdDirectory, b.BinDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "my-api" });
 
@@ -231,6 +248,98 @@ namespace Updaemon.Tests.Commands
                 // Should have called cleanup on the deployer
                 Assert.Contains(b.ServiceDeployer.MethodCalls, c => c.StartsWith("CleanupDeployAsync:"));
                 Assert.Single(b.ServiceDeployer.CleanedUpDeploys);
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_CliTool_HappyPath_CreatesBothSymlinks()
+        {
+            using (InitCommandTestBuilder b = new InitCommandTestBuilder())
+            {
+                await b.RegisterCliToolWithPluginAsync(localName: "rg", remoteName: "BurntSushi/ripgrep");
+
+                b.DistributionClient.SetLatestVersion("BurntSushi/ripgrep", new Version(1, 0, 0));
+                b.ServiceDeployer.SetDeployResult("rg", new Version(1, 0, 0), "ripgrep");
+
+                InitCommand command = b.Build();
+                int exitCode = await command.ExecuteAsync(new[] { "rg" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains(b.ServiceDeployer.MethodCalls, c => c == "DeployVersionAsync:rg:1.0.0");
+
+                // Should have created a bin symlink with the executable name
+                string expectedBinPath = Path.Combine(b.BinDirectory, "ripgrep");
+                Assert.Contains(b.SymlinkManager.Symlinks, kv => kv.Key == expectedBinPath);
+
+                // Should also have created an alias symlink with the local name
+                string expectedAliasPath = Path.Combine(b.BinDirectory, "rg");
+                Assert.Contains(b.SymlinkManager.Symlinks, kv => kv.Key == expectedAliasPath);
+
+                Assert.Contains(b.OutputWriter.Messages, m => m.Contains("CLI tool") && m.Contains("initialized successfully"));
+                Assert.True(b.DistributionClient.IsDisposed);
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_CliTool_SameLocalAndExecutableName_CreatesSingleSymlink()
+        {
+            using (InitCommandTestBuilder b = new InitCommandTestBuilder())
+            {
+                await b.RegisterCliToolWithPluginAsync();
+
+                b.DistributionClient.SetLatestVersion("owner/tool", new Version(1, 0, 0));
+                b.ServiceDeployer.SetDeployResult("my-tool", new Version(1, 0, 0), "my-tool");
+
+                InitCommand command = b.Build();
+                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
+
+                Assert.Equal(0, exitCode);
+
+                // Only one symlink should exist since local name matches executable name
+                string expectedBinPath = Path.Combine(b.BinDirectory, "my-tool");
+                Assert.Single(b.SymlinkManager.Symlinks);
+                Assert.Contains(b.SymlinkManager.Symlinks, kv => kv.Key == expectedBinPath);
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_CliTool_SkipsSystemdSetup()
+        {
+            using (InitCommandTestBuilder b = new InitCommandTestBuilder())
+            {
+                await b.RegisterCliToolWithPluginAsync(localName: "my-tool", remoteName: "owner/tool");
+
+                b.DistributionClient.SetLatestVersion("owner/tool", new Version(1, 0, 0));
+                b.ServiceDeployer.SetDeployResult("my-tool", new Version(1, 0, 0), "my-tool");
+
+                InitCommand command = b.Build();
+                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
+
+                Assert.Equal(0, exitCode);
+
+                // No systemd calls should have been made
+                Assert.DoesNotContain(b.ServiceManager.MethodCalls, c => c == "DaemonReloadAsync");
+                Assert.DoesNotContain(b.ServiceManager.MethodCalls, c => c.StartsWith("EnableServiceAsync"));
+                Assert.DoesNotContain(b.ServiceManager.MethodCalls, c => c.StartsWith("StartServiceAsync"));
+
+                // No unit file should exist
+                Assert.False(File.Exists(Path.Combine(b.SystemdDirectory, "my-tool.service")));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_CliTool_AlreadyInitialized_ReturnsSuccessWithMessage()
+        {
+            using (InitCommandTestBuilder b = new InitCommandTestBuilder())
+            {
+                await b.RegisterCliToolWithPluginAsync();
+                b.ServiceDeployer.SetInitialized("my-tool", "/opt/my-tool/1.0.0");
+
+                InitCommand command = b.Build();
+                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains(b.OutputWriter.Messages, m => m.Contains("CLI tool") && m.Contains("already initialized"));
             }
         }
 

@@ -20,7 +20,7 @@ namespace Updaemon.Interfaces
         /// <summary>
         /// Registers a new service.
         /// </summary>
-        Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, CancellationToken cancellationToken = default);
+        Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, ServiceType serviceType = ServiceType.Service, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Updates the remote name for an existing service.

@@ -36,7 +36,7 @@ namespace Updaemon.Commands
 
         public string Name => "update";
 
-        public string Description => "Update all services or a specific service";
+        public string Description => "Update all services and CLI tools, or a specific one";
 
         public string Usage => "updaemon update [app-name]";
 
@@ -188,32 +188,39 @@ namespace Updaemon.Commands
                     return;
                 }
 
-                // Restart service
-                bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName, cancellationToken);
-                if (serviceExists)
+                if (service.ServiceType == ServiceType.Cli)
                 {
-                    bool isRunning = await _serviceManager.IsServiceRunningAsync(service.LocalName, cancellationToken);
-                    if (isRunning)
-                    {
-                        _outputWriter.WriteLine("Restarting service...");
-                        await _serviceManager.RestartServiceAsync(service.LocalName, cancellationToken);
-                    }
-                    else
-                    {
-                        _outputWriter.WriteLine("Starting service...");
-                        await _serviceManager.StartServiceAsync(service.LocalName, cancellationToken);
-                    }
-
-                    _outputWriter.WriteLine("Service updated successfully");
+                    _outputWriter.WriteLine("CLI tool updated successfully");
                 }
                 else
                 {
-                    _outputWriter.WriteLine("Warning: systemd unit file not found. Service not started.");
+                    // Restart service
+                    bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName, cancellationToken);
+                    if (serviceExists)
+                    {
+                        bool isRunning = await _serviceManager.IsServiceRunningAsync(service.LocalName, cancellationToken);
+                        if (isRunning)
+                        {
+                            _outputWriter.WriteLine("Restarting service...");
+                            await _serviceManager.RestartServiceAsync(service.LocalName, cancellationToken);
+                        }
+                        else
+                        {
+                            _outputWriter.WriteLine("Starting service...");
+                            await _serviceManager.StartServiceAsync(service.LocalName, cancellationToken);
+                        }
+
+                        _outputWriter.WriteLine("Service updated successfully");
+                    }
+                    else
+                    {
+                        _outputWriter.WriteLine("Warning: systemd unit file not found. Service not started.");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _outputWriter.WriteError($"Error updating service: {ex.Message}");
+                _outputWriter.WriteError($"Error updating {service.ServiceType.ToLabel()}: {ex.Message}");
             }
         }
 
@@ -226,13 +233,16 @@ namespace Updaemon.Commands
                   updaemon update [app-name]
 
                 Description:
-                  Updates all registered services to their latest versions. If an app-name
-                  is provided, only that specific service is updated. Services are grouped
-                  by distribution plugin and updated efficiently.
+                  Updates all registered services and CLI tools to their latest versions.
+                  If an app-name is provided, only that specific entry is updated. Entries
+                  are grouped by distribution plugin and updated efficiently.
+
+                  For services, the systemd service is restarted after updating.
+                  For CLI tools, the symlink chain resolves automatically to the new version.
 
                 Examples:
-                  updaemon update          # Update all services
-                  updaemon update my-api  # Update only my-api
+                  updaemon update          # Update all
+                  updaemon update my-api   # Update only my-api
                 """;
         }
     }
