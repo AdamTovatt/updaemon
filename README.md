@@ -162,7 +162,7 @@ sudo updaemon init my-api
 updaemon update [app-name]
 ```
 
-Updates all services or a specific service to the latest available version. Should be run with `sudo`.
+Updates all services or a specific service to the latest available version. After a successful deployment, old version directories are automatically pruned, keeping only the most recent versions (controlled by `releaseRetentionCount` in `config.json`, default: 5). The currently-deployed version is always preserved. Should be run with `sudo`.
 
 **Examples:**
 ```bash
@@ -357,11 +357,14 @@ Updaemon stores its configuration in `/var/lib/updaemon/`:
       "executableName": "WordLibraryApi",
       "distributionPluginAlias": "github"
     }
-  ]
+  ],
+  "releaseRetentionCount": 5
 }
 ```
 
 **Note:** The `executableName` field is optional. If not specified, the `localName` is used when searching for the executable.
+
+**Note:** `releaseRetentionCount` controls how many release versions to keep per service after a successful deployment (default: 5). The currently-deployed version is always preserved regardless of this setting.
 
 ### /var/lib/updaemon/plugins/(alias)/secrets.txt
 

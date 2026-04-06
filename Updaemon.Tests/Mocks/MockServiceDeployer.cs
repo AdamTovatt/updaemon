@@ -20,6 +20,11 @@ namespace Updaemon.Tests.Mocks
 
         public List<DeployResult> CleanedUpDeploys { get; } = new List<DeployResult>();
 
+        /// <summary>
+        /// Tracks calls to PruneOldVersionsAsync as (localName, retentionCount) tuples.
+        /// </summary>
+        public List<(string LocalName, int RetentionCount)> PrunedServices { get; } = new List<(string, int)>();
+
         public string GetSymlinkPath(string localName)
         {
             return Path.Combine(ServiceBaseDirectory, localName, "current");
@@ -42,6 +47,13 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add($"DeployVersionAsync:{key}");
             DeployResults.TryGetValue(key, out DeployResult? result);
             return Task.FromResult(result);
+        }
+
+        public Task PruneOldVersionsAsync(string localName, int retentionCount, CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add($"PruneOldVersionsAsync:{localName}:{retentionCount}");
+            PrunedServices.Add((localName, retentionCount));
+            return Task.CompletedTask;
         }
 
         public Task CleanupDeployAsync(DeployResult result, CancellationToken cancellationToken = default)

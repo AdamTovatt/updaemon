@@ -95,6 +95,50 @@ namespace Updaemon.Services
             };
         }
 
+        public async Task PruneOldVersionsAsync(string localName, int retentionCount, CancellationToken cancellationToken = default)
+        {
+            string serviceDirectory = Path.Combine(_serviceBaseDirectory, localName);
+            if (!Directory.Exists(serviceDirectory))
+                return;
+
+            if (retentionCount < 1)
+                retentionCount = 1;
+
+            string symlinkPath = GetSymlinkPath(localName);
+            string? currentTarget = await _symlinkManager.ReadSymlinkAsync(symlinkPath, cancellationToken);
+            string? normalizedCurrentTarget = currentTarget != null ? Path.GetFullPath(currentTarget, serviceDirectory) : null;
+
+            List<(string Path, Version Version)> versionDirectories = new List<(string, Version)>();
+            foreach (string directory in Directory.GetDirectories(serviceDirectory))
+            {
+                string dirName = Path.GetFileName(directory);
+                if (Version.TryParse(dirName, out Version? version))
+                {
+                    versionDirectories.Add((Path.GetFullPath(directory), version));
+                }
+            }
+
+            List<string> directoriesToDelete = versionDirectories
+                .OrderByDescending(v => v.Version)
+                .Skip(retentionCount)
+                .Where(v => v.Path != normalizedCurrentTarget)
+                .Select(v => v.Path)
+                .ToList();
+
+            foreach (string directory in directoriesToDelete)
+            {
+                try
+                {
+                    Directory.Delete(directory, recursive: true);
+                    _outputWriter.WriteLine($"Pruned old version: {Path.GetFileName(directory)}");
+                }
+                catch (Exception ex)
+                {
+                    _outputWriter.WriteError($"Warning: Failed to prune {Path.GetFileName(directory)}: {ex.Message}");
+                }
+            }
+        }
+
         public async Task CleanupDeployAsync(DeployResult result, CancellationToken cancellationToken = default)
         {
             // Remove symlink so the service does not appear initialized

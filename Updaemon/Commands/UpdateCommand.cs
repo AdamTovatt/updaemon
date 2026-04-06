@@ -92,19 +92,22 @@ namespace Updaemon.Commands
                 return 1;
             }
 
+            // Load config once for settings used during updates
+            UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
+
             // Update services grouped by plugin
             foreach (KeyValuePair<string, List<RegisteredService>> pluginGroup in servicesByPlugin)
             {
                 string pluginAlias = pluginGroup.Key;
                 List<RegisteredService> pluginServices = pluginGroup.Value;
 
-                await UpdateServicesForPluginAsync(pluginAlias, pluginServices, cancellationToken);
+                await UpdateServicesForPluginAsync(pluginAlias, pluginServices, config, cancellationToken);
             }
 
             return 0;
         }
 
-        private async Task UpdateServicesForPluginAsync(string pluginAlias, List<RegisteredService> services, CancellationToken cancellationToken)
+        private async Task UpdateServicesForPluginAsync(string pluginAlias, List<RegisteredService> services, UpdaemonConfig config, CancellationToken cancellationToken)
         {
             // Get plugin info
             InstalledPluginInfo? pluginInfo = await _configManager.GetPluginAsync(pluginAlias, cancellationToken);
@@ -132,14 +135,14 @@ namespace Updaemon.Commands
             // Update each service for this plugin
             foreach (RegisteredService service in services)
             {
-                await UpdateServiceAsync(service, cancellationToken);
+                await UpdateServiceAsync(service, config, cancellationToken);
             }
 
             // Disconnect from plugin
             await _distributionClient.DisposeAsync();
         }
 
-        private async Task UpdateServiceAsync(RegisteredService service, CancellationToken cancellationToken)
+        private async Task UpdateServiceAsync(RegisteredService service, UpdaemonConfig config, CancellationToken cancellationToken)
         {
             _outputWriter.WriteLine($"\nUpdating service: {service.LocalName}");
 
@@ -210,6 +213,16 @@ namespace Updaemon.Commands
                 {
                     _outputWriter.WriteLine("Warning: systemd unit file not found. Service not started.");
                 }
+
+                // Prune old versions (best-effort — don't let failure affect deploy outcome)
+                try
+                {
+                    await _serviceDeployer.PruneOldVersionsAsync(service.LocalName, config.ReleaseRetentionCount, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _outputWriter.WriteError($"Warning: Failed to prune old versions for {service.LocalName}: {ex.Message}");
+                }
             }
             catch (Exception ex)
             {
@@ -229,6 +242,10 @@ namespace Updaemon.Commands
                   Updates all registered services to their latest versions. If an app-name
                   is provided, only that specific service is updated. Services are grouped
                   by distribution plugin and updated efficiently.
+
+                  After a successful deployment, old version directories are automatically
+                  pruned. The number of versions to keep is controlled by the
+                  releaseRetentionCount setting in config.json (default: 5).
 
                 Examples:
                   updaemon update          # Update all services

@@ -31,5 +31,11 @@ namespace Updaemon.Interfaces
         /// Cleans up artifacts created by a deploy (version directory and symlink). Best-effort.
         /// </summary>
         Task CleanupDeployAsync(DeployResult result, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Removes old version directories for a service, keeping the most recent versions
+        /// and always preserving the current symlink target. Best-effort.
+        /// </summary>
+        Task PruneOldVersionsAsync(string localName, int retentionCount, CancellationToken cancellationToken = default);
     }
 }

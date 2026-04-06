@@ -166,6 +166,199 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
+        public async Task PruneOldVersionsAsync_RemovesVersionsBeyondRetentionCount()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = tempHelper.TempDirectory;
+                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
+
+                // Create 7 version directories
+                string[] versions = { "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0" };
+                foreach (string v in versions)
+                {
+                    Directory.CreateDirectory(Path.Combine(serviceDir, v));
+                }
+
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.6.0");
+
+                ServiceDeployer deployer = new ServiceDeployer(
+                    symlinkManager, new MockExecutableDetector(),
+                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+
+                await deployer.PruneOldVersionsAsync("my-api", 3);
+
+                // Should keep top 3 (1.6.0, 1.5.0, 1.4.0) and delete the rest
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.6.0")));
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.5.0")));
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.4.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.3.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.2.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
+            }
+        }
+
+        [Fact]
+        public async Task PruneOldVersionsAsync_PreservesCurrentSymlinkTarget()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = tempHelper.TempDirectory;
+                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
+
+                string[] versions = { "1.0.0", "1.1.0", "1.2.0", "1.3.0" };
+                foreach (string v in versions)
+                {
+                    Directory.CreateDirectory(Path.Combine(serviceDir, v));
+                }
+
+                // Symlink points to an old version outside the retention window
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.0.0");
+
+                ServiceDeployer deployer = new ServiceDeployer(
+                    symlinkManager, new MockExecutableDetector(),
+                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+
+                await deployer.PruneOldVersionsAsync("my-api", 2);
+
+                // Top 2 by version: 1.3.0, 1.2.0 — kept by retention
+                // 1.0.0 — kept because it's the current symlink target
+                // 1.1.0 — deleted
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.3.0")));
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.2.0")));
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
+            }
+        }
+
+        [Fact]
+        public async Task PruneOldVersionsAsync_NoVersionDirectories_DoesNothing()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = tempHelper.TempDirectory;
+                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
+                Directory.CreateDirectory(serviceDir);
+
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+
+                ServiceDeployer deployer = new ServiceDeployer(
+                    symlinkManager, new MockExecutableDetector(),
+                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+
+                await deployer.PruneOldVersionsAsync("my-api", 5);
+
+                // Should not throw, directory still exists
+                Assert.True(Directory.Exists(serviceDir));
+            }
+        }
+
+        [Fact]
+        public async Task PruneOldVersionsAsync_SkipsNonVersionDirectories()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = tempHelper.TempDirectory;
+                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
+
+                Directory.CreateDirectory(Path.Combine(serviceDir, "1.0.0"));
+                Directory.CreateDirectory(Path.Combine(serviceDir, "1.1.0"));
+                Directory.CreateDirectory(Path.Combine(serviceDir, "logs"));
+                Directory.CreateDirectory(Path.Combine(serviceDir, "data"));
+
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.1.0");
+
+                ServiceDeployer deployer = new ServiceDeployer(
+                    symlinkManager, new MockExecutableDetector(),
+                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+
+                await deployer.PruneOldVersionsAsync("my-api", 1);
+
+                // 1.1.0 kept (in retention window), 1.0.0 deleted
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
+                // Non-version directories untouched
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "logs")));
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "data")));
+            }
+        }
+
+        [Fact]
+        public async Task PruneOldVersionsAsync_FewerVersionsThanRetentionCount_DeletesNothing()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = tempHelper.TempDirectory;
+                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
+
+                Directory.CreateDirectory(Path.Combine(serviceDir, "1.0.0"));
+                Directory.CreateDirectory(Path.Combine(serviceDir, "1.1.0"));
+
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.1.0");
+
+                ServiceDeployer deployer = new ServiceDeployer(
+                    symlinkManager, new MockExecutableDetector(),
+                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+
+                await deployer.PruneOldVersionsAsync("my-api", 5);
+
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
+            }
+        }
+
+        [Fact]
+        public async Task PruneOldVersionsAsync_RetentionCountZero_ClampsToOne()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = tempHelper.TempDirectory;
+                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
+
+                Directory.CreateDirectory(Path.Combine(serviceDir, "1.0.0"));
+                Directory.CreateDirectory(Path.Combine(serviceDir, "1.1.0"));
+                Directory.CreateDirectory(Path.Combine(serviceDir, "1.2.0"));
+
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.2.0");
+
+                ServiceDeployer deployer = new ServiceDeployer(
+                    symlinkManager, new MockExecutableDetector(),
+                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+
+                await deployer.PruneOldVersionsAsync("my-api", 0);
+
+                // Clamped to 1, so keeps top 1 (1.2.0) and deletes the rest
+                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.2.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
+                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
+            }
+        }
+
+        [Fact]
+        public async Task PruneOldVersionsAsync_ServiceDirectoryDoesNotExist_DoesNothing()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string serviceBaseDirectory = tempHelper.TempDirectory;
+
+                MockSymlinkManager symlinkManager = new MockSymlinkManager();
+
+                ServiceDeployer deployer = new ServiceDeployer(
+                    symlinkManager, new MockExecutableDetector(),
+                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+
+                // Should not throw even though /opt/nonexistent doesn't exist
+                await deployer.PruneOldVersionsAsync("nonexistent", 5);
+            }
+        }
+
+        [Fact]
         public async Task CleanupDeployAsync_RemovesVersionDirectory()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
