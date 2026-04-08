@@ -4,7 +4,7 @@ using Updaemon.Models;
 namespace Updaemon.Commands
 {
     /// <summary>
-    /// Handles the 'init' command to perform first-time download and setup of a registered service.
+    /// Handles the 'init' command to perform first-time download and setup of a registered service or CLI tool.
     /// </summary>
     public class InitCommand : ICommand
     {
@@ -15,7 +15,9 @@ namespace Updaemon.Commands
         private readonly IOutputWriter _outputWriter;
         private readonly IUnitFileManager _unitFileManager;
         private readonly IServiceDeployer _serviceDeployer;
+        private readonly ISymlinkManager _symlinkManager;
         private readonly string _systemdUnitDirectory;
+        private readonly string _binDirectory;
 
         public InitCommand(
             IConfigManager configManager,
@@ -24,7 +26,8 @@ namespace Updaemon.Commands
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
             IUnitFileManager unitFileManager,
-            IServiceDeployer serviceDeployer)
+            IServiceDeployer serviceDeployer,
+            ISymlinkManager symlinkManager)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
@@ -33,7 +36,9 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
             _unitFileManager = unitFileManager;
             _serviceDeployer = serviceDeployer;
+            _symlinkManager = symlinkManager;
             _systemdUnitDirectory = "/etc/systemd/system";
+            _binDirectory = "/usr/local/bin";
         }
 
         public InitCommand(
@@ -44,7 +49,9 @@ namespace Updaemon.Commands
             IOutputWriter outputWriter,
             IUnitFileManager unitFileManager,
             IServiceDeployer serviceDeployer,
-            string systemdUnitDirectory)
+            ISymlinkManager symlinkManager,
+            string systemdUnitDirectory,
+            string binDirectory)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;
@@ -53,12 +60,14 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
             _unitFileManager = unitFileManager;
             _serviceDeployer = serviceDeployer;
+            _symlinkManager = symlinkManager;
             _systemdUnitDirectory = systemdUnitDirectory;
+            _binDirectory = binDirectory;
         }
 
         public string Name => "init";
 
-        public string Description => "Download and set up a registered service for the first time";
+        public string Description => "Download and set up a registered service or CLI tool for the first time";
 
         public string Usage => "updaemon init <app-name>";
 
@@ -76,7 +85,7 @@ namespace Updaemon.Commands
             RegisteredService? service = await _configManager.GetServiceAsync(appName, cancellationToken);
             if (service == null)
             {
-                _outputWriter.WriteError($"Error: Service '{appName}' is not registered. Use 'updaemon new' to register it first.");
+                _outputWriter.WriteError($"Error: '{appName}' is not registered. Use 'updaemon new' to register it first.");
                 return 1;
             }
 
@@ -84,7 +93,7 @@ namespace Updaemon.Commands
             string? existingTarget = await _serviceDeployer.ReadCurrentTargetAsync(service.LocalName, cancellationToken);
             if (existingTarget != null)
             {
-                _outputWriter.WriteLine($"Service '{appName}' is already initialized.");
+                _outputWriter.WriteLine($"{service.ServiceType.ToLabel()} '{appName}' is already initialized.");
                 return 0;
             }
 
@@ -102,29 +111,19 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            // Pre-flight: check write access to systemd unit directory
-            if (!Directory.Exists(_systemdUnitDirectory))
+            // Pre-flight: check write access
+            if (service.ServiceType == ServiceType.Cli)
             {
-                _outputWriter.WriteError($"Error: Systemd unit directory '{_systemdUnitDirectory}' does not exist.");
-                return 1;
+                int preflightResult = await CheckWriteAccessAsync(_binDirectory, cancellationToken);
+                if (preflightResult != 0) return preflightResult;
+            }
+            else
+            {
+                int preflightResult = await CheckWriteAccessAsync(_systemdUnitDirectory, cancellationToken);
+                if (preflightResult != 0) return preflightResult;
             }
 
-            string testFilePath = Path.Combine(_systemdUnitDirectory, $".updaemon-init-check-{Guid.NewGuid()}");
-            try
-            {
-                await File.WriteAllTextAsync(testFilePath, "", cancellationToken);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                _outputWriter.WriteError($"Error: No write access to '{_systemdUnitDirectory}'. Run with appropriate permissions.");
-                return 1;
-            }
-            finally
-            {
-                try { File.Delete(testFilePath); } catch { }
-            }
-
-            _outputWriter.WriteLine($"Initializing service: {appName}");
+            _outputWriter.WriteLine($"Initializing {service.ServiceType.ToLabel()}: {appName}");
 
             // Connect to plugin
             await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
@@ -133,6 +132,8 @@ namespace Updaemon.Commands
 
             DeployResult? deployResult = null;
             string? unitFilePath = null;
+            string? binSymlinkPath = null;
+            string? binAliasSymlinkPath = null;
 
             try
             {
@@ -153,19 +154,41 @@ namespace Updaemon.Commands
                     return 1;
                 }
 
-                // Generate and write unit file
                 string detectedExecutableName = Path.GetFileName(deployResult.ExecutablePath);
-                unitFilePath = Path.Combine(_systemdUnitDirectory, $"{service.LocalName}.service");
 
-                await _unitFileManager.WriteUnitFileAsync(
-                    unitFilePath, service.LocalName, deployResult.SymlinkPath, detectedExecutableName, cancellationToken);
-                _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");
+                if (service.ServiceType == ServiceType.Cli)
+                {
+                    // Create symlink in bin directory using the executable's real name
+                    binSymlinkPath = Path.Combine(_binDirectory, detectedExecutableName);
+                    string targetPath = Path.Combine(deployResult.SymlinkPath, detectedExecutableName);
+                    await _symlinkManager.CreateOrUpdateSymlinkAsync(binSymlinkPath, targetPath, cancellationToken);
+                    _outputWriter.WriteLine($"Created symlink: {binSymlinkPath}");
 
-                // Reload systemd and enable/start service
-                await _serviceManager.DaemonReloadAsync(cancellationToken);
-                await _serviceManager.EnableServiceAsync(service.LocalName, cancellationToken);
-                await _serviceManager.StartServiceAsync(service.LocalName, cancellationToken);
-                _outputWriter.WriteLine($"Service '{appName}' initialized and started successfully!");
+                    // Create an alias symlink using the user-chosen local name, if different
+                    if (!string.Equals(service.LocalName, detectedExecutableName, StringComparison.Ordinal))
+                    {
+                        binAliasSymlinkPath = Path.Combine(_binDirectory, service.LocalName);
+                        await _symlinkManager.CreateOrUpdateSymlinkAsync(binAliasSymlinkPath, targetPath, cancellationToken);
+                        _outputWriter.WriteLine($"Created alias symlink: {binAliasSymlinkPath}");
+                    }
+
+                    _outputWriter.WriteLine($"CLI tool '{appName}' initialized successfully!");
+                }
+                else
+                {
+                    // Generate and write unit file
+                    unitFilePath = Path.Combine(_systemdUnitDirectory, $"{service.LocalName}.service");
+
+                    await _unitFileManager.WriteUnitFileAsync(
+                        unitFilePath, service.LocalName, deployResult.SymlinkPath, detectedExecutableName, cancellationToken);
+                    _outputWriter.WriteLine($"Created systemd unit file: {unitFilePath}");
+
+                    // Reload systemd and enable/start service
+                    await _serviceManager.DaemonReloadAsync(cancellationToken);
+                    await _serviceManager.EnableServiceAsync(service.LocalName, cancellationToken);
+                    await _serviceManager.StartServiceAsync(service.LocalName, cancellationToken);
+                    _outputWriter.WriteLine($"Service '{appName}' initialized and started successfully!");
+                }
 
                 return 0;
             }
@@ -177,6 +200,16 @@ namespace Updaemon.Commands
                 if (unitFilePath != null)
                 {
                     try { File.Delete(unitFilePath); } catch { }
+                }
+
+                // Clean up bin symlinks
+                if (binSymlinkPath != null)
+                {
+                    try { File.Delete(binSymlinkPath); } catch { }
+                }
+                if (binAliasSymlinkPath != null)
+                {
+                    try { File.Delete(binAliasSymlinkPath); } catch { }
                 }
 
                 // Clean up deploy artifacts (version directory + symlink)
@@ -194,6 +227,32 @@ namespace Updaemon.Commands
             }
         }
 
+        private async Task<int> CheckWriteAccessAsync(string directory, CancellationToken cancellationToken)
+        {
+            if (!Directory.Exists(directory))
+            {
+                _outputWriter.WriteError($"Error: Directory '{directory}' does not exist.");
+                return 1;
+            }
+
+            string testFilePath = Path.Combine(directory, $".updaemon-init-check-{Guid.NewGuid()}");
+            try
+            {
+                await File.WriteAllTextAsync(testFilePath, "", cancellationToken);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                _outputWriter.WriteError($"Error: No write access to '{directory}'. Run with appropriate permissions.");
+                return 1;
+            }
+            finally
+            {
+                try { File.Delete(testFilePath); } catch { }
+            }
+
+            return 0;
+        }
+
         public string GetDetailedHelp()
         {
             return """
@@ -203,16 +262,20 @@ namespace Updaemon.Commands
                   updaemon init <app-name>
 
                 Description:
-                  Downloads and sets up a registered service for the first time. This command
-                  downloads the latest version, detects the executable, creates the systemd
-                  unit file with the correct ExecStart path, and starts the service.
+                  Downloads and sets up a registered service or CLI tool for the first time.
 
-                  The service must first be registered with 'updaemon new'. If the service
-                  is already initialized, this command does nothing.
+                  For services: downloads the latest version, detects the executable, creates
+                  the systemd unit file, and starts the service.
+
+                  For CLI tools: downloads the latest version, detects the executable, and
+                  creates a symlink in /usr/local/bin so the tool is available on PATH.
+
+                  The entry must first be registered with 'updaemon new'. If it is already
+                  initialized, this command does nothing.
 
                 Examples:
                   updaemon init my-api
-                  updaemon init my-service
+                  updaemon init ripgrep
                 """;
         }
     }

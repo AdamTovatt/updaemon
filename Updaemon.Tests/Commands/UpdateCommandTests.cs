@@ -563,6 +563,96 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task UpdateService_CliType_DoesNotRestartService()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-tool", "MyTool", "github", ServiceType.Cli);
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-tool", "/opt/my-tool/1.0.0");
+                serviceDeployer.SetDeployResult("my-tool", new Version(1, 1, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyTool", new Version(1, 1, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+                MockServiceManager serviceManager = new MockServiceManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    serviceManager,
+                    distributionClient,
+                    outputWriter,
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
+                Assert.Equal(0, exitCode);
+
+                // Should have deployed the new version
+                Assert.Contains(serviceDeployer.MethodCalls, call => call == "DeployVersionAsync:my-tool:1.1.0");
+
+                // Should NOT have called any service manager methods
+                Assert.Empty(serviceManager.MethodCalls.Where(call =>
+                    call.Contains("Start") || call.Contains("Restart") || call.Contains("ServiceExists") || call.Contains("IsServiceRunning")));
+
+                // Should print CLI success message
+                Assert.Contains(outputWriter.Messages, m => m.Contains("CLI tool updated successfully"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_UninitializedCliTool_SkipsWithWarning()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.RegisterServiceAsync("my-tool", "MyTool", "github", ServiceType.Cli);
+
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                // No initialized target — CLI tool is not initialized
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyTool", new Version(1, 0, 0));
+
+                MockServiceManager serviceManager = new MockServiceManager();
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    serviceManager,
+                    distributionClient,
+                    outputWriter,
+                    new MockVersionExtractor(),
+                    serviceDeployer
+                );
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
+                Assert.Equal(0, exitCode);
+
+                Assert.Contains(outputWriter.Messages, m => m.Contains("not initialized") && m.Contains("updaemon init"));
+                Assert.DoesNotContain(serviceDeployer.MethodCalls, c => c.StartsWith("DeployVersionAsync"));
+
+                // Should NOT have called any service manager methods
+                Assert.Empty(serviceManager.MethodCalls.Where(call =>
+                    call.Contains("Start") || call.Contains("Restart") || call.Contains("ServiceExists") || call.Contains("IsServiceRunning")));
+            }
+        }
+
+        [Fact]
         public async Task ExecuteAsync_PluginExecutableNotFound_SkipsWithError()
         {
             MockConfigManager configManager = new MockConfigManager();

@@ -6,7 +6,7 @@ namespace Updaemon.Models
     public class RegisteredService
     {
         /// <summary>
-        /// Local name used for systemd service and directory at /opt/{LocalName}/
+        /// Local name used for the directory at /opt/{LocalName}/ and (for services) the systemd unit name.
         /// </summary>
         public string LocalName { get; set; } = string.Empty;
 
@@ -25,6 +25,12 @@ namespace Updaemon.Models
         /// Alias of the distribution plugin to use for this service.
         /// </summary>
         public string DistributionPluginAlias { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The type of this entry: Service (systemd managed) or Cli (PATH symlink only).
+        /// Defaults to Service for backwards compatibility with existing configs.
+        /// </summary>
+        public ServiceType ServiceType { get; set; } = ServiceType.Service;
     }
 }
 

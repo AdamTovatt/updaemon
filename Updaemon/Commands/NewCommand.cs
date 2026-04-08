@@ -33,9 +33,9 @@ namespace Updaemon.Commands
 
         public string Name => "new";
 
-        public string Description => "Register a new service";
+        public string Description => "Register a new service or CLI tool";
 
-        public string Usage => "updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>]";
+        public string Usage => "updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>] [--type <service|cli>]";
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
@@ -55,6 +55,21 @@ namespace Updaemon.Commands
 
             string? remoteName = parser.GetFlag("--remote");
 
+            string? typeFlag = parser.GetFlag("--type");
+            ServiceType serviceType = ServiceType.Service;
+            if (typeFlag != null)
+            {
+                if (string.Equals(typeFlag, "cli", StringComparison.OrdinalIgnoreCase))
+                {
+                    serviceType = ServiceType.Cli;
+                }
+                else if (!string.Equals(typeFlag, "service", StringComparison.OrdinalIgnoreCase))
+                {
+                    _outputWriter.WriteError($"Error: Invalid type '{typeFlag}'. Must be 'service' or 'cli'.");
+                    return 1;
+                }
+            }
+
             // Verify plugin exists
             InstalledPluginInfo? pluginInfo = await _configManager.GetPluginAsync(distributionPluginAlias, cancellationToken);
             if (pluginInfo == null)
@@ -63,7 +78,8 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            _outputWriter.WriteLine($"Registering new service: {appName}");
+            string typeLabel = serviceType.ToLabel();
+            _outputWriter.WriteLine($"Registering new {typeLabel}: {appName}");
 
             // Create the service directory
             string serviceDirectory = Path.Combine(_serviceBaseDirectory, appName);
@@ -72,17 +88,17 @@ namespace Updaemon.Commands
 
             // Register the service
             string effectiveRemoteName = remoteName ?? appName;
-            await _configManager.RegisterServiceAsync(appName, effectiveRemoteName, distributionPluginAlias, cancellationToken);
-            _outputWriter.WriteLine($"Registered service in updaemon config");
+            await _configManager.RegisterServiceAsync(appName, effectiveRemoteName, distributionPluginAlias, serviceType, cancellationToken);
+            _outputWriter.WriteLine($"Registered {typeLabel} in updaemon config");
 
-            _outputWriter.WriteLine($"Service '{appName}' registered successfully!");
+            _outputWriter.WriteLine($"{typeLabel} '{appName}' registered successfully!");
 
             if (remoteName == null)
             {
                 _outputWriter.WriteLine($"Note: Remote name defaults to '{appName}'. Use 'updaemon set-remote {appName} <remote-name>' to change it.");
             }
 
-            _outputWriter.WriteLine($"Run 'updaemon init {appName}' to download and set up the service.");
+            _outputWriter.WriteLine($"Run 'updaemon init {appName}' to download and set up the {typeLabel}.");
             return 0;
         }
 
@@ -92,20 +108,23 @@ namespace Updaemon.Commands
                 New Command
 
                 Usage:
-                  updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>]
+                  updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>] [--type <service|cli>]
 
                 Description:
-                  Registers a new service with the specified name. The service will use the
-                  specified distribution plugin to check for updates. After registering,
-                  run 'updaemon init <app-name>' to download and set up the service.
+                  Registers a new service or CLI tool with the specified name. The entry will
+                  use the specified distribution plugin to check for updates. After registering,
+                  run 'updaemon init <app-name>' to download and set it up.
 
                 Options:
-                  --remote <remote-name>  Set the remote name (defaults to app-name)
+                  --remote <remote-name>       Set the remote name (defaults to app-name)
+                  --type <service|cli>         Set the type (defaults to service)
+                                               service: managed as a systemd service
+                                               cli: symlinked into /usr/local/bin
 
                 Examples:
                   updaemon new my-api --from github
                   updaemon new my-api --from github --remote owner/repo
-                  updaemon new my-service --from byteshelf
+                  updaemon new ripgrep --from github --remote BurntSushi/ripgrep --type cli
                 """;
         }
     }

@@ -36,7 +36,7 @@ namespace Updaemon.Commands
 
         public string Name => "update";
 
-        public string Description => "Update all services or a specific service";
+        public string Description => "Update all services and CLI tools, or a specific one";
 
         public string Usage => "updaemon update [app-name]";
 
@@ -51,7 +51,7 @@ namespace Updaemon.Commands
                 RegisteredService? service = await _configManager.GetServiceAsync(specificAppName, cancellationToken);
                 if (service == null)
                 {
-                    _outputWriter.WriteError($"Error: Service '{specificAppName}' is not registered.");
+                    _outputWriter.WriteError($"Error: '{specificAppName}' is not registered.");
                     return 1;
                 }
 
@@ -64,7 +64,7 @@ namespace Updaemon.Commands
 
             if (services.Count == 0)
             {
-                _outputWriter.WriteLine("No services registered. Use 'updaemon new <app-name> --from <plugin>' to create a service.");
+                _outputWriter.WriteLine("Nothing registered. Use 'updaemon new <app-name> --from <plugin>' to register a service or CLI tool.");
                 return 0;
             }
 
@@ -74,7 +74,7 @@ namespace Updaemon.Commands
             {
                 if (string.IsNullOrEmpty(service.DistributionPluginAlias))
                 {
-                    _outputWriter.WriteError($"Error: Service '{service.LocalName}' does not have a distribution plugin assigned.");
+                    _outputWriter.WriteError($"Error: '{service.LocalName}' does not have a distribution plugin assigned.");
                     continue;
                 }
 
@@ -123,7 +123,7 @@ namespace Updaemon.Commands
                 return;
             }
 
-            _outputWriter.WriteLine($"\n=== Updating services using plugin '{pluginAlias}' ===");
+            _outputWriter.WriteLine($"\n=== Updating entries using plugin '{pluginAlias}' ===");
 
             // Connect to the distribution service
             await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
@@ -144,7 +144,7 @@ namespace Updaemon.Commands
 
         private async Task UpdateServiceAsync(RegisteredService service, UpdaemonConfig config, CancellationToken cancellationToken)
         {
-            _outputWriter.WriteLine($"\nUpdating service: {service.LocalName}");
+            _outputWriter.WriteLine($"\nUpdating {service.ServiceType.ToLabel()}: {service.LocalName}");
 
             try
             {
@@ -191,27 +191,34 @@ namespace Updaemon.Commands
                     return;
                 }
 
-                // Restart service
-                bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName, cancellationToken);
-                if (serviceExists)
+                if (service.ServiceType == ServiceType.Cli)
                 {
-                    bool isRunning = await _serviceManager.IsServiceRunningAsync(service.LocalName, cancellationToken);
-                    if (isRunning)
-                    {
-                        _outputWriter.WriteLine("Restarting service...");
-                        await _serviceManager.RestartServiceAsync(service.LocalName, cancellationToken);
-                    }
-                    else
-                    {
-                        _outputWriter.WriteLine("Starting service...");
-                        await _serviceManager.StartServiceAsync(service.LocalName, cancellationToken);
-                    }
-
-                    _outputWriter.WriteLine("Service updated successfully");
+                    _outputWriter.WriteLine("CLI tool updated successfully");
                 }
                 else
                 {
-                    _outputWriter.WriteLine("Warning: systemd unit file not found. Service not started.");
+                    // Restart service
+                    bool serviceExists = await _serviceManager.ServiceExistsAsync(service.LocalName, cancellationToken);
+                    if (serviceExists)
+                    {
+                        bool isRunning = await _serviceManager.IsServiceRunningAsync(service.LocalName, cancellationToken);
+                        if (isRunning)
+                        {
+                            _outputWriter.WriteLine("Restarting service...");
+                            await _serviceManager.RestartServiceAsync(service.LocalName, cancellationToken);
+                        }
+                        else
+                        {
+                            _outputWriter.WriteLine("Starting service...");
+                            await _serviceManager.StartServiceAsync(service.LocalName, cancellationToken);
+                        }
+
+                        _outputWriter.WriteLine("Service updated successfully");
+                    }
+                    else
+                    {
+                        _outputWriter.WriteLine("Warning: systemd unit file not found. Service not started.");
+                    }
                 }
 
                 // Prune old versions (best-effort — don't let failure affect deploy outcome)
@@ -226,7 +233,7 @@ namespace Updaemon.Commands
             }
             catch (Exception ex)
             {
-                _outputWriter.WriteError($"Error updating service: {ex.Message}");
+                _outputWriter.WriteError($"Error updating {service.ServiceType.ToLabel()}: {ex.Message}");
             }
         }
 
@@ -239,17 +246,20 @@ namespace Updaemon.Commands
                   updaemon update [app-name]
 
                 Description:
-                  Updates all registered services to their latest versions. If an app-name
-                  is provided, only that specific service is updated. Services are grouped
-                  by distribution plugin and updated efficiently.
+                  Updates all registered services and CLI tools to their latest versions.
+                  If an app-name is provided, only that specific entry is updated. Entries
+                  are grouped by distribution plugin and updated efficiently.
+
+                  For services, the systemd service is restarted after updating.
+                  For CLI tools, the symlink chain resolves automatically to the new version.
 
                   After a successful deployment, old version directories are automatically
                   pruned. The number of versions to keep is controlled by the
                   releaseRetentionCount setting in config.json (default: 5).
 
                 Examples:
-                  updaemon update          # Update all services
-                  updaemon update my-api  # Update only my-api
+                  updaemon update          # Update all
+                  updaemon update my-api   # Update only my-api
                 """;
         }
     }

@@ -151,7 +151,7 @@ namespace Updaemon.Services
                     string? target = await _symlinkManager.ReadSymlinkAsync(result.SymlinkPath, cancellationToken);
                     if (target == result.VersionDirectory)
                     {
-                        Directory.Delete(result.SymlinkPath, false);
+                        File.Delete(result.SymlinkPath);
                     }
                 }
             }
