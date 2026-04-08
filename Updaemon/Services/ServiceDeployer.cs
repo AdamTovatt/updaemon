@@ -127,6 +127,7 @@ namespace Updaemon.Services
 
             foreach (string directory in directoriesToDelete)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     Directory.Delete(directory, recursive: true);

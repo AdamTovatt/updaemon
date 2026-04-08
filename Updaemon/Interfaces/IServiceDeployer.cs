@@ -34,7 +34,8 @@ namespace Updaemon.Interfaces
 
         /// <summary>
         /// Removes old version directories for a service, keeping the most recent versions
-        /// and always preserving the current symlink target. Best-effort.
+        /// and always preserving the current symlink target. Individual directory deletions
+        /// are best-effort, but the method may throw during setup (e.g. reading symlink or listing directories).
         /// </summary>
         Task PruneOldVersionsAsync(string localName, int retentionCount, CancellationToken cancellationToken = default);
     }

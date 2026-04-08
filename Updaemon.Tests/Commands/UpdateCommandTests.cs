@@ -153,10 +153,11 @@ namespace Updaemon.Tests.Commands
                 Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service1");
                 Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service2");
 
-                // Both services should be pruned
+                // Both services should be pruned with default retention count
                 Assert.Equal(2, serviceDeployer.PrunedServices.Count);
                 Assert.Contains(serviceDeployer.PrunedServices, p => p.LocalName == "service1");
                 Assert.Contains(serviceDeployer.PrunedServices, p => p.LocalName == "service2");
+                Assert.All(serviceDeployer.PrunedServices, p => Assert.Equal(5, p.RetentionCount));
             }
         }
 
@@ -699,6 +700,58 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Single(serviceDeployer.PrunedServices);
                 Assert.Equal("my-api", serviceDeployer.PrunedServices[0].LocalName);
+            }
+        }
+
+        [Fact]
+        public async Task UpdateService_RestartFails_SkipsPrune()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = true;
+                serviceManager.ThrowOnRestart = true;
+
+                MockOutputWriter outputWriter = new MockOutputWriter();
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    serviceManager,
+                    distributionClient,
+                    outputWriter,
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
+
+                // Restart was attempted
+                Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
+
+                // Prune should NOT have been called because the restart exception
+                // causes the outer catch to fire, skipping the prune block
+                Assert.Empty(serviceDeployer.PrunedServices);
+
+                // Error should be reported
+                Assert.Contains(outputWriter.Errors, e => e.Contains("Error updating service"));
             }
         }
 
