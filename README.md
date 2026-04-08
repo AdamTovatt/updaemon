@@ -121,6 +121,7 @@ Commands that change files in the system usually require `sudo` to run.
 | --- | --- |
 | [new](#new-command) | Register a new managed service. |
 | [init](#init-command) | Download and set up a registered service for the first time. |
+| [list](#list-command) | List all registered applications with version and status. |
 | [update](#update-command) | Update all or a specific service to the latest version. |
 | [set-remote](#set-remote-command) | Set the remote name used by the distribution plugin. |
 | [set-exec-name](#set-exec-command) | Set or clear the executable name for a service. |
@@ -155,6 +156,14 @@ Downloads and sets up a registered service for the first time. This command down
 ```bash
 sudo updaemon init my-api
 ```
+
+### List Command
+
+```bash
+updaemon list
+```
+
+Lists all registered applications (services and CLI tools) with their current version, initialization status, type, distribution plugin, and remote name.
 
 ### Update Command
 

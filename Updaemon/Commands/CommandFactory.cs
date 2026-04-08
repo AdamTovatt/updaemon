@@ -19,6 +19,7 @@ namespace Updaemon.Commands
             {
                 ["new"] = typeof(NewCommand),
                 ["init"] = typeof(InitCommand),
+                ["list"] = typeof(ListCommand),
                 ["update"] = typeof(UpdateCommand),
                 ["set-remote"] = typeof(SetRemoteCommand),
                 ["set-exec-name"] = typeof(SetExecNameCommand),
