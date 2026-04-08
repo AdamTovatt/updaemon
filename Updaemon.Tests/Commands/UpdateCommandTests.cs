@@ -152,6 +152,12 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service1");
                 Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service2");
+
+                // Both services should be pruned with default retention count
+                Assert.Equal(2, serviceDeployer.PrunedServices.Count);
+                Assert.Contains(serviceDeployer.PrunedServices, p => p.LocalName == "service1");
+                Assert.Contains(serviceDeployer.PrunedServices, p => p.LocalName == "service2");
+                Assert.All(serviceDeployer.PrunedServices, p => Assert.Equal(5, p.RetentionCount));
             }
         }
 
@@ -196,6 +202,9 @@ namespace Updaemon.Tests.Commands
                 // Should not call any service manager methods (no restart/start)
                 Assert.Empty(serviceManager.MethodCalls.Where(call =>
                     call.Contains("Start") || call.Contains("Restart") || call.Contains("Stop")));
+
+                // Should not prune when no deploy happened
+                Assert.Empty(serviceDeployer.PrunedServices);
             }
         }
 
@@ -578,6 +587,214 @@ namespace Updaemon.Tests.Commands
 
             Assert.Contains(outputWriter.Errors, e => e.Contains("Plugin executable not found"));
             Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+        }
+
+        [Fact]
+        public async Task UpdateService_SuccessfulDeploy_PrunesOldVersions()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    new MockServiceManager(),
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                await command.ExecuteAsync(new[] { "my-api" });
+
+                Assert.Single(serviceDeployer.PrunedServices);
+                Assert.Equal("my-api", serviceDeployer.PrunedServices[0].LocalName);
+                Assert.Equal(5, serviceDeployer.PrunedServices[0].RetentionCount);
+            }
+        }
+
+        [Fact]
+        public async Task UpdateService_FailedDeploy_DoesNotPrune()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-api", "/opt/my-api/0.9.0");
+                // Don't configure deploy result — deployer returns null
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(0, 9, 0);
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    new MockServiceManager(),
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                await command.ExecuteAsync(new[] { "my-api" });
+
+                Assert.Empty(serviceDeployer.PrunedServices);
+            }
+        }
+
+        [Fact]
+        public async Task UpdateService_SuccessfulDeploy_NoServiceUnit_StillPrunes()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+                MockServiceManager serviceManager = new MockServiceManager();
+                // serviceExists defaults to false — no systemd unit file
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    serviceManager,
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                await command.ExecuteAsync(new[] { "my-api" });
+
+                Assert.Single(serviceDeployer.PrunedServices);
+                Assert.Equal("my-api", serviceDeployer.PrunedServices[0].LocalName);
+            }
+        }
+
+        [Fact]
+        public async Task UpdateService_RestartFails_SkipsPrune()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = true;
+                serviceManager.ThrowOnRestart = true;
+
+                MockOutputWriter outputWriter = new MockOutputWriter();
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    serviceManager,
+                    distributionClient,
+                    outputWriter,
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
+
+                // Restart was attempted
+                Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
+
+                // Prune should NOT have been called because the restart exception
+                // causes the outer catch to fire, skipping the prune block
+                Assert.Empty(serviceDeployer.PrunedServices);
+
+                // Error should be reported
+                Assert.Contains(outputWriter.Errors, e => e.Contains("Error updating service"));
+            }
+        }
+
+        [Fact]
+        public async Task UpdateService_CustomRetentionCount_PassedToPrune()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                // Set custom retention count
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+                config.ReleaseRetentionCount = 10;
+                await configManager.SaveConfigAsync(config);
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    new MockServiceManager(),
+                    distributionClient,
+                    new MockOutputWriter(),
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                await command.ExecuteAsync(new[] { "my-api" });
+
+                Assert.Single(serviceDeployer.PrunedServices);
+                Assert.Equal(10, serviceDeployer.PrunedServices[0].RetentionCount);
+            }
         }
     }
 }

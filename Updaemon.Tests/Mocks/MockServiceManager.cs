@@ -11,6 +11,7 @@ namespace Updaemon.Tests.Mocks
         public Dictionary<string, bool> ServiceRunningStates { get; } = new Dictionary<string, bool>();
         public Dictionary<string, bool> ServiceExistsStates { get; } = new Dictionary<string, bool>();
         public bool ThrowOnEnable { get; set; }
+        public bool ThrowOnRestart { get; set; }
 
         public Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
@@ -29,6 +30,8 @@ namespace Updaemon.Tests.Mocks
         public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(RestartServiceAsync)}:{serviceName}");
+            if (ThrowOnRestart)
+                throw new InvalidOperationException("Simulated restart failure");
             ServiceRunningStates[serviceName] = true;
             return Task.CompletedTask;
         }

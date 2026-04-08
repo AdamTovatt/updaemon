@@ -14,6 +14,12 @@ namespace Updaemon.Models
         /// List of registered services.
         /// </summary>
         public List<RegisteredService> Services { get; set; } = new List<RegisteredService>();
+
+        /// <summary>
+        /// Total number of release versions to retain per service after a successful deployment.
+        /// Includes the currently-deployed version. Minimum effective value is 1.
+        /// </summary>
+        public int ReleaseRetentionCount { get; set; } = 5;
     }
 }
 
