@@ -6,7 +6,7 @@ namespace Updaemon.Models
     public class RegisteredService
     {
         /// <summary>
-        /// Local name used for systemd service and directory at /opt/{LocalName}/
+        /// Local name used for the directory at /opt/{LocalName}/ and (for services) the systemd unit name.
         /// </summary>
         public string LocalName { get; set; } = string.Empty;
 

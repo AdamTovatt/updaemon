@@ -51,7 +51,7 @@ namespace Updaemon.Commands
                 RegisteredService? service = await _configManager.GetServiceAsync(specificAppName, cancellationToken);
                 if (service == null)
                 {
-                    _outputWriter.WriteError($"Error: Service '{specificAppName}' is not registered.");
+                    _outputWriter.WriteError($"Error: '{specificAppName}' is not registered.");
                     return 1;
                 }
 
@@ -64,7 +64,7 @@ namespace Updaemon.Commands
 
             if (services.Count == 0)
             {
-                _outputWriter.WriteLine("No services registered. Use 'updaemon new <app-name> --from <plugin>' to create a service.");
+                _outputWriter.WriteLine("Nothing registered. Use 'updaemon new <app-name> --from <plugin>' to register a service or CLI tool.");
                 return 0;
             }
 
@@ -74,7 +74,7 @@ namespace Updaemon.Commands
             {
                 if (string.IsNullOrEmpty(service.DistributionPluginAlias))
                 {
-                    _outputWriter.WriteError($"Error: Service '{service.LocalName}' does not have a distribution plugin assigned.");
+                    _outputWriter.WriteError($"Error: '{service.LocalName}' does not have a distribution plugin assigned.");
                     continue;
                 }
 
@@ -120,7 +120,7 @@ namespace Updaemon.Commands
                 return;
             }
 
-            _outputWriter.WriteLine($"\n=== Updating services using plugin '{pluginAlias}' ===");
+            _outputWriter.WriteLine($"\n=== Updating entries using plugin '{pluginAlias}' ===");
 
             // Connect to the distribution service
             await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
@@ -141,7 +141,7 @@ namespace Updaemon.Commands
 
         private async Task UpdateServiceAsync(RegisteredService service, CancellationToken cancellationToken)
         {
-            _outputWriter.WriteLine($"\nUpdating service: {service.LocalName}");
+            _outputWriter.WriteLine($"\nUpdating {service.ServiceType.ToLabel()}: {service.LocalName}");
 
             try
             {

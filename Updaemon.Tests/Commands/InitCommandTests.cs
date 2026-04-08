@@ -343,6 +343,56 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        [Fact]
+        public async Task ExecuteAsync_CliTool_FailureAfterDeploy_CleansUpSymlinksAndArtifacts()
+        {
+            using (InitCommandTestBuilder b = new InitCommandTestBuilder())
+            {
+                await b.RegisterCliToolWithPluginAsync(localName: "rg", remoteName: "BurntSushi/ripgrep");
+
+                b.DistributionClient.SetLatestVersion("BurntSushi/ripgrep", new Version(1, 0, 0));
+                b.ServiceDeployer.SetDeployResult("rg", new Version(1, 0, 0), "ripgrep");
+
+                // First symlink (bin) succeeds, second (alias) throws
+                b.SymlinkManager.ThrowAfterCreateCount = 1;
+
+                InitCommand command = b.Build();
+                int exitCode = await command.ExecuteAsync(new[] { "rg" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(b.OutputWriter.Errors, e => e.Contains("Error during initialization"));
+
+                // Should have called cleanup on the deployer
+                Assert.Contains(b.ServiceDeployer.MethodCalls, c => c.StartsWith("CleanupDeployAsync:"));
+                Assert.Single(b.ServiceDeployer.CleanedUpDeploys);
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_CliTool_FailureOnBinSymlink_CleansUpArtifacts()
+        {
+            using (InitCommandTestBuilder b = new InitCommandTestBuilder())
+            {
+                await b.RegisterCliToolWithPluginAsync(localName: "my-tool", remoteName: "owner/tool");
+
+                b.DistributionClient.SetLatestVersion("owner/tool", new Version(1, 0, 0));
+                b.ServiceDeployer.SetDeployResult("my-tool", new Version(1, 0, 0), "my-tool");
+
+                // Fail on the first symlink creation (the bin symlink)
+                b.SymlinkManager.ThrowAfterCreateCount = 0;
+
+                InitCommand command = b.Build();
+                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(b.OutputWriter.Errors, e => e.Contains("Error during initialization"));
+
+                // Should have called cleanup on the deployer
+                Assert.Contains(b.ServiceDeployer.MethodCalls, c => c.StartsWith("CleanupDeployAsync:"));
+                Assert.Single(b.ServiceDeployer.CleanedUpDeploys);
+            }
+        }
+
         /// <summary>
         /// A unit file manager that captures the arguments passed to ReadTemplateWithSubstitutionsAsync.
         /// </summary>
