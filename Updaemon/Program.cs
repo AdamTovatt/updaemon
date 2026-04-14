@@ -75,6 +75,7 @@ namespace Updaemon
             // Commands - transient (created per invocation)
             services.AddTransient<NewCommand>();
             services.AddTransient<InitCommand>();
+            services.AddTransient<ListCommand>();
             services.AddTransient<UpdateCommand>();
             services.AddTransient<SetRemoteCommand>();
             services.AddTransient<SetExecNameCommand>();
