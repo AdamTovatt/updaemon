@@ -886,5 +886,107 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(10, serviceDeployer.PrunedServices[0].RetentionCount);
             }
         }
+
+        [Fact]
+        public async Task ExecuteAsync_FirstPluginFailsToConnect_ContinuesWithRemainingPlugins()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string failingPath = tempHelper.CreateTempFile("plugins/failing/bin", "fake-plugin");
+                string workingPath = tempHelper.CreateTempFile("plugins/working/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "failing", Path = failingPath });
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "working", Path = workingPath });
+                await configManager.RegisterServiceAsync("svc-failing", "SvcFailing", "failing");
+                await configManager.RegisterServiceAsync("svc-working", "SvcWorking", "working");
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("svc-working", "/opt/svc-working/0.9.0");
+                serviceDeployer.SetDeployResult("svc-working", new Version(1, 0, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.ConnectAsyncThrowsForPluginPaths.Add(failingPath);
+                distributionClient.SetLatestVersion("SvcWorking", new Version(1, 0, 0));
+
+                MockOutputWriter outputWriter = new MockOutputWriter();
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    new MockServiceManager(),
+                    distributionClient,
+                    outputWriter,
+                    new MockVersionExtractor(),
+                    serviceDeployer
+                );
+
+                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+                Assert.Equal(0, exitCode);
+
+                Assert.Contains(outputWriter.Errors, e => e.Contains("Error using plugin 'failing'"));
+                Assert.Contains(outputWriter.Errors, e => e.Contains("Continuing with remaining plugins"));
+
+                Assert.Contains(distributionClient.MethodCalls, c => c == $"ConnectAsync:{failingPath}");
+                Assert.Contains(distributionClient.MethodCalls, c => c == $"ConnectAsync:{workingPath}");
+                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("GetLatestVersionAsync:SvcWorking"));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_PluginConnectFails_DisposeRunsBeforeNextPlugin()
+        {
+            // The bug this PR fixes was a stale Process field surviving from one
+            // plugin into the next ConnectAsync. The contract now is that
+            // DisposeAsync runs before the next ConnectAsync regardless of how
+            // the previous plugin's lifecycle ended (success or failure).
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string failingPath = tempHelper.CreateTempFile("plugins/failing/bin", "fake-plugin");
+                string workingPath = tempHelper.CreateTempFile("plugins/working/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "failing", Path = failingPath });
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "working", Path = workingPath });
+                await configManager.RegisterServiceAsync("svc-failing", "SvcFailing", "failing");
+                await configManager.RegisterServiceAsync("svc-working", "SvcWorking", "working");
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("svc-working", "/opt/svc-working/0.9.0");
+                serviceDeployer.SetDeployResult("svc-working", new Version(1, 0, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.ConnectAsyncThrowsForPluginPaths.Add(failingPath);
+                distributionClient.SetLatestVersion("SvcWorking", new Version(1, 0, 0));
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    new MockServiceManager(),
+                    distributionClient,
+                    new MockOutputWriter(),
+                    new MockVersionExtractor(),
+                    serviceDeployer
+                );
+
+                await command.ExecuteAsync(Array.Empty<string>());
+
+                int firstConnectIndex = distributionClient.MethodCalls.IndexOf($"ConnectAsync:{failingPath}");
+                int secondConnectIndex = distributionClient.MethodCalls.IndexOf($"ConnectAsync:{workingPath}");
+
+                Assert.True(firstConnectIndex >= 0, "First (failing) ConnectAsync should have been recorded");
+                Assert.True(secondConnectIndex > firstConnectIndex, "Second ConnectAsync should follow the first");
+
+                int disposeBetweenIndex = -1;
+                for (int i = firstConnectIndex + 1; i < secondConnectIndex; i++)
+                {
+                    if (distributionClient.MethodCalls[i] == "DisposeAsync")
+                    {
+                        disposeBetweenIndex = i;
+                        break;
+                    }
+                }
+
+                Assert.True(disposeBetweenIndex >= 0, "DisposeAsync must run between consecutive plugins, even on failure");
+            }
+        }
     }
 }

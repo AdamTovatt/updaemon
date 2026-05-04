@@ -16,10 +16,16 @@ namespace Updaemon.Tests.Mocks
         public bool IsDisposed { get; private set; }
         public bool GetServiceInformationAsyncThrows { get; set; }
         public DistributionServiceInformation? CustomServiceInformation { get; set; }
+        public HashSet<string> ConnectAsyncThrowsForPluginPaths { get; } = new HashSet<string>();
 
         public Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(ConnectAsync)}:{pluginExecutablePath}");
+            if (ConnectAsyncThrowsForPluginPaths.Contains(pluginExecutablePath))
+            {
+                throw new InvalidOperationException($"Mock failure connecting to '{pluginExecutablePath}'");
+            }
+
             ConnectedPluginPath = pluginExecutablePath;
             return Task.CompletedTask;
         }

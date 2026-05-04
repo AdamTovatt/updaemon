@@ -101,7 +101,15 @@ namespace Updaemon.Commands
                 string pluginAlias = pluginGroup.Key;
                 List<RegisteredService> pluginServices = pluginGroup.Value;
 
-                await UpdateServicesForPluginAsync(pluginAlias, pluginServices, config, cancellationToken);
+                try
+                {
+                    await UpdateServicesForPluginAsync(pluginAlias, pluginServices, config, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _outputWriter.WriteError($"Error using plugin '{pluginAlias}': {ex.Message}");
+                    _outputWriter.WriteError("Continuing with remaining plugins...");
+                }
             }
 
             return 0;
@@ -125,21 +133,29 @@ namespace Updaemon.Commands
 
             _outputWriter.WriteLine($"\n=== Updating entries using plugin '{pluginAlias}' ===");
 
-            // Connect to the distribution service
-            await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
-
-            // Load plugin-specific secrets
-            string? secrets = await _secretsManager.GetPluginSecretsFormattedAsync(pluginAlias, cancellationToken);
-            await _distributionClient.InitializeAsync(secrets, cancellationToken);
-
-            // Update each service for this plugin
-            foreach (RegisteredService service in services)
+            try
             {
-                await UpdateServiceAsync(service, config, cancellationToken);
-            }
+                await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
 
-            // Disconnect from plugin
-            await _distributionClient.DisposeAsync();
+                string? secrets = await _secretsManager.GetPluginSecretsFormattedAsync(pluginAlias, cancellationToken);
+                await _distributionClient.InitializeAsync(secrets, cancellationToken);
+
+                foreach (RegisteredService service in services)
+                {
+                    await UpdateServiceAsync(service, config, cancellationToken);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    await _distributionClient.DisposeAsync();
+                }
+                catch (Exception disposeEx)
+                {
+                    _outputWriter.WriteError($"Warning: Failed to dispose distribution client for plugin '{pluginAlias}': {disposeEx.Message}");
+                }
+            }
         }
 
         private async Task UpdateServiceAsync(RegisteredService service, UpdaemonConfig config, CancellationToken cancellationToken)

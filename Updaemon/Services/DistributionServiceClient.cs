@@ -13,10 +13,17 @@ namespace Updaemon.Services
     /// <summary>
     /// Client for communicating with distribution service plugins via named pipes.
     /// </summary>
+    /// <remarks>
+    /// Reuse contract: a single instance can be driven through multiple
+    /// Connect/...DisposeAsync cycles. Each ConnectAsync resets internal state
+    /// so the same instance can host a new plugin process. After DisposeAsync,
+    /// calling ConnectAsync again is supported and revives the client.
+    /// </remarks>
     public class DistributionServiceClient : IDistributionServiceClient
     {
         private Process? _pluginProcess;
         private NamedPipeClientStream? _pipeClient;
+        private StringBuilder? _stderrBuffer;
         private bool _disposed;
 
         public DistributionServiceClient()
@@ -30,31 +37,12 @@ namespace Updaemon.Services
                 throw new FileNotFoundException($"Plugin executable not found: {pluginExecutablePath}");
             }
 
-            // Clean up any existing connection before establishing a new one
-            if (_pipeClient != null)
-            {
-                await _pipeClient.DisposeAsync();
-                _pipeClient = null;
-            }
-
-            if (_pluginProcess != null)
-            {
-                if (!_pluginProcess.HasExited)
-                {
-                    _pluginProcess.Kill();
-                    await _pluginProcess.WaitForExitAsync();
-                }
-
-                _pluginProcess.Dispose();
-                _pluginProcess = null;
-            }
+            await CleanupExistingConnectionAsync();
 
             _disposed = false;
 
-            // Generate a unique pipe name
             string pipeName = $"updaemon_dist_{Guid.NewGuid():N}";
 
-            // Start the plugin process with the pipe name as argument
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = pluginExecutablePath,
@@ -65,17 +53,117 @@ namespace Updaemon.Services
                 RedirectStandardError = true,
             };
 
-            _pluginProcess = Process.Start(startInfo);
-            if (_pluginProcess == null)
+            Process? startedProcess = Process.Start(startInfo);
+            if (startedProcess == null)
             {
-                throw new InvalidOperationException("Failed to start plugin process");
+                throw new InvalidOperationException($"Failed to start plugin process: {pluginExecutablePath}");
             }
 
-            // Connect to the named pipe
-            _pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            _pluginProcess = startedProcess;
 
-            // Wait for connection with cancellation token
-            await _pipeClient.ConnectAsync(cancellationToken);
+            StringBuilder stderrBuffer = new StringBuilder();
+            _stderrBuffer = stderrBuffer;
+            _pluginProcess.ErrorDataReceived += (sender, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lock (stderrBuffer)
+                    {
+                        stderrBuffer.AppendLine(e.Data);
+                    }
+                }
+            };
+            _pluginProcess.BeginErrorReadLine();
+
+            NamedPipeClientStream pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            _pipeClient = pipeClient;
+
+            try
+            {
+                Task connectTask = pipeClient.ConnectAsync(cancellationToken);
+                Task exitTask = _pluginProcess.WaitForExitAsync(cancellationToken);
+
+                Task completed = await Task.WhenAny(connectTask, exitTask);
+
+                if (completed == exitTask && !pipeClient.IsConnected)
+                {
+                    throw new InvalidOperationException(
+                        $"Plugin process '{pluginExecutablePath}' exited (exit code {_pluginProcess.ExitCode}) before establishing pipe connection. Plugin stderr: {GetCapturedStderrOrPlaceholder()}");
+                }
+
+                await connectTask;
+            }
+            catch
+            {
+                await CleanupExistingConnectionAsync();
+                throw;
+            }
+        }
+
+        private string GetCapturedStderrOrPlaceholder()
+        {
+            StringBuilder? buffer = _stderrBuffer;
+            if (buffer == null)
+            {
+                return "(no stderr output captured)";
+            }
+
+            string captured;
+            lock (buffer)
+            {
+                captured = buffer.ToString().Trim();
+            }
+
+            return string.IsNullOrEmpty(captured) ? "(no stderr output captured)" : captured;
+        }
+
+        private async Task CleanupExistingConnectionAsync()
+        {
+            // Order matters: kill the process first so any pipe disposal failure
+            // can't leave a child process orphaned. Then dispose the pipe in its
+            // own try so an exception there still lets us null out the fields.
+            if (_pluginProcess != null)
+            {
+                try
+                {
+                    if (!_pluginProcess.HasExited)
+                    {
+                        _pluginProcess.Kill();
+                        await _pluginProcess.WaitForExitAsync();
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // Process was never associated or already disposed.
+                }
+
+                try
+                {
+                    _pluginProcess.Dispose();
+                }
+                catch
+                {
+                    // Best effort; the field reset below is what protects subsequent calls.
+                }
+
+                _pluginProcess = null;
+            }
+
+            if (_pipeClient != null)
+            {
+                try
+                {
+                    await _pipeClient.DisposeAsync();
+                }
+                catch
+                {
+                    // Best effort; field reset below is what matters.
+                }
+
+                _pipeClient = null;
+            }
+
+            _stderrBuffer = null;
         }
 
         public async Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
@@ -150,7 +238,8 @@ namespace Updaemon.Services
             string? responseJson = await ReadLineAsync(_pipeClient, cancellationToken);
             if (responseJson == null)
             {
-                throw new InvalidOperationException("No response received from plugin");
+                throw new InvalidOperationException(
+                    $"No response received from plugin. Plugin stderr: {GetCapturedStderrOrPlaceholder()}");
             }
 
             RpcResponse? response = JsonSerializer.Deserialize(responseJson, CommonJsonContext.Default.RpcResponse);
@@ -230,21 +319,7 @@ namespace Updaemon.Services
 
             _disposed = true;
 
-            if (_pipeClient != null)
-            {
-                await _pipeClient.DisposeAsync();
-            }
-
-            if (_pluginProcess != null)
-            {
-                if (!_pluginProcess.HasExited)
-                {
-                    _pluginProcess.Kill();
-                    await _pluginProcess.WaitForExitAsync();
-                }
-
-                _pluginProcess.Dispose();
-            }
+            await CleanupExistingConnectionAsync();
         }
     }
 }
