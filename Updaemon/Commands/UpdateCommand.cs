@@ -101,7 +101,24 @@ namespace Updaemon.Commands
                 string pluginAlias = pluginGroup.Key;
                 List<RegisteredService> pluginServices = pluginGroup.Value;
 
-                await UpdateServicesForPluginAsync(pluginAlias, pluginServices, config, cancellationToken);
+                try
+                {
+                    await UpdateServicesForPluginAsync(pluginAlias, pluginServices, config, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _outputWriter.WriteError($"Error using plugin '{pluginAlias}': {ex.Message}");
+                    _outputWriter.WriteError("Continuing with remaining plugins...");
+
+                    try
+                    {
+                        await _distributionClient.DisposeAsync();
+                    }
+                    catch
+                    {
+                        // Best effort - we're already in an error path.
+                    }
+                }
             }
 
             return 0;

@@ -30,31 +30,12 @@ namespace Updaemon.Services
                 throw new FileNotFoundException($"Plugin executable not found: {pluginExecutablePath}");
             }
 
-            // Clean up any existing connection before establishing a new one
-            if (_pipeClient != null)
-            {
-                await _pipeClient.DisposeAsync();
-                _pipeClient = null;
-            }
-
-            if (_pluginProcess != null)
-            {
-                if (!_pluginProcess.HasExited)
-                {
-                    _pluginProcess.Kill();
-                    await _pluginProcess.WaitForExitAsync();
-                }
-
-                _pluginProcess.Dispose();
-                _pluginProcess = null;
-            }
+            await CleanUpExistingConnectionAsync();
 
             _disposed = false;
 
-            // Generate a unique pipe name
             string pipeName = $"updaemon_dist_{Guid.NewGuid():N}";
 
-            // Start the plugin process with the pipe name as argument
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = pluginExecutablePath,
@@ -65,17 +46,88 @@ namespace Updaemon.Services
                 RedirectStandardError = true,
             };
 
-            _pluginProcess = Process.Start(startInfo);
-            if (_pluginProcess == null)
+            Process? startedProcess = Process.Start(startInfo);
+            if (startedProcess == null)
             {
-                throw new InvalidOperationException("Failed to start plugin process");
+                throw new InvalidOperationException($"Failed to start plugin process: {pluginExecutablePath}");
             }
 
-            // Connect to the named pipe
-            _pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            _pluginProcess = startedProcess;
 
-            // Wait for connection with cancellation token
-            await _pipeClient.ConnectAsync(cancellationToken);
+            StringBuilder stderrBuffer = new StringBuilder();
+            _pluginProcess.ErrorDataReceived += (sender, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lock (stderrBuffer)
+                    {
+                        stderrBuffer.AppendLine(e.Data);
+                    }
+                }
+            };
+            _pluginProcess.BeginErrorReadLine();
+
+            NamedPipeClientStream pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            _pipeClient = pipeClient;
+
+            try
+            {
+                Task connectTask = pipeClient.ConnectAsync(cancellationToken);
+                Task exitTask = _pluginProcess.WaitForExitAsync(cancellationToken);
+
+                Task completed = await Task.WhenAny(connectTask, exitTask);
+
+                if (completed == exitTask && !pipeClient.IsConnected)
+                {
+                    string capturedStderr;
+                    lock (stderrBuffer)
+                    {
+                        capturedStderr = stderrBuffer.ToString().Trim();
+                    }
+
+                    string detail = string.IsNullOrEmpty(capturedStderr)
+                        ? "(no stderr output captured)"
+                        : capturedStderr;
+
+                    throw new InvalidOperationException(
+                        $"Plugin process '{pluginExecutablePath}' exited (exit code {_pluginProcess.ExitCode}) before establishing pipe connection. Plugin stderr: {detail}");
+                }
+
+                await connectTask;
+            }
+            catch
+            {
+                await CleanUpExistingConnectionAsync();
+                throw;
+            }
+        }
+
+        private async Task CleanUpExistingConnectionAsync()
+        {
+            if (_pipeClient != null)
+            {
+                await _pipeClient.DisposeAsync();
+                _pipeClient = null;
+            }
+
+            if (_pluginProcess != null)
+            {
+                try
+                {
+                    if (!_pluginProcess.HasExited)
+                    {
+                        _pluginProcess.Kill();
+                        await _pluginProcess.WaitForExitAsync();
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // Process was never associated or already disposed - nothing to clean up.
+                }
+
+                _pluginProcess.Dispose();
+                _pluginProcess = null;
+            }
         }
 
         public async Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
@@ -230,21 +282,7 @@ namespace Updaemon.Services
 
             _disposed = true;
 
-            if (_pipeClient != null)
-            {
-                await _pipeClient.DisposeAsync();
-            }
-
-            if (_pluginProcess != null)
-            {
-                if (!_pluginProcess.HasExited)
-                {
-                    _pluginProcess.Kill();
-                    await _pluginProcess.WaitForExitAsync();
-                }
-
-                _pluginProcess.Dispose();
-            }
+            await CleanUpExistingConnectionAsync();
         }
     }
 }
