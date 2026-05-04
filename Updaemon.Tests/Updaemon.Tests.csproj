@@ -25,7 +25,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Updaemon\Updaemon.csproj" />
     <ProjectReference Include="..\Updaemon.Common\Updaemon.Common.csproj" />
-    <ProjectReference Include="..\Updaemon.TestPlugin\Updaemon.TestPlugin.csproj" />
+    <ProjectReference Include="..\Updaemon.TestPlugin\Updaemon.TestPlugin.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>

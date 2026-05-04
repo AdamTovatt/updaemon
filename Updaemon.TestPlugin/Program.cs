@@ -13,12 +13,12 @@ namespace Updaemon.TestPlugin
     {
         static async Task Main(string[] args)
         {
-            NoOpDistributionService service = new NoOpDistributionService();
+            FixedVersionTestService service = new FixedVersionTestService();
             await DistributionServiceHost.RunAsync(args, service);
         }
     }
 
-    internal class NoOpDistributionService : IDistributionService
+    internal class FixedVersionTestService : IDistributionService
     {
         public DistributionServiceInformation GetServiceInformation()
         {
@@ -26,7 +26,7 @@ namespace Updaemon.TestPlugin
             {
                 FullName = "Test Plugin",
                 DefaultAlias = "test",
-                Description = "No-op plugin for integration tests.",
+                Description = "Returns a fixed version. Used by integration tests.",
                 Version = "1.0.0",
                 Secrets = new List<DistributionSecretInfo>(),
             };

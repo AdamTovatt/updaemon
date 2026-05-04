@@ -13,10 +13,17 @@ namespace Updaemon.Services
     /// <summary>
     /// Client for communicating with distribution service plugins via named pipes.
     /// </summary>
+    /// <remarks>
+    /// Reuse contract: a single instance can be driven through multiple
+    /// Connect/...DisposeAsync cycles. Each ConnectAsync resets internal state
+    /// so the same instance can host a new plugin process. After DisposeAsync,
+    /// calling ConnectAsync again is supported and revives the client.
+    /// </remarks>
     public class DistributionServiceClient : IDistributionServiceClient
     {
         private Process? _pluginProcess;
         private NamedPipeClientStream? _pipeClient;
+        private StringBuilder? _stderrBuffer;
         private bool _disposed;
 
         public DistributionServiceClient()
@@ -30,7 +37,7 @@ namespace Updaemon.Services
                 throw new FileNotFoundException($"Plugin executable not found: {pluginExecutablePath}");
             }
 
-            await CleanUpExistingConnectionAsync();
+            await CleanupExistingConnectionAsync();
 
             _disposed = false;
 
@@ -55,6 +62,7 @@ namespace Updaemon.Services
             _pluginProcess = startedProcess;
 
             StringBuilder stderrBuffer = new StringBuilder();
+            _stderrBuffer = stderrBuffer;
             _pluginProcess.ErrorDataReceived += (sender, e) =>
             {
                 if (e.Data != null)
@@ -79,37 +87,41 @@ namespace Updaemon.Services
 
                 if (completed == exitTask && !pipeClient.IsConnected)
                 {
-                    string capturedStderr;
-                    lock (stderrBuffer)
-                    {
-                        capturedStderr = stderrBuffer.ToString().Trim();
-                    }
-
-                    string detail = string.IsNullOrEmpty(capturedStderr)
-                        ? "(no stderr output captured)"
-                        : capturedStderr;
-
                     throw new InvalidOperationException(
-                        $"Plugin process '{pluginExecutablePath}' exited (exit code {_pluginProcess.ExitCode}) before establishing pipe connection. Plugin stderr: {detail}");
+                        $"Plugin process '{pluginExecutablePath}' exited (exit code {_pluginProcess.ExitCode}) before establishing pipe connection. Plugin stderr: {GetCapturedStderrOrPlaceholder()}");
                 }
 
                 await connectTask;
             }
             catch
             {
-                await CleanUpExistingConnectionAsync();
+                await CleanupExistingConnectionAsync();
                 throw;
             }
         }
 
-        private async Task CleanUpExistingConnectionAsync()
+        private string GetCapturedStderrOrPlaceholder()
         {
-            if (_pipeClient != null)
+            StringBuilder? buffer = _stderrBuffer;
+            if (buffer == null)
             {
-                await _pipeClient.DisposeAsync();
-                _pipeClient = null;
+                return "(no stderr output captured)";
             }
 
+            string captured;
+            lock (buffer)
+            {
+                captured = buffer.ToString().Trim();
+            }
+
+            return string.IsNullOrEmpty(captured) ? "(no stderr output captured)" : captured;
+        }
+
+        private async Task CleanupExistingConnectionAsync()
+        {
+            // Order matters: kill the process first so any pipe disposal failure
+            // can't leave a child process orphaned. Then dispose the pipe in its
+            // own try so an exception there still lets us null out the fields.
             if (_pluginProcess != null)
             {
                 try
@@ -122,12 +134,36 @@ namespace Updaemon.Services
                 }
                 catch (InvalidOperationException)
                 {
-                    // Process was never associated or already disposed - nothing to clean up.
+                    // Process was never associated or already disposed.
                 }
 
-                _pluginProcess.Dispose();
+                try
+                {
+                    _pluginProcess.Dispose();
+                }
+                catch
+                {
+                    // Best effort; the field reset below is what protects subsequent calls.
+                }
+
                 _pluginProcess = null;
             }
+
+            if (_pipeClient != null)
+            {
+                try
+                {
+                    await _pipeClient.DisposeAsync();
+                }
+                catch
+                {
+                    // Best effort; field reset below is what matters.
+                }
+
+                _pipeClient = null;
+            }
+
+            _stderrBuffer = null;
         }
 
         public async Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
@@ -202,7 +238,8 @@ namespace Updaemon.Services
             string? responseJson = await ReadLineAsync(_pipeClient, cancellationToken);
             if (responseJson == null)
             {
-                throw new InvalidOperationException("No response received from plugin");
+                throw new InvalidOperationException(
+                    $"No response received from plugin. Plugin stderr: {GetCapturedStderrOrPlaceholder()}");
             }
 
             RpcResponse? response = JsonSerializer.Deserialize(responseJson, CommonJsonContext.Default.RpcResponse);
@@ -282,7 +319,7 @@ namespace Updaemon.Services
 
             _disposed = true;
 
-            await CleanUpExistingConnectionAsync();
+            await CleanupExistingConnectionAsync();
         }
     }
 }
