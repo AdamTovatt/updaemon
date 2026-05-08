@@ -30,6 +30,9 @@ if ! curl -fsSLI "$url" -o /dev/null; then
   exit 1
 fi
 
+# Fresh Apple Silicon Macs ship without /usr/local/bin (Homebrew uses
+# /opt/homebrew there), so curl -o would fail with "No such file or directory".
+sudo mkdir -p /usr/local/bin
 sudo curl -fL -o /usr/local/bin/updaemon "$url"
 sudo chmod +x /usr/local/bin/updaemon
 
