@@ -41,7 +41,12 @@ namespace Updaemon.Services
 
             _disposed = false;
 
-            string pipeName = $"updaemon_dist_{Guid.NewGuid():N}";
+            // Keep the pipe name short. .NET hosts named pipes on Unix as a domain socket
+            // at <TMPDIR>/CoreFxPipe_<name>, and macOS limits sun_path to 104 chars total.
+            // <TMPDIR> on macOS (e.g. /var/folders/…/T/) is already ~50 chars, so the
+            // remaining budget after "CoreFxPipe_" is ~40 chars. 16 hex chars (64 bits)
+            // is more than enough collision resistance for a single host's concurrent pipes.
+            string pipeName = "upd_" + Guid.NewGuid().ToString("N").Substring(0, 12);
 
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
