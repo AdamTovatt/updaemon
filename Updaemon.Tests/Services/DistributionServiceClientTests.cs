@@ -53,7 +53,7 @@ namespace Updaemon.Tests.Services
             try
             {
                 await Assert.ThrowsAsync<InvalidOperationException>(
-                    async () => await client.ConnectAsync("/bin/false"));
+                    async () => await client.ConnectAsync("/usr/bin/false"));
 
                 await client.ConnectAsync(pluginPath);
                 await client.InitializeAsync(null);
@@ -69,11 +69,13 @@ namespace Updaemon.Tests.Services
         [Fact]
         public async Task ConnectAsync_PluginExitsBeforePipeHandshake_ThrowsWithDiagnostics()
         {
-            // /bin/false runs and exits with status 1 immediately, so the named
+            // /usr/bin/false runs and exits with status 1 immediately, so the named
             // pipe never gets a server end. The client should detect the process
             // exit and surface an exception including binary path and exit code
             // rather than hang or print "No process is associated with this object."
-            string failingBinary = "/bin/false";
+            // (Note: /bin/false does not exist on modern macOS; /usr/bin/false works on
+            // both macOS and Linux, where /bin is symlinked to /usr/bin under usr-merge.)
+            string failingBinary = "/usr/bin/false";
 
             DistributionServiceClient client = new DistributionServiceClient();
             try

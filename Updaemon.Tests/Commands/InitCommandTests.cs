@@ -27,6 +27,9 @@ namespace Updaemon.Tests.Commands
                 SystemdDirectory = TempHelper.CreateTempDirectory("systemd");
                 BinDirectory = TempHelper.CreateTempDirectory("bin");
                 ServiceDeployer.ServiceBaseDirectory = TempHelper.TempDirectory;
+                // Make the mock unit-file manager produce paths inside the test's systemd dir
+                // so InitCommand's GetUnitFilePath call writes to a writable location.
+                UnitFileManager.UnitFileDirectory = SystemdDirectory;
             }
 
             public InitCommand Build()
@@ -34,7 +37,7 @@ namespace Updaemon.Tests.Commands
                 return new InitCommand(
                     ConfigManager, SecretsManager, ServiceManager,
                     DistributionClient, OutputWriter, UnitFileManager,
-                    ServiceDeployer, SymlinkManager, SystemdDirectory, BinDirectory);
+                    ServiceDeployer, SymlinkManager, BinDirectory);
             }
 
             /// <summary>
@@ -213,13 +216,16 @@ namespace Updaemon.Tests.Commands
 
                 string? capturedExecName = null;
                 CapturingUnitFileManager capturingManager = new CapturingUnitFileManager(
-                    (serviceName, symlinkPath, executableName) => capturedExecName = executableName);
+                    (serviceName, symlinkPath, executableName) => capturedExecName = executableName)
+                {
+                    UnitFileDirectory = b.SystemdDirectory,
+                };
 
                 // Build manually with the capturing unit file manager
                 InitCommand command = new InitCommand(
                     b.ConfigManager, b.SecretsManager, b.ServiceManager,
                     b.DistributionClient, b.OutputWriter, capturingManager,
-                    b.ServiceDeployer, b.SymlinkManager, b.SystemdDirectory, b.BinDirectory);
+                    b.ServiceDeployer, b.SymlinkManager, b.BinDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "my-api" });
 
@@ -421,6 +427,14 @@ namespace Updaemon.Tests.Commands
                 string content = await ReadTemplateWithSubstitutionsAsync(serviceName, symlinkPath, executableName, cancellationToken);
                 await File.WriteAllTextAsync(unitFilePath, content, cancellationToken);
             }
+
+            public string UnitFileDirectory { get; set; } = "/etc/systemd/system";
+
+            public string GetUnitFilePath(string serviceName) =>
+                Path.Combine(UnitFileDirectory, serviceName + ".service");
+
+            public Task EnsureWritableAsync(CancellationToken cancellationToken = default) =>
+                Task.CompletedTask;
         }
     }
 }

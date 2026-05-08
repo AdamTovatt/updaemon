@@ -1,5 +1,8 @@
 {
-  "github": "https://github.com/AdamTovatt/updaemon/releases/download/v0.7.0/Updaemon.GithubDistributionService",
-  "byteshelf": "https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.Distribution.ByteShelfDistribution"
+  "github": {
+    "linux-arm64": "https://github.com/AdamTovatt/updaemon/releases/download/v0.7.0/Updaemon.GithubDistributionService"
+  },
+  "byteshelf": {
+    "linux-arm64": "https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.Distribution.ByteShelfDistribution"
+  }
 }
-

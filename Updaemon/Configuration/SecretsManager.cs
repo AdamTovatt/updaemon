@@ -7,7 +7,6 @@ namespace Updaemon.Configuration
     /// </summary>
     public class SecretsManager : ISecretsManager
     {
-        private const string ConfigDirectory = "/var/lib/updaemon";
         private const string PluginsDirectory = "plugins";
         private const string SecretsFileName = "secrets.txt";
 
@@ -15,9 +14,8 @@ namespace Updaemon.Configuration
         private readonly string _pluginsDirectory;
 
         public SecretsManager()
+            : this(PlatformPaths.ConfigDirectory)
         {
-            _configDirectory = ConfigDirectory;
-            _pluginsDirectory = Path.Combine(_configDirectory, PluginsDirectory);
         }
 
         public SecretsManager(string configDirectory)

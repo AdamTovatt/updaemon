@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -20,12 +21,9 @@ namespace Updaemon.Commands
             IOutputWriter outputWriter,
             IPluginUrlResolver pluginUrlResolver,
             IPluginDownloader pluginDownloader)
+            : this(configManager, outputWriter, pluginUrlResolver, pluginDownloader,
+                   Path.Combine(PlatformPaths.ConfigDirectory, "plugins"))
         {
-            _configManager = configManager;
-            _outputWriter = outputWriter;
-            _pluginUrlResolver = pluginUrlResolver;
-            _pluginDownloader = pluginDownloader;
-            _pluginsDirectory = "/var/lib/updaemon/plugins";
         }
 
         public DistInstallCommand(

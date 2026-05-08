@@ -6,6 +6,11 @@ namespace Updaemon.Tests.Commands
 {
     public class SetExecNameCommandTests
     {
+        private static MockUnitFileManager NewUnitFileManager(string unitFileDirectory)
+        {
+            return new MockUnitFileManager { UnitFileDirectory = unitFileDirectory };
+        }
+
         [Fact]
         public async Task ExecuteAsync_WithValidExecutableName_SetsExecutableName()
         {
@@ -13,13 +18,13 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+                MockUnitFileManager unitFileManager = NewUnitFileManager(systemdDirectory);
                 MockServiceManager serviceManager = new MockServiceManager();
                 string serviceDirectory = tempHelper.TempDirectory;
-                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
                 SetExecNameCommand command = new SetExecNameCommand(
-                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory);
 
                 await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
@@ -39,13 +44,13 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+                MockUnitFileManager unitFileManager = NewUnitFileManager(systemdDirectory);
                 MockServiceManager serviceManager = new MockServiceManager();
                 string serviceDirectory = tempHelper.TempDirectory;
-                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
                 SetExecNameCommand command = new SetExecNameCommand(
-                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory);
 
                 await configManager.RegisterServiceAsync("test-service", "TestService", "github");
 
@@ -65,13 +70,13 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+                MockUnitFileManager unitFileManager = NewUnitFileManager(systemdDirectory);
                 MockServiceManager serviceManager = new MockServiceManager();
                 string serviceDirectory = tempHelper.TempDirectory;
-                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
                 SetExecNameCommand command = new SetExecNameCommand(
-                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "non-existent-service", "SomeExecutable" });
 
@@ -86,13 +91,13 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+                MockUnitFileManager unitFileManager = NewUnitFileManager(systemdDirectory);
                 MockServiceManager serviceManager = new MockServiceManager();
                 string serviceDirectory = tempHelper.TempDirectory;
-                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
                 SetExecNameCommand command = new SetExecNameCommand(
-                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory);
 
                 int exitCode = await command.ExecuteAsync(new[] { "app-name" });
 
@@ -108,21 +113,19 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockUnitFileManager unitFileManager = new MockUnitFileManager
-                {
-                    TemplateWithSubstitutions = "[Unit]\nDescription=test\nExecStart=updated\n",
-                };
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+                MockUnitFileManager unitFileManager = NewUnitFileManager(systemdDirectory);
+                unitFileManager.TemplateWithSubstitutions = "[Unit]\nDescription=test\nExecStart=updated\n";
                 MockServiceManager serviceManager = new MockServiceManager();
                 string serviceDirectory = tempHelper.TempDirectory;
-                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
                 SetExecNameCommand command = new SetExecNameCommand(
-                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory);
 
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 // Create an existing unit file to simulate an initialized service
-                string unitFilePath = Path.Combine(systemdDirectory, "my-api.service");
+                string unitFilePath = unitFileManager.GetUnitFilePath("my-api");
                 await File.WriteAllTextAsync(unitFilePath, "[Unit]\nDescription=old\n");
 
                 int exitCode = await command.ExecuteAsync(new[] { "my-api", "NewExecutable" });
@@ -131,7 +134,7 @@ namespace Updaemon.Tests.Commands
                 // Unit file should have been rewritten
                 string updatedContent = await File.ReadAllTextAsync(unitFilePath);
                 Assert.Equal("[Unit]\nDescription=test\nExecStart=updated\n", updatedContent);
-                Assert.Contains(outputWriter.Messages, m => m.Contains("Updated systemd unit file"));
+                Assert.Contains(outputWriter.Messages, m => m.Contains("Updated service unit file"));
                 Assert.Contains(serviceManager.MethodCalls, c => c == "DaemonReloadAsync");
             }
         }
@@ -143,13 +146,13 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockUnitFileManager unitFileManager = new MockUnitFileManager();
+                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
+                MockUnitFileManager unitFileManager = NewUnitFileManager(systemdDirectory);
                 MockServiceManager serviceManager = new MockServiceManager();
                 string serviceDirectory = tempHelper.TempDirectory;
-                string systemdDirectory = tempHelper.CreateTempDirectory("systemd");
 
                 SetExecNameCommand command = new SetExecNameCommand(
-                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory, systemdDirectory);
+                    configManager, outputWriter, unitFileManager, serviceManager, serviceDirectory);
 
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -159,7 +162,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(0, exitCode);
 
                 // Should not mention unit file update or reload
-                Assert.DoesNotContain(outputWriter.Messages, m => m.Contains("Updated systemd unit file"));
+                Assert.DoesNotContain(outputWriter.Messages, m => m.Contains("Updated service unit file"));
                 Assert.DoesNotContain(serviceManager.MethodCalls, c => c == "DaemonReloadAsync");
             }
         }

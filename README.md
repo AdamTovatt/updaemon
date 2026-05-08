@@ -6,11 +6,13 @@
 
 [![Tests](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml/badge.svg)](https://github.com/AdamTovatt/updaemon/actions/workflows/dotnet.yml)
 
-**Updaemon is a command line tool that helps you manage and update services and applications on Linux systems.**
+**Updaemon is a command line tool that helps you manage and update services and applications on Linux and macOS systems.**
+
+It uses systemd on Linux and launchd (LaunchDaemons) on macOS, so the same commands work on both — `updaemon init my-service` writes the right unit file for the platform you're on.
 
 For example:
 
-Running `updaemon new my-service --from github` registers a new service called `my-service`, then `updaemon init my-service` downloads the latest version, creates the systemd unit file, and starts it.
+Running `updaemon new my-service --from github` registers a new service called `my-service`, then `updaemon init my-service` downloads the latest version, creates the service unit file (systemd `.service` on Linux, launchd `.plist` on macOS), and starts it.
 
 After that, `updaemon update` checks for new releases for all services and updates them automatically if needed.
 
@@ -28,7 +30,7 @@ Updaemon is extremely easy to [install](#getting-started) and can use any releas
 
 Updaemon consists of two parts: the core part and the distribution plugin(s). One or more distribution plugins can be installed after the core part has been installed. Custom distribution plugins can also be developed and installed.
 
-Updaemon makes it easy to keep your applications and services up to date on Linux:
+Updaemon makes it easy to keep your applications and services up to date on Linux and macOS:
 
 - **Automatic Updates**: Checks for new versions and updates your services automatically
 - **Zero Downtime**: Uses symlinks so your services keep running during updates
@@ -129,7 +131,7 @@ Commands that change files in the system usually require `sudo` to run.
 | [dist-update](#dist-update-command) | Update installed distribution plugins. |
 | [dist-list](#dist-list-command) | List installed distribution plugins and their metadata. |
 | [secret-set](#secret-set-command) | Set a secret key-value pair for a specific plugin. |
-| [timer](#timer-command) | Manage automatic update scheduling using systemd timers. |
+| [timer](#timer-command) | Manage automatic update scheduling (systemd timer on Linux, launchd plist on macOS). |
 | [help](#help-command) | Show help information for commands. |
 
 ### New Command
@@ -137,7 +139,7 @@ Commands that change files in the system usually require `sudo` to run.
 updaemon new <app-name> --from <plugin-alias> [--remote <remote-name>]
 ```
 
-Registers a new service with the specified name and associates it with the distribution plugin identified by `<plugin-alias>`. This only creates the service directory and registers it in the updaemon config — it does not download anything or create a systemd unit file. Run `updaemon init <app-name>` after this to download and set up the service.
+Registers a new service with the specified name and associates it with the distribution plugin identified by `<plugin-alias>`. This only creates the service directory and registers it in the updaemon config — it does not download anything or create a service unit file. Run `updaemon init <app-name>` after this to download and set up the service.
 
 **Examples:**
 ```bash
@@ -150,7 +152,7 @@ sudo updaemon new my-api --from github --remote owner/repo
 updaemon init <app-name>
 ```
 
-Downloads and sets up a registered service for the first time. This command downloads the latest version, detects the executable, creates the systemd unit file, and starts the service. The service must first be registered with `updaemon new`. If the service is already initialized, this command does nothing. Should be run with `sudo`.
+Downloads and sets up a registered service for the first time. This command downloads the latest version, detects the executable, creates the service unit file (systemd on Linux, launchd on macOS), and starts the service. The service must first be registered with `updaemon new`. If the service is already initialized, this command does nothing. Should be run with `sudo`.
 
 **Example:**
 ```bash
@@ -222,23 +224,25 @@ updaemon dist-install [--as <alias>] <plugin-name|url>
 
 Downloads and installs a distribution service plugin. You can specify either a plugin name (which will be resolved from the registry) or a full URL. If `--as` is omitted, the plugin's default alias will be used. The registry can be found [here](./PluginRegistry.json).
 
+When resolving by plugin name, the registry maps each plugin to a per-RID URL map (e.g. `linux-arm64`, `osx-arm64`). The current process's runtime identifier is detected automatically and used to pick the matching URL. If the plugin has no build for your platform, the command fails with a clear error listing the available RIDs — in that case you can either install via full URL or wait for a release that includes your platform.
+
 **Examples:**
 ```bash
-# Install using plugin name (resolved from registry)
+# Install using plugin name (resolved from registry — picks the right URL for your platform)
 sudo updaemon dist-install github
 
 # Install using plugin name with alias (resolved from registry)
 sudo updaemon dist-install --as github github
 
-# Install using full URL
-sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/v0.7.0/Updaemon.GithubDistributionService
+# Install using full URL (skips registry lookup; you pick the right asset for your platform)
+sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.GithubDistributionService-linux-arm64
 
 # Install using full URL with alias
-sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.7.0/Updaemon.GithubDistributionService
+sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.GithubDistributionService-osx-arm64
 ```
 
 > [!NOTE]
-> Plugin names are resolved from the registry file at https://github.com/AdamTovatt/updaemon/blob/master/PluginRegistry.json. If a plugin name is not found in the registry, you can still install it using the full URL.
+> Plugin names are resolved from the registry file at https://github.com/AdamTovatt/updaemon/blob/master/PluginRegistry.json. If a plugin name is not found in the registry, or has no build for the running platform, you can still install it using the full URL.
 
 ### Dist-Update Command
 ```bash
@@ -277,7 +281,7 @@ Lists installed distribution plugins with their alias, full name, version, descr
 updaemon timer [interval]
 ```
 
-Manages automatic update scheduling using systemd timers.
+Manages automatic update scheduling. On Linux this creates a systemd timer + service unit pair; on macOS it creates a launchd LaunchDaemon plist with `StartInterval`. Same command, same time formats, on both OSes.
 
 **Examples:**
 ```bash
@@ -316,13 +320,21 @@ updaemon help new          # Show detailed help for new command
 
 ## Configuration
 
-Updaemon stores its configuration in `/var/lib/updaemon/`:
+Updaemon stores its configuration in a per-OS directory:
+
+- **Linux:** `/var/lib/updaemon/`
+- **macOS:** `/usr/local/var/updaemon/`
+
+The directory contains:
 
 - **`config.json`** - Your registered services and installed plugins
 - **`plugins/`** - Downloaded distribution plugins and their per-plugin secrets
-- **`default-unit.template`** - Customizable systemd service template
+- **`default-unit.template`** - Customizable systemd service template (Linux)
+- **`default-plist.template`** - Customizable launchd plist template (macOS)
 
 ### Directory Structure
+
+**Linux** (`/var/lib/updaemon/`, `/opt/`, `/etc/systemd/system/`):
 
 ```
 /var/lib/updaemon/
@@ -347,9 +359,27 @@ Updaemon stores its configuration in `/var/lib/updaemon/`:
 └── <service-name>.service   # systemd unit file
 ```
 
+**macOS** (`/usr/local/var/updaemon/`, `/usr/local/opt/`, `/Library/LaunchDaemons/`):
+
+```
+/usr/local/var/updaemon/
+├── config.json
+├── default-plist.template          # Default launchd plist template (customizable)
+└── plugins/
+    └── ...
+
+/usr/local/opt/<service-name>/
+├── 1.0.0/
+├── 1.1.0/
+└── current -> 1.1.0/
+
+/Library/LaunchDaemons/
+└── com.updaemon.<service-name>.plist   # launchd LaunchDaemon plist
+```
+
 ### Configuration Files
 
-### /var/lib/updaemon/config.json
+### config.json (under the config directory)
 
 ```json
 {
@@ -375,25 +405,25 @@ Updaemon stores its configuration in `/var/lib/updaemon/`:
 
 **Note:** `releaseRetentionCount` controls how many release versions to keep per service after a successful deployment (default: 5). The currently-deployed version is always preserved regardless of this setting.
 
-### /var/lib/updaemon/plugins/(alias)/secrets.txt
+### plugins/&lt;alias&gt;/secrets.txt (under the config directory)
 
-Each plugin has its own `secrets.txt` with `key=value` pairs. Example for `github` is found at /var/lib/updaemon/plugins/(alias)/secrets.txt and contains something like:
+Each plugin has its own `secrets.txt` with `key=value` pairs. The full path is `<config-dir>/plugins/<alias>/secrets.txt` (Linux: `/var/lib/updaemon/...`, macOS: `/usr/local/var/updaemon/...`). Example for `github`:
 
 ```
 githubToken=ghp_abc123
 ```
 
-### /var/lib/updaemon/default-unit.template
+### default-unit.template (Linux) / default-plist.template (macOS)
 
-This file contains the systemd unit file template used when initializing services with `updaemon init`. It is automatically created from an embedded default on first use, but you can customize it to match your needs.
+This file contains the unit-file template used when initializing services with `updaemon init`. It is automatically created from an embedded default on first use (Linux: systemd `.service` format, macOS: launchd `.plist` format) and you can customize it to match your needs.
 
-**Placeholders:**
+**Placeholders (same on both OSes):**
 - `{SERVICE_NAME}` - The name of the service
-- `{DESCRIPTION}` - A description of the service
-- `{WORKING_DIRECTORY}` - The working directory for the service (the symlink path `/opt/<service>/current`)
+- `{DESCRIPTION}` - A description of the service (Linux only — launchd has no equivalent)
+- `{WORKING_DIRECTORY}` - The working directory (the `current` symlink path under the services base directory)
 - `{EXECUTABLE_NAME}` - The name of the executable file
 
-**Example:**
+**Linux example (`default-unit.template`):**
 ```ini
 [Unit]
 Description={DESCRIPTION}
@@ -413,7 +443,39 @@ SyslogIdentifier={SERVICE_NAME}
 WantedBy=multi-user.target
 ```
 
-You can edit this file to add custom systemd directives like environment variables, resource limits, or security settings that will apply to all services initialized with updaemon.
+**macOS example (`default-plist.template`):**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.updaemon.{SERVICE_NAME}</string>
+    <key>WorkingDirectory</key>
+    <string>{WORKING_DIRECTORY}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{WORKING_DIRECTORY}/{EXECUTABLE_NAME}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/var/log/updaemon/{SERVICE_NAME}.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/updaemon/{SERVICE_NAME}.err.log</string>
+</dict>
+</plist>
+```
+
+You can edit this file to add custom directives — systemd `Environment=` / `LimitNOFILE=` / etc. on Linux, or launchd plist keys like `EnvironmentVariables` / `SoftResourceLimits` on macOS — that will apply to all services initialized with updaemon.
+
+#### macOS log paths
+
+The default launchd plist template writes service stdout/stderr to `/var/log/updaemon/<service>.log` and `/var/log/updaemon/<service>.err.log`. `install.sh` creates this directory on macOS, and `MacServiceManager` re-creates it before bootstrapping a service in case it was deleted. If you customize the template to use a different path, make sure the parent directory exists or launchd will silently drop the logs.
 
 ### App-specific Configuration (Optional)
 
@@ -471,7 +533,7 @@ For detailed instructions and advanced options, see [Updaemon.Common/README.md](
 3. Accept `--pipe-name <name>` command-line argument
 4. Host a named pipe server that handles JSON-RPC requests
 5. Use `CommonJsonContext` for RPC serialization (AOT-compatible)
-6. Be compiled as an AOT executable for Linux
+6. Be compiled as an AOT executable for the target platform (linux-arm64, linux-x64, or osx-arm64)
 
 ### RPC Protocol
 
@@ -564,6 +626,19 @@ Symlinks enable:
 - Multiple versions coexisting on disk
 - Atomic version switching
 
+### Why a Separate Service Manager Implementation per OS?
+
+Linux services are managed by systemd via `systemctl` and `.service` unit files under `/etc/systemd/system/`. macOS services are managed by launchd via `launchctl` and `.plist` LaunchDaemon files under `/Library/LaunchDaemons/`. The two systems have similar concepts (start, stop, enable, periodic timer, log capture) but completely different command lines, file formats, and mental models — there's no realistic shim that papers over them cleanly.
+
+Updaemon hides this difference behind three interfaces — `IServiceManager`, `ITimerManager`, and `IUnitFileManager` — with a Linux implementation backed by systemd and a macOS implementation backed by launchd. `Program.cs` picks the right concrete classes at startup based on `OperatingSystem.IsMacOS()`. Path constants (config dir, services base, unit-file dir, log dir) are centralized in `PlatformPaths` so each call site stays OS-agnostic.
+
+**Benefits:**
+- Command and command-flow code (`InitCommand`, `UpdateCommand`, `TimerCommand`, etc.) doesn't branch on the platform.
+- Adding a new OS in the future means writing three small classes and adding entries to `PlatformPaths` — no changes to the call sites.
+- Tests run cleanly on either OS because the interfaces are mockable.
+
+**Trade-off:** there's some duplication between the two timer implementations (one writes a `.service` + `.timer` pair with `OnCalendar`, the other writes a single plist with `StartInterval`) — that duplication is intrinsic to the underlying system contracts, not avoidable at the .NET layer.
+
 [↑ Back to top](#updaemon)
 
 ## System Architecture
@@ -604,9 +679,9 @@ graph TB
     end
     
     subgraph System
-        Systemd[systemd]
+        Init["systemd (Linux) / launchd (macOS)"]
         OptDir["app directories"]
-        EtcDir["systemd units"]
+        EtcDir["service unit files"]
     end
     
     CLI --> Executor
@@ -636,9 +711,9 @@ graph TB
     DistClient -->|Named Pipe RPC| Plugins
     DistClient --> PluginFiles
 
-    InitCmd --> Systemd
-    UpdateCmd --> Systemd
-    ServiceMgr --> Systemd
+    InitCmd --> Init
+    UpdateCmd --> Init
+    ServiceMgr --> Init
     NewCmd --> OptDir
     InitCmd --> OptDir
     UpdateCmd --> OptDir
@@ -656,7 +731,7 @@ sequenceDiagram
     participant DistClient as Distribution Client
     participant Plugin as Distribution Plugin
     participant FileSystem as File System
-    participant Systemd
+    participant Init as systemd / launchd
     
     User->>UpdateCmd: updaemon update app-name
     UpdateCmd->>UpdateCmd: Group services by plugin
@@ -681,21 +756,21 @@ sequenceDiagram
     
     UpdateCmd->>DistClient: DownloadVersionAsync(remoteName, 1.1.0, path)
     DistClient->>Plugin: RPC: DownloadVersionAsync
-    Plugin->>FileSystem: Download files to /opt/app-name/1.1.0/
+    Plugin->>FileSystem: Download files to versioned dir
     Plugin-->>DistClient: Download complete
     DistClient-->>UpdateCmd: Downloaded
     
-    UpdateCmd->>FileSystem: Find executable in /opt/app-name/1.1.0/
-    FileSystem-->>UpdateCmd: /opt/app-name/1.1.0/app-name
+    UpdateCmd->>FileSystem: Find executable in versioned dir
+    FileSystem-->>UpdateCmd: path to app binary
     
-    UpdateCmd->>FileSystem: Set file permissions (chmod +x, chmod -R a+rX)
+    UpdateCmd->>FileSystem: Set Unix file modes (0755 exec, 0755 dirs)
     FileSystem-->>UpdateCmd: Permissions configured
     
-    UpdateCmd->>FileSystem: Update symlink /opt/app-name/current
+    UpdateCmd->>FileSystem: Update current symlink
     FileSystem-->>UpdateCmd: Symlink updated
     
-    UpdateCmd->>Systemd: systemctl restart app-name
-    Systemd-->>UpdateCmd: Service restarted
+    UpdateCmd->>Init: Restart service
+    Init-->>UpdateCmd: Service restarted
     
     UpdateCmd-->>User: Update complete
 ```
@@ -731,19 +806,19 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph "/var/lib/updaemon/ - Configuration"
+    subgraph "Config directory (Linux: /var/lib/updaemon, macOS: /usr/local/var/updaemon)"
         ConfigJson["config.json<br/>• Registered services<br/>• Installed plugins"]
         PluginsDir["plugins/<br/>• Plugin executables<br/>• Per-plugin secrets.txt"]
     end
     
-    subgraph "/opt/app-name/ - Application Versions"
+    subgraph "Services base (Linux: /opt/app-name, macOS: /usr/local/opt/app-name)"
         V100["1.0.0/<br/>• app executable<br/>• dependencies"]
         V110["1.1.0/<br/>• app executable<br/>• dependencies"]
         Current["current → symlink<br/>Points to active version"]
     end
     
-    subgraph "/etc/systemd/system/ - Service Definitions"
-        UnitFile["app-name.service<br/>ExecStart=/opt/app-name/current"]
+    subgraph "Unit file dir (Linux: /etc/systemd/system, macOS: /Library/LaunchDaemons)"
+        UnitFile["service unit file<br/>(.service or .plist)"]
     end
     
     ConfigJson -.->|Reads services & plugins| Updaemon[Updaemon CLI Process]
@@ -778,7 +853,7 @@ graph TD
     SecretSet{secret-set?}
     
     NewAction[Create directory<br/>Register service with plugin]
-    InitAction[Look up service<br/>Connect to plugin<br/>Download latest version<br/>Create systemd unit<br/>Enable & start service]
+    InitAction[Look up service<br/>Connect to plugin<br/>Download latest version<br/>Create service unit file<br/>Enable & start service]
     UpdateAction[Group by plugin<br/>Connect to each plugin<br/>Check versions<br/>Download if newer<br/>Update symlink<br/>Restart service]
     SetRemoteAction[Update remote name<br/>in config.json]
     SetExecNameAction[Update executable name<br/>in config.json]
