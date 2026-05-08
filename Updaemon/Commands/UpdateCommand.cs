@@ -233,7 +233,7 @@ namespace Updaemon.Commands
                     }
                     else
                     {
-                        _outputWriter.WriteLine("Warning: systemd unit file not found. Service not started.");
+                        _outputWriter.WriteLine("Warning: service unit file not found. Service not started.");
                     }
                 }
 
@@ -266,7 +266,8 @@ namespace Updaemon.Commands
                   If an app-name is provided, only that specific entry is updated. Entries
                   are grouped by distribution plugin and updated efficiently.
 
-                  For services, the systemd service is restarted after updating.
+                  For services, the underlying service (systemd on Linux, launchd on macOS)
+                  is restarted after updating.
                   For CLI tools, the symlink chain resolves automatically to the new version.
 
                   After a successful deployment, old version directories are automatically

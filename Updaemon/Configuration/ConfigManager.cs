@@ -10,16 +10,14 @@ namespace Updaemon.Configuration
     /// </summary>
     public class ConfigManager : IConfigManager
     {
-        private const string ConfigDirectory = "/var/lib/updaemon";
         private const string ConfigFileName = "config.json";
 
         private readonly string _configFilePath;
         private readonly string _configDirectory;
 
         public ConfigManager()
+            : this(PlatformPaths.ConfigDirectory)
         {
-            _configDirectory = ConfigDirectory;
-            _configFilePath = Path.Combine(_configDirectory, ConfigFileName);
         }
 
         public ConfigManager(string configDirectory)

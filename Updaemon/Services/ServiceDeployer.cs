@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -19,12 +20,8 @@ namespace Updaemon.Services
             IExecutableDetector executableDetector,
             IFilePermissionManager filePermissionManager,
             IOutputWriter outputWriter)
+            : this(symlinkManager, executableDetector, filePermissionManager, outputWriter, PlatformPaths.ServicesBaseDirectory)
         {
-            _symlinkManager = symlinkManager;
-            _executableDetector = executableDetector;
-            _filePermissionManager = filePermissionManager;
-            _outputWriter = outputWriter;
-            _serviceBaseDirectory = "/opt";
         }
 
         public ServiceDeployer(

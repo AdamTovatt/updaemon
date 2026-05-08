@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -15,10 +16,8 @@ namespace Updaemon.Commands
         public NewCommand(
             IConfigManager configManager,
             IOutputWriter outputWriter)
+            : this(configManager, outputWriter, PlatformPaths.ServicesBaseDirectory)
         {
-            _configManager = configManager;
-            _outputWriter = outputWriter;
-            _serviceBaseDirectory = "/opt";
         }
 
         public NewCommand(
@@ -118,7 +117,8 @@ namespace Updaemon.Commands
                 Options:
                   --remote <remote-name>       Set the remote name (defaults to app-name)
                   --type <service|cli>         Set the type (defaults to service)
-                                               service: managed as a systemd service
+                                               service: managed as a long-running daemon
+                                                        (systemd on Linux, launchd on macOS)
                                                cli: symlinked into /usr/local/bin
 
                 Examples:

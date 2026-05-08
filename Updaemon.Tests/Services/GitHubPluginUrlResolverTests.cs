@@ -8,20 +8,26 @@ namespace Updaemon.Tests.Services
 {
     public class GitHubPluginUrlResolverTests
     {
-        [Fact]
-        public async Task ResolveAsync_ValidPluginName_ReturnsUrl()
+        private const string TestRid = "linux-arm64";
+
+        private static string SerializeRegistry(Dictionary<string, Dictionary<string, string>> registry)
         {
-            Dictionary<string, string> registry = new Dictionary<string, string>
+            return JsonSerializer.Serialize(registry);
+        }
+
+        [Fact]
+        public async Task ResolveAsync_ValidPluginNameAndRid_ReturnsUrl()
+        {
+            Dictionary<string, Dictionary<string, string>> registry = new()
             {
-                { "github", "https://example.com/github-plugin" },
-                { "byteshelf", "https://example.com/byteshelf-plugin" }
+                ["github"] = new() { [TestRid] = "https://example.com/github-plugin" },
+                ["byteshelf"] = new() { [TestRid] = "https://example.com/byteshelf-plugin" },
             };
-            string jsonContent = JsonSerializer.Serialize(registry);
             MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-            mockHandler.SetResponse(Encoding.UTF8.GetBytes(jsonContent));
+            mockHandler.SetResponse(Encoding.UTF8.GetBytes(SerializeRegistry(registry)));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             string url = await resolver.ResolveAsync("github");
 
@@ -31,16 +37,15 @@ namespace Updaemon.Tests.Services
         [Fact]
         public async Task ResolveAsync_PluginNameNotFound_ThrowsInvalidOperationException()
         {
-            Dictionary<string, string> registry = new Dictionary<string, string>
+            Dictionary<string, Dictionary<string, string>> registry = new()
             {
-                { "github", "https://example.com/github-plugin" }
+                ["github"] = new() { [TestRid] = "https://example.com/github-plugin" },
             };
-            string jsonContent = JsonSerializer.Serialize(registry);
             MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-            mockHandler.SetResponse(Encoding.UTF8.GetBytes(jsonContent));
+            mockHandler.SetResponse(Encoding.UTF8.GetBytes(SerializeRegistry(registry)));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => resolver.ResolveAsync("nonexistent"));
@@ -50,11 +55,31 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
+        public async Task ResolveAsync_PluginExistsButNoBuildForRid_ThrowsWithAvailableRids()
+        {
+            Dictionary<string, Dictionary<string, string>> registry = new()
+            {
+                ["github"] = new() { ["linux-arm64"] = "https://example.com/linux-build" },
+            };
+            MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
+            mockHandler.SetResponse(Encoding.UTF8.GetBytes(SerializeRegistry(registry)));
+            HttpClient httpClient = new HttpClient(mockHandler);
+
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, "osx-arm64");
+
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => resolver.ResolveAsync("github"));
+
+            Assert.Contains("no build for runtime 'osx-arm64'", exception.Message);
+            Assert.Contains("linux-arm64", exception.Message);
+        }
+
+        [Fact]
         public async Task ResolveAsync_EmptyPluginName_ThrowsArgumentException()
         {
             MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
             HttpClient httpClient = new HttpClient(mockHandler);
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             await Assert.ThrowsAsync<ArgumentException>(
                 () => resolver.ResolveAsync(""));
@@ -65,7 +90,7 @@ namespace Updaemon.Tests.Services
         {
             MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
             HttpClient httpClient = new HttpClient(mockHandler);
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             await Assert.ThrowsAsync<ArgumentException>(
                 () => resolver.ResolveAsync("   "));
@@ -78,7 +103,7 @@ namespace Updaemon.Tests.Services
             mockHandler.SetException(new HttpRequestException("Network error"));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => resolver.ResolveAsync("github"));
@@ -95,7 +120,7 @@ namespace Updaemon.Tests.Services
             mockHandler.SetResponse(Encoding.UTF8.GetBytes("invalid json {{{"));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => resolver.ResolveAsync("github"));
@@ -111,7 +136,7 @@ namespace Updaemon.Tests.Services
             mockHandler.SetResponse(Encoding.UTF8.GetBytes("null"));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => resolver.ResolveAsync("github"));
@@ -127,7 +152,7 @@ namespace Updaemon.Tests.Services
             mockHandler.SetResponse(Encoding.UTF8.GetBytes("{}"));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => resolver.ResolveAsync("github"));
@@ -138,22 +163,21 @@ namespace Updaemon.Tests.Services
         [Fact]
         public async Task ResolveAsync_PluginWithEmptyUrl_ThrowsInvalidOperationException()
         {
-            Dictionary<string, string> registry = new Dictionary<string, string>
+            Dictionary<string, Dictionary<string, string>> registry = new()
             {
-                { "github", "" },
-                { "byteshelf", "https://example.com/byteshelf-plugin" }
+                ["github"] = new() { [TestRid] = "" },
+                ["byteshelf"] = new() { [TestRid] = "https://example.com/byteshelf-plugin" },
             };
-            string jsonContent = JsonSerializer.Serialize(registry);
             MockHttpMessageHandler mockHandler = new MockHttpMessageHandler();
-            mockHandler.SetResponse(Encoding.UTF8.GetBytes(jsonContent));
+            mockHandler.SetResponse(Encoding.UTF8.GetBytes(SerializeRegistry(registry)));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => resolver.ResolveAsync("github"));
 
-            Assert.Contains("not found in the registry", exception.Message);
+            Assert.Contains("no build for runtime", exception.Message);
         }
 
         [Fact]
@@ -163,7 +187,7 @@ namespace Updaemon.Tests.Services
             mockHandler.SetException(new HttpRequestException("Not Found", null, HttpStatusCode.NotFound));
             HttpClient httpClient = new HttpClient(mockHandler);
 
-            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient);
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(httpClient, TestRid);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => resolver.ResolveAsync("github"));
@@ -172,4 +196,3 @@ namespace Updaemon.Tests.Services
         }
     }
 }
-

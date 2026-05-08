@@ -48,19 +48,29 @@ namespace Updaemon
             // Output writer
             services.AddSingleton<IOutputWriter, ConsoleOutputWriter>();
 
-            // Configuration and Secrets
+            // Configuration and Secrets — parameterless constructors read from PlatformPaths.
             services.AddSingleton<IConfigManager, ConfigManager>();
             services.AddSingleton<ISecretsManager, SecretsManager>();
 
-            // Service utilities
-            services.AddSingleton<IServiceManager, ServiceManager>();
+            // Service manager / timer manager: pick the OS-appropriate implementation.
+            if (PlatformPaths.IsMacOS)
+            {
+                services.AddSingleton<IServiceManager, MacServiceManager>();
+                services.AddSingleton<ITimerManager, MacTimerManager>();
+            }
+            else
+            {
+                services.AddSingleton<IServiceManager, LinuxServiceManager>();
+                services.AddSingleton<ITimerManager, LinuxTimerManager>();
+            }
+
+            // Other services — parameterless constructors are platform-aware.
             services.AddSingleton<ISymlinkManager, SymlinkManager>();
             services.AddSingleton<IExecutableDetector, ExecutableDetector>();
             services.AddSingleton<IVersionExtractor, VersionExtractor>();
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
-            services.AddSingleton<ITimerManager, TimerManager>();
 
             // Distribution service client
             services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();

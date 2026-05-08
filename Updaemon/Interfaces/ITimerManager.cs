@@ -1,12 +1,13 @@
 namespace Updaemon.Interfaces
 {
     /// <summary>
-    /// Manages systemd timers for automatic updates.
+    /// Manages the recurring "updaemon update" timer. Implemented via a systemd timer
+    /// on Linux and a launchd plist with StartInterval on macOS.
     /// </summary>
     public interface ITimerManager
     {
         /// <summary>
-        /// Sets up a systemd timer to run updaemon update at the specified interval.
+        /// Sets up a recurring timer to run "updaemon update" at the specified interval.
         /// </summary>
         Task SetTimerAsync(TimeSpan interval, CancellationToken cancellationToken = default);
 
@@ -21,7 +22,7 @@ namespace Updaemon.Interfaces
         Task<bool> IsTimerEnabledAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Gets the current interval of the timer if enabled.
+        /// Gets a human-readable representation of the current interval if the timer is enabled.
         /// </summary>
         Task<string?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default);
     }

@@ -1,7 +1,8 @@
 namespace Updaemon.Interfaces
 {
     /// <summary>
-    /// Manages systemd unit file templates and generation.
+    /// Manages service unit file templates and generation. On Linux this produces
+    /// systemd .service files; on macOS it produces launchd .plist files.
     /// </summary>
     public interface IUnitFileManager
     {
@@ -24,6 +25,18 @@ namespace Updaemon.Interfaces
         /// Generates a unit file from the template and writes it to the specified path.
         /// </summary>
         Task WriteUnitFileAsync(string unitFilePath, string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Returns the absolute path of the unit file for the given service, including
+        /// the OS-appropriate directory and extension (e.g. /etc/systemd/system/foo.service
+        /// on Linux, /Library/LaunchDaemons/com.updaemon.foo.plist on macOS).
+        /// </summary>
+        string GetUnitFilePath(string serviceName);
+
+        /// <summary>
+        /// Verifies that the manager can write to the unit-file directory. Throws if the
+        /// directory does not exist or is not writable.
+        /// </summary>
+        Task EnsureWritableAsync(CancellationToken cancellationToken = default);
     }
 }
-
