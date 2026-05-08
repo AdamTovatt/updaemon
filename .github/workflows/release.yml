@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+          - os: macos-latest
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # AOT publish on Linux needs zlib headers; macOS runners already ship Xcode CLI tools.
+      - name: Install AOT prerequisites (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Publish AOT binaries for ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          for proj in Updaemon Updaemon.GithubDistributionService Updaemon.Distribution.ByteShelfDistribution; do
+            dotnet publish ./$proj/$proj.csproj \
+              -c Release \
+              -r ${{ matrix.rid }} \
+              --self-contained true \
+              -p:StripSymbols=true
+            cp ./$proj/bin/Release/net8.0/${{ matrix.rid }}/native/$proj $proj-${{ matrix.rid }}
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}
+          path: |
+            Updaemon-${{ matrix.rid }}
+            Updaemon.GithubDistributionService-${{ matrix.rid }}
+            Updaemon.Distribution.ByteShelfDistribution-${{ matrix.rid }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
