@@ -18,21 +18,19 @@ case "$(uname -s)" in
   *)      CONFIG_DIR=/var/lib/updaemon ;;
 esac
 
-# Pick the asset whose URL ends with /Updaemon-<RID> exactly. Anchoring to the basename
-# Updaemon- prevents matching plugin assets like Updaemon.GithubDistributionService-<RID>.
-url=$(curl -s https://api.github.com/repos/AdamTovatt/updaemon/releases/latest \
-  | grep '"browser_download_url"' \
-  | grep -E "/Updaemon-${RID}\"" \
-  | head -n1 \
-  | sed 's/.*"browser_download_url": "\(.*\)".*/\1/')
+# Use the /releases/latest/download/<asset> redirect rather than api.github.com.
+# The API is rate-limited to 60/hour per IP unauthenticated; the redirect URL is
+# served from github.com release infrastructure and is not API-rate-limited.
+# A missing asset returns 404 (which curl -f surfaces as a non-zero exit).
+url="https://github.com/AdamTovatt/updaemon/releases/latest/download/Updaemon-${RID}"
 
-if [ -z "$url" ]; then
-  echo "No release asset found matching /Updaemon-${RID}." >&2
+if ! curl -fsSLI "$url" -o /dev/null; then
+  echo "No release asset found at $url" >&2
   echo "If you're installing on a brand-new platform, the latest release may not have a build for it yet." >&2
   exit 1
 fi
 
-sudo curl -L -o /usr/local/bin/updaemon "$url"
+sudo curl -fL -o /usr/local/bin/updaemon "$url"
 sudo chmod +x /usr/local/bin/updaemon
 
 # Create configuration directory
