@@ -211,6 +211,12 @@ namespace Updaemon.Commands
                 {
                     _outputWriter.WriteLine("CLI tool updated successfully");
                 }
+                else if (!service.AutoRestart)
+                {
+                    // Deploy-only mode: leave the running process untouched so the application
+                    // can restart on demand.
+                    _outputWriter.WriteLine("New version deployed; restart skipped (restart=manual). The service keeps the previous version until it restarts.");
+                }
                 else
                 {
                     // Restart service
@@ -267,7 +273,9 @@ namespace Updaemon.Commands
                   are grouped by distribution plugin and updated efficiently.
 
                   For services, the underlying service (systemd on Linux, launchd on macOS)
-                  is restarted after updating.
+                  is restarted after updating, unless restart behavior is set to manual via
+                  'updaemon set-restart <app-name> manual' — in which case the new version is
+                  deployed but the running process is left untouched.
                   For CLI tools, the symlink chain resolves automatically to the new version.
 
                   After a successful deployment, old version directories are automatically

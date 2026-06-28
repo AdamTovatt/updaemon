@@ -58,6 +58,10 @@ namespace Updaemon.Commands
 
                 _outputWriter.WriteLine($"  Name: {service.LocalName}");
                 _outputWriter.WriteLine($"  Type: {service.ServiceType.ToLabel()}");
+                if (service.ServiceType == ServiceType.Service)
+                {
+                    _outputWriter.WriteLine($"  Restart: {(service.AutoRestart ? "auto" : "manual")}");
+                }
                 _outputWriter.WriteLine($"  Version: {versionDisplay}");
                 _outputWriter.WriteLine($"  Distribution plugin: {service.DistributionPluginAlias}");
                 _outputWriter.WriteLine($"  Remote name: {service.RemoteName}");

@@ -94,6 +94,20 @@ namespace Updaemon.Configuration
             await SaveConfigAsync(config, cancellationToken);
         }
 
+        public async Task SetAutoRestartAsync(string localName, bool autoRestart, CancellationToken cancellationToken = default)
+        {
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
+
+            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
+            if (service == null)
+            {
+                throw new InvalidOperationException($"Service '{localName}' is not registered.");
+            }
+
+            service.AutoRestart = autoRestart;
+            await SaveConfigAsync(config, cancellationToken);
+        }
+
         public async Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default)
         {
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);

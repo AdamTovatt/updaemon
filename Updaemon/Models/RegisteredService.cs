@@ -31,6 +31,16 @@ namespace Updaemon.Models
         /// Defaults to Service for backwards compatibility with existing configs.
         /// </summary>
         public ServiceType ServiceType { get; set; } = ServiceType.Service;
+
+        /// <summary>
+        /// Whether the service is automatically restarted after a new version is deployed.
+        /// When false, 'update' deploys the new version (download, repoint symlink, prune) but
+        /// leaves the running process untouched, letting the application restart on demand.
+        /// Only meaningful for Service-type entries; CLI tools are never restarted.
+        /// Defaults to true for backwards compatibility — a missing field in an existing config
+        /// deserializes to true.
+        /// </summary>
+        public bool AutoRestart { get; set; } = true;
     }
 }
 

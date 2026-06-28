@@ -289,6 +289,67 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task UpdateService_AutoRestartManual_DeploysButDoesNotRestart()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                await configManager.AddOrUpdatePluginAsync(pluginInfo);
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                // Opt the service out of auto-restart.
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+                config.Services.First(s => s.LocalName == "my-api").AutoRestart = false;
+                await configManager.SaveConfigAsync(config);
+
+                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
+                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
+
+                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
+
+                MockVersionExtractor versionExtractor = new MockVersionExtractor();
+                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
+
+                MockServiceManager serviceManager = new MockServiceManager();
+                serviceManager.ServiceExistsStates["my-api"] = true;
+                serviceManager.ServiceRunningStates["my-api"] = true;
+
+                MockOutputWriter outputWriter = new MockOutputWriter();
+
+                UpdateCommand command = new UpdateCommand(
+                    configManager,
+                    new MockSecretsManager(),
+                    serviceManager,
+                    distributionClient,
+                    outputWriter,
+                    versionExtractor,
+                    serviceDeployer
+                );
+
+                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                Assert.Equal(0, exitCode);
+
+                // New version was deployed.
+                Assert.Contains(serviceDeployer.MethodCalls, call => call == "DeployVersionAsync:my-api:1.1.0");
+
+                // The running process was left untouched — neither restart nor start.
+                Assert.Empty(serviceManager.MethodCalls.Where(call =>
+                    call.Contains("Start") || call.Contains("Restart")));
+
+                // Skip is communicated to the user.
+                Assert.Contains(outputWriter.Messages, m => m.Contains("restart skipped"));
+
+                // Prune still runs after a deploy-only update.
+                Assert.Single(serviceDeployer.PrunedServices);
+                Assert.Equal("my-api", serviceDeployer.PrunedServices[0].LocalName);
+            }
+        }
+
+        [Fact]
         public async Task UpdateService_StartsStoppedService()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
