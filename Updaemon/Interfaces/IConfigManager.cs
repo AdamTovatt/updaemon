@@ -34,6 +34,12 @@ namespace Updaemon.Interfaces
         Task SetExecutableNameAsync(string localName, string? executableName, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Updates whether an existing service is automatically restarted after an update.
+        /// When false, 'update' deploys the new version but leaves the running process untouched.
+        /// </summary>
+        Task SetAutoRestartAsync(string localName, bool autoRestart, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Gets a registered service by local name.
         /// </summary>
         Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default);

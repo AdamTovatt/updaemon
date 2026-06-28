@@ -356,6 +356,75 @@ namespace Updaemon.Tests.Configuration
         }
 
         [Fact]
+        public async Task SetAutoRestartAsync_UpdatesValue()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+
+                // Defaults to true for a freshly registered service.
+                RegisteredService? service = await configManager.GetServiceAsync("my-api");
+                Assert.NotNull(service);
+                Assert.True(service.AutoRestart);
+
+                await configManager.SetAutoRestartAsync("my-api", false);
+                service = await configManager.GetServiceAsync("my-api");
+                Assert.NotNull(service);
+                Assert.False(service.AutoRestart);
+
+                await configManager.SetAutoRestartAsync("my-api", true);
+                service = await configManager.GetServiceAsync("my-api");
+                Assert.NotNull(service);
+                Assert.True(service.AutoRestart);
+            }
+        }
+
+        [Fact]
+        public async Task SetAutoRestartAsync_ServiceDoesNotExist_ThrowsException()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+
+                InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                    async () => await configManager.SetAutoRestartAsync("non-existent", false)
+                );
+
+                Assert.Contains("not registered", exception.Message);
+            }
+        }
+
+        [Fact]
+        public async Task LoadConfigAsync_OldConfigWithoutAutoRestart_DefaultsToTrue()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string configPath = Path.Combine(tempHelper.TempDirectory, "config.json");
+                string oldConfigJson = @"{
+  ""installedPlugins"": {},
+  ""services"": [
+    {
+      ""localName"": ""test-service"",
+      ""remoteName"": ""TestService"",
+      ""distributionPluginAlias"": ""github""
+    }
+  ]
+}";
+                Directory.CreateDirectory(tempHelper.TempDirectory);
+                await File.WriteAllTextAsync(configPath, oldConfigJson);
+
+                ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+
+                Assert.NotNull(config);
+                Assert.Single(config.Services);
+                Assert.True(config.Services[0].AutoRestart);
+            }
+        }
+
+        [Fact]
         public async Task RegisterServiceAsync_WithCliType_PersistsType()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())

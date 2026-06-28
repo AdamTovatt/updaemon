@@ -127,6 +127,7 @@ Commands that change files in the system usually require `sudo` to run.
 | [update](#update-command) | Update all or a specific service to the latest version. |
 | [set-remote](#set-remote-command) | Set the remote name used by the distribution plugin. |
 | [set-exec-name](#set-exec-command) | Set or clear the executable name for a service. |
+| [set-restart](#set-restart-command) | Set restart behavior after update (auto/manual). |
 | [dist-install](#dist-install-command) | Download and install a distribution plugin (supports `--as`). |
 | [dist-update](#dist-update-command) | Update installed distribution plugins. |
 | [dist-list](#dist-list-command) | List installed distribution plugins and their metadata. |
@@ -165,7 +166,7 @@ sudo updaemon init my-api
 updaemon list
 ```
 
-Lists all registered applications (services and CLI tools) with their current version, initialization status, type, distribution plugin, and remote name.
+Lists all registered applications (services and CLI tools) with their current version, initialization status, type, distribution plugin, and remote name. For services, the restart behavior (`auto` or `manual`) is also shown.
 
 ### Update Command
 
@@ -174,6 +175,8 @@ updaemon update [app-name]
 ```
 
 Updates all services or a specific service to the latest available version. After a successful deployment, old version directories are automatically pruned, keeping only the most recent versions (controlled by `releaseRetentionCount` in `config.json`, default: 5). The currently-deployed version is always preserved. Should be run with `sudo`.
+
+By default, a service is restarted after a new version is deployed. A service whose restart behavior is set to `manual` (see [set-restart](#set-restart-command)) is deployed but **not** restarted — the running process keeps the previous version until it restarts on its own.
 
 **Examples:**
 ```bash
@@ -215,6 +218,28 @@ sudo updaemon set-exec-name my-api MyApi
 
 # Clear executable name
 sudo updaemon set-exec-name my-api -
+```
+
+### Set-Restart Command
+
+```bash
+updaemon set-restart <app-name> auto|manual
+```
+
+Controls whether a service is restarted after `update` deploys a new version.
+
+- `auto` (default): restart the service after deploying a new version.
+- `manual`: deploy the new version (download, repoint the symlink, prune old versions) but leave the running process untouched. The service keeps running the previous version until it restarts — useful when the application wants to apply the update on demand (e.g. show a "restart to apply" prompt and exit gracefully under `Restart=always` / `KeepAlive=true`).
+
+Only meaningful for services; CLI tools are never restarted.
+
+**Examples:**
+```bash
+# Deploy without restarting; the app restarts on demand
+sudo updaemon set-restart my-api manual
+
+# Restore the default restart-after-update behavior
+sudo updaemon set-restart my-api auto
 ```
 
 ### Dist-Install Command
@@ -394,7 +419,8 @@ The directory contains:
       "localName": "word-library-api",
       "remoteName": "FastPackages.WordLibraryApi",
       "executableName": "WordLibraryApi",
-      "distributionPluginAlias": "github"
+      "distributionPluginAlias": "github",
+      "autoRestart": true
     }
   ],
   "releaseRetentionCount": 5
@@ -402,6 +428,8 @@ The directory contains:
 ```
 
 **Note:** The `executableName` field is optional. If not specified, the `localName` is used when searching for the executable.
+
+**Note:** The `autoRestart` field (default `true`) controls whether a service is restarted after `update` deploys a new version. Set it to `false` (via `updaemon set-restart <app-name> manual`) to deploy without restarting. A missing field is treated as `true`, so existing configs are unaffected.
 
 **Note:** `releaseRetentionCount` controls how many release versions to keep per service after a successful deployment (default: 5). The currently-deployed version is always preserved regardless of this setting.
 

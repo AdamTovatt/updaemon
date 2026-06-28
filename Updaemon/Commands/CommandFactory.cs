@@ -23,6 +23,7 @@ namespace Updaemon.Commands
                 ["update"] = typeof(UpdateCommand),
                 ["set-remote"] = typeof(SetRemoteCommand),
                 ["set-exec-name"] = typeof(SetExecNameCommand),
+                ["set-restart"] = typeof(SetRestartCommand),
                 ["dist-install"] = typeof(DistInstallCommand),
                 ["dist-update"] = typeof(DistUpdateCommand),
                 ["dist-list"] = typeof(DistListCommand),

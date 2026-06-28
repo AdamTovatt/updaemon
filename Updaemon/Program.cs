@@ -89,6 +89,7 @@ namespace Updaemon
             services.AddTransient<UpdateCommand>();
             services.AddTransient<SetRemoteCommand>();
             services.AddTransient<SetExecNameCommand>();
+            services.AddTransient<SetRestartCommand>();
             services.AddTransient<DistInstallCommand>();
             services.AddTransient<DistUpdateCommand>();
             services.AddTransient<DistListCommand>();

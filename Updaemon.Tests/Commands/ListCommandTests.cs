@@ -72,6 +72,46 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task ExecuteAsync_ServiceWithDefaultRestart_ShowsRestartAuto()
+        {
+            await _configManager.RegisterServiceAsync("my-api", "my-org/my-api", "github", ServiceType.Service);
+            _serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+
+            ListCommand command = CreateCommand();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains(_output.Messages, line => line.Contains("Restart: auto"));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ServiceWithManualRestart_ShowsRestartManual()
+        {
+            await _configManager.RegisterServiceAsync("my-api", "my-org/my-api", "github", ServiceType.Service);
+            await _configManager.SetAutoRestartAsync("my-api", false);
+            _serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
+
+            ListCommand command = CreateCommand();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains(_output.Messages, line => line.Contains("Restart: manual"));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_CliTool_DoesNotShowRestart()
+        {
+            await _configManager.RegisterServiceAsync("my-tool", "my-org/my-tool", "github", ServiceType.Cli);
+            _serviceDeployer.SetInitialized("my-tool", "/opt/my-tool/1.0.0");
+
+            ListCommand command = CreateCommand();
+            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+
+            Assert.Equal(0, exitCode);
+            Assert.DoesNotContain(_output.Messages, line => line.Contains("Restart:"));
+        }
+
+        [Fact]
         public async Task ExecuteAsync_WithMixedInitializedAndUninitialized_ShowsBoth()
         {
             await _configManager.RegisterServiceAsync("app-a", "org/app-a", "github");
