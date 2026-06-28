@@ -2,6 +2,16 @@
 
 How to create a new release for Updaemon.
 
+## Automated releases (tag-triggered)
+
+Pushing a `v*` tag triggers the `Release` workflow (`.github/workflows/release.yml`), which AOT-builds every project for `linux-arm64` and `osx-arm64`, then creates the GitHub release with auto-generated notes and the binaries attached. The normal flow is therefore:
+
+1. Bump the `<Version>` in the relevant `.csproj` file(s) (see [Step 1](#1-bump-version-numbers)).
+2. If a plugin changed, update `PluginRegistry.json` and commit it to `master` (see [Step 4](#4-update-pluginregistryjson)).
+3. Commit and push to `master`, then push a `vX.Y.Z` tag — the workflow does the rest.
+
+The workflow does **not** bump versions, edit `PluginRegistry.json`, or build `linux-x64`. Use the manual steps below when you need a `linux-x64` asset or want to build/upload by hand.
+
 ## Overview
 
 A release consists of AOT-compiled, self-contained binaries uploaded as GitHub release assets. Updaemon supports the following runtime identifiers (RIDs):
@@ -157,6 +167,7 @@ Users who already have a plugin installed can update it with `updaemon dist-upda
 
 | Release | Updaemon | GithubDist | ByteShelfDist |
 |---------|----------|------------|---------------|
+| v0.10.0 | 0.10.0 | 0.4.0 | 0.2.1 |
 | v0.9.0 | 0.9.0 | 0.4.0 | 0.2.1 |
 | v0.8.1 | 0.8.1 | 0.4.0 | 0.2.1 |
 | v0.7.0 | 0.7.0 | 0.4.0 | - |
