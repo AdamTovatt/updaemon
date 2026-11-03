@@ -1,3 +1,5 @@
+using Updaemon.Models;
+
 namespace Updaemon.Interfaces
 {
     /// <summary>
@@ -34,9 +36,16 @@ namespace Updaemon.Interfaces
         Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Checks if a managed service is currently running.
+        /// Whether the service is running, and how often the service manager has started it. A service
+        /// that does not exist is not running.
         /// </summary>
-        Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default);
+        Task<ServiceState> GetStateAsync(string serviceName, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Shows the service's log on the terminal (journalctl on Linux, its log files on macOS);
+        /// with <paramref name="follow"/>, keeps showing new lines until Ctrl+C. Returns the exit code.
+        /// </summary>
+        Task<int> ShowLogsAsync(string serviceName, bool follow, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Whether a service by this name exists anywhere the service manager looks, not only in this

@@ -64,8 +64,6 @@ namespace Updaemon.Services
 
         private string RenderPlist(ServiceUnit unit)
         {
-            string logBase = Path.Combine(_scope.LogDirectory, unit.AppName);
-
             Launchd.Plist plist = new Launchd.Plist().String("Label", _scope.GetServiceLabel(unit.AppName));
             if (unit.RunAs != null)
             {
@@ -79,8 +77,8 @@ namespace Updaemon.Services
                 .Boolean("RunAtLoad", true)
                 .Boolean("KeepAlive", true)
                 .Integer("ThrottleInterval", 10)
-                .String("StandardOutPath", logBase + ".log")
-                .String("StandardErrorPath", logBase + ".err.log")
+                .String("StandardOutPath", _scope.GetOutputLogPath(unit.AppName))
+                .String("StandardErrorPath", _scope.GetErrorLogPath(unit.AppName))
                 .ToString();
         }
     }

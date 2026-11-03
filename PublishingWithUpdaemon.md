@@ -59,6 +59,8 @@ The `executablePath` format of updaemon 0.x is not read any more: replace `execu
 - **Settings**: `updaemon install` asks for each required setting that has no value; `updaemon set` changes them later. Secrets are kept in a file only the owner can read.
 - **Data**: every app gets a directory that is kept across updates, passed in `UPDAEMON_DATA_DIR`. Store state there.
 
+After an update restarts a service, it must keep running for 10 seconds. If it does not, updaemon runs the previous version again and skips the new one until a newer release appears. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`.
+
 Each update reads the new release's manifest, so a release can add settings or change its arguments. If it adds a required setting the app has no value for, the update waits: the current version keeps running and updaemon names the `updaemon set` command to run.
 
 ## Releases without a manifest

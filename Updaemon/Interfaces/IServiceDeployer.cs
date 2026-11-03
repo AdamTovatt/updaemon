@@ -22,17 +22,24 @@ namespace Updaemon.Interfaces
         /// </summary>
         /// <exception cref="ManifestException">The release's manifest is invalid.</exception>
         /// <exception cref="MissingManifestException">Neither the release nor the app has a manifest.</exception>
-        Task<StagedVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default);
+        Task<DeployableVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default);
 
         /// <summary>Deletes a staged version that will not be activated.</summary>
-        void Discard(StagedVersion staged);
+        void Discard(DeployableVersion staged);
+
+        /// <summary>The versions kept in the app's directory, the current one included, oldest first.</summary>
+        IReadOnlyList<Version> GetRetainedVersions(string appName);
+
+        /// <summary>A retained version with the manifest in its directory, ready to activate again.</summary>
+        /// <exception cref="InvalidOperationException">The version is not kept; the message lists the kept ones.</exception>
+        Task<DeployableVersion> OpenRetainedAsync(string appName, Version version, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Makes the staged version current and regenerates the app's settings file, command wrapper and
         /// service unit from its manifest. Does not start or restart the service. If generating fails,
         /// the previous version is made current again before the exception propagates.
         /// </summary>
-        Task ActivateAsync(InstalledApp app, StagedVersion staged, CancellationToken cancellationToken = default);
+        Task ActivateAsync(InstalledApp app, DeployableVersion version, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// After a change to the app's settings or arguments: regenerates its settings file, command
@@ -40,11 +47,18 @@ namespace Updaemon.Interfaces
         /// </summary>
         Task ApplySettingsAsync(InstalledApp app, CancellationToken cancellationToken = default);
 
-        /// <summary>Enables and starts a newly installed service.</summary>
-        Task StartAsync(string appName, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Enables and starts a newly installed service, then runs the health check: returns whether it
+        /// came up and kept running for the <see cref="Configuration.HealthCheckWait"/> without the
+        /// service manager starting it again.
+        /// </summary>
+        Task<bool> StartAsync(string appName, CancellationToken cancellationToken = default);
 
-        /// <summary>Restarts the service, or starts it if it is not running.</summary>
-        Task RestartAsync(string appName, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Restarts the service, or starts it if it is not running, then runs the health check as
+        /// <see cref="StartAsync"/> does.
+        /// </summary>
+        Task<bool> RestartAsync(string appName, CancellationToken cancellationToken = default);
 
         /// <summary>Restarts the service if it is running. Returns whether it did.</summary>
         Task<bool> RestartIfRunningAsync(string appName, CancellationToken cancellationToken = default);

@@ -1,5 +1,6 @@
 using Updaemon.Common.Models;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Tests.Mocks
 {
@@ -43,9 +44,17 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
+        /// <summary>Remotes the plugin refuses, with the message it gives.</summary>
+        public Dictionary<string, string> RefusedRemotes { get; } = new Dictionary<string, string>();
+
         public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(GetLatestVersionAsync)}:{serviceName}");
+            if (RefusedRemotes.TryGetValue(serviceName, out string? message))
+            {
+                throw new PluginException(message);
+            }
+
             return Task.FromResult(LatestVersions.GetValueOrDefault(serviceName));
         }
 

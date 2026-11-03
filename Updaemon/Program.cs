@@ -77,7 +77,10 @@ namespace Updaemon
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<AppFileWriter>();
             services.AddSingleton<AppSettingsStore>();
+            services.AddSingleton(HealthCheckWait.Default);
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
+            services.AddSingleton<AppRollback>();
+            services.AddTransient<PluginProvider>();
 
             services.AddSingleton(UpdaemonVersion.Current);
 
@@ -100,6 +103,9 @@ namespace Updaemon
             services.AddTransient<SetArgsCommand>();
             services.AddTransient<SetRestartCommand>();
             services.AddTransient<RemoveCommand>();
+            services.AddTransient<RollbackCommand>();
+            services.AddTransient<StatusCommand>();
+            services.AddTransient<LogsCommand>();
             services.AddTransient<DistInstallCommand>();
             services.AddTransient<DistUpdateCommand>();
             services.AddTransient<DistListCommand>();

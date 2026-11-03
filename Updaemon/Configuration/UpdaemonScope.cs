@@ -64,6 +64,12 @@ namespace Updaemon.Configuration
 
         public string GetCurrentLinkPath(string appName) => Path.Combine(AppsDirectory, appName, "current");
 
+        /// <summary>macOS only: where launchd writes the service's standard output.</summary>
+        public string GetOutputLogPath(string appName) => Path.Combine(LogDirectory, appName + ".log");
+
+        /// <summary>macOS only: where launchd writes the service's standard error.</summary>
+        public string GetErrorLogPath(string appName) => Path.Combine(LogDirectory, appName + ".err.log");
+
         /// <summary>The systemd unit name or launchd label of an app's service.</summary>
         public string GetServiceLabel(string appName) => Platform.IsMacOS ? MacLabelPrefix + appName : appName;
 

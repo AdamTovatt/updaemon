@@ -1,4 +1,5 @@
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Tests.Mocks
 {
@@ -26,7 +27,7 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add(Call(nameof(StartServiceAsync), serviceName));
             if (StartFailure != null)
                 throw StartFailure;
-            ServiceRunningStates[serviceName] = true;
+            ServiceRunningStates[serviceName] = !CrashOnNextStart.Remove(serviceName);
             return Task.CompletedTask;
         }
 
@@ -42,7 +43,7 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add(Call(nameof(RestartServiceAsync), serviceName));
             if (RestartFailure != null)
                 throw RestartFailure;
-            ServiceRunningStates[serviceName] = true;
+            ServiceRunningStates[serviceName] = !CrashOnNextStart.Remove(serviceName);
             return Task.CompletedTask;
         }
 
@@ -58,16 +59,43 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
-        public Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            MethodCalls.Add(Call(nameof(IsServiceRunningAsync), serviceName));
-            return Task.FromResult(ServiceRunningStates.GetValueOrDefault(serviceName, false));
-        }
-
         public Task DaemonReloadAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(DaemonReloadAsync)));
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Services whose next start or restart crashes: not running afterwards, so the health check
+        /// fails. A later start runs again, as the version rolled back to does.
+        /// </summary>
+        public HashSet<string> CrashOnNextStart { get; } = new HashSet<string>();
+
+        /// <summary>Services the service manager keeps restarting: active, but started again at every look.</summary>
+        public HashSet<string> RestartingServices { get; } = new HashSet<string>();
+
+        /// <summary>
+        /// Whether the service runs at each next reading, used up before the states above apply: a
+        /// service that comes up late, or crashes during the health check's wait.
+        /// </summary>
+        public Dictionary<string, Queue<bool>> ScriptedReadings { get; } = new Dictionary<string, Queue<bool>>();
+
+        private int _starts;
+
+        public Task<ServiceState> GetStateAsync(string serviceName, CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add(Call(nameof(GetStateAsync), serviceName));
+            bool active = ScriptedReadings.TryGetValue(serviceName, out Queue<bool>? readings) && readings.TryDequeue(out bool scripted)
+                ? scripted
+                : ServiceRunningStates.GetValueOrDefault(serviceName, false);
+            int starts = RestartingServices.Contains(serviceName) ? ++_starts : 0;
+            return Task.FromResult(new ServiceState(active, starts));
+        }
+
+        public Task<int> ShowLogsAsync(string serviceName, bool follow, CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add(Call(nameof(ShowLogsAsync), $"{serviceName}:{follow}"));
+            return Task.FromResult(0);
         }
 
         public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)

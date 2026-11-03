@@ -34,6 +34,54 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task Install_RegistryPluginMissing_InstallsItFromTheRunningRelease()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.AddRelease("owner/tool", "1.0.0", """{ "executable": "tool", "command": "tool" }""", executable: "tool");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Equal(new PluginSource.Registry("github"), (await h.Config.GetPluginAsync("github"))!.Source);
+                Assert.Contains(h.PluginDownloader.MethodCalls, call => call.Contains("/releases/download/v1.0.0/Updaemon.GithubDistributionService-linux-arm64"));
+                Assert.True(File.Exists(h.Scope.GetCommandPath("tool")));
+            }
+        }
+
+        [Fact]
+        public async Task Install_PluginRefusesTheRemote_FailsInOneLineNamingTheApp()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.Client.RefusedRemotes["owner/nope"] = "The repository 'owner/nope' was not found. Check the name after 'github:'.";
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "nope", "--from", "github:owner/nope" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(new[] { "Error: nope: The repository 'owner/nope' was not found. Check the name after 'github:'." }, h.Output.Errors);
+                Assert.Empty(h.Client.Downloads);
+            }
+        }
+
+        [Fact]
+        public async Task Install_ServiceDoesNotStayRunning_StaysInstalledAndPointsToTheLogs()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.ServiceManager.CrashOnNextStart.Add("byteshelf");
+
+                int exitCode = await h.InstallByteShelfAsync();
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains("Error: byteshelf: 1.0.0 did not stay running. See 'updaemon logs byteshelf'.", h.Output.Errors);
+                Assert.NotNull(await h.Config.GetAppAsync("byteshelf"));
+                Assert.True(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+            }
+        }
+
+        [Fact]
         public async Task Install_MissingRequiredSettings_AsksForEach_SecretsWithoutEcho()
         {
             using (AppHarness h = new AppHarness())
@@ -264,7 +312,7 @@ namespace Updaemon.Tests.Commands
         [Theory]
         [InlineData("<plugin>:<remote>", "app", "--from", "github")]
         [InlineData("<plugin>:<remote>", "app", "--from", "github:")]
-        [InlineData("dist-install gitlab", "app", "--from", "gitlab:owner/repo")]
+        [InlineData("app: the plugin 'gitlab' is not installed and is not in the plugin registry (github). Install it with 'updaemon dist-install <url> --as gitlab'.", "app", "--from", "gitlab:owner/repo")]
         [InlineData("not a valid environment variable", "app", "--from", "github:owner/app", "--set", "NOT VALID=1")]
         [InlineData("'updaemon' is reserved", "updaemon", "--from", "github:owner/app")]
         [InlineData("not a valid app name", "-app", "--from", "github:owner/app")]

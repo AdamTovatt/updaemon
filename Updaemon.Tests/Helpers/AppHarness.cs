@@ -28,7 +28,8 @@ namespace Updaemon.Tests.Helpers
 
         private readonly TempFileHelper _temp = new TempFileHelper();
 
-        public AppHarness(bool isSystem = false)
+        /// <param name="healthCheckWait">Zero by default: the health check then takes two readings without waiting.</param>
+        public AppHarness(bool isSystem = false, TimeSpan healthCheckWait = default)
         {
             Scope = TestScope.Create(_temp.TempDirectory, isSystem);
             Config = new ConfigManager(Scope);
@@ -42,8 +43,24 @@ namespace Updaemon.Tests.Helpers
                 new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Secrets, Output),
                 ServiceManager,
                 Secrets,
-                Output);
+                Output,
+                new HealthCheckWait(healthCheckWait));
+            Rollback = new AppRollback(Deployer, SettingsStore, Config);
+            PluginUrlResolver = new GitHubPluginUrlResolver(new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" }, Scope.Platform);
+            Plugins = new PluginProvider(Config, new PluginInstaller(PluginUrlResolver, PluginDownloader, Config, Scope), PluginUrlResolver, RunningVersion, Output);
         }
+
+        public GitHubPluginUrlResolver PluginUrlResolver { get; }
+
+        public static UpdaemonVersion RunningVersion { get; } = new UpdaemonVersion(new Version(1, 0, 0));
+
+        public AppRollback Rollback { get; }
+
+        public PluginProvider Plugins { get; }
+
+        public MockPluginDownloader PluginDownloader { get; } = new MockPluginDownloader();
+
+        public MockTimerManager Timer { get; } = new MockTimerManager();
 
         public UpdaemonScope Scope { get; }
 
@@ -65,9 +82,16 @@ namespace Updaemon.Tests.Helpers
 
         public MockOutputWriter Output { get; } = new MockOutputWriter();
 
-        public InstallCommand Install() => new InstallCommand(Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope);
+        public InstallCommand Install() => new InstallCommand(
+            Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins);
 
-        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer);
+        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins);
+
+        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Deployer, Rollback, Output);
+
+        public StatusCommand Status() => new StatusCommand(Config, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion);
+
+        public LogsCommand Logs() => new LogsCommand(Config, Deployer, ServiceManager, Output);
 
         public SetCommand Set() => new SetCommand(Config, SettingsStore, Deployer, Output);
 
@@ -112,6 +136,29 @@ namespace Updaemon.Tests.Helpers
                 "byteshelf", "--from", "github:owner/byteshelf",
                 "--set", "BYTESHELF_URL=https://shelf", "--set", "BYTESHELF_API_KEY=key1",
             });
+        }
+
+        /// <summary>
+        /// ByteShelf installed at 1.0.0; 1.1.0 failed its health check, so it was skipped and 1.0.0 ran
+        /// again; then 1.2.0 was installed. All three are kept.
+        /// </summary>
+        public async Task InstallByteShelfPastACrashingReleaseAsync()
+        {
+            await InstallByteShelfAsync();
+            AddRelease("owner/byteshelf", "1.1.0", ByteShelfManifest);
+            ServiceManager.CrashOnNextStart.Add("byteshelf");
+            await Update().ExecuteAsync(Array.Empty<string>());
+            AddRelease("owner/byteshelf", "1.2.0", ByteShelfManifest);
+            await Update().ExecuteAsync(Array.Empty<string>());
+            Output.Clear();
+        }
+
+        /// <summary>Records <paramref name="version"/> as skipped, as rolling back from it to the current version does.</summary>
+        public async Task SkipAsync(string appName, Version version)
+        {
+            InstalledApp app = (await Config.GetAppAsync(appName))!;
+            app.RecordSwitch(from: version, to: await Deployer.GetCurrentVersionAsync(appName));
+            await Config.SaveAppAsync(app);
         }
 
         public void Dispose()

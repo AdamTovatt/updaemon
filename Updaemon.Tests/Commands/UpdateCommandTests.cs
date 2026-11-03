@@ -29,6 +29,95 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task Update_NewVersionDoesNotStayRunning_RunsThePreviousAgainAndSkipsTheNew()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+                h.ServiceManager.CrashOnNextStart.Add("byteshelf");
+                h.ServiceManager.MethodCalls.Clear();
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(
+                    new[] { "Error: byteshelf: 1.1.0 did not stay running, so 1.0.0 runs again and 1.1.0 is skipped. See 'updaemon logs byteshelf'." },
+                    h.Output.Errors);
+                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
+                // Two (re)starts: the new version, then the previous one after rolling back.
+                Assert.Equal(2, h.ServiceManager.MethodCalls.Count(call => call == RestartCall || call == StartCall));
+            }
+        }
+
+        [Fact]
+        public async Task Update_NewVersionDoesNotStayRunningAndGoingBackFails_ReportsBoth()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+                h.ServiceManager.CrashOnNextStart.Add("byteshelf");
+                // The version to go back to is gone from disk.
+                Directory.Delete(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "1.0.0"), recursive: true);
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(
+                    new[] { "Error: byteshelf: 1.1.0 did not stay running, and going back to 1.0.0 failed: byteshelf 1.0.0 is not kept. Kept versions: 1.1.0. See 'updaemon logs byteshelf'." },
+                    h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task Update_LatestIsSkipped_PassesOverIt()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+                await h.SkipAsync("byteshelf", new Version(1, 1, 0));
+                h.Client.Downloads.Clear();
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(0, exitCode);
+                Assert.Empty(h.Client.Downloads);
+                Assert.Contains(h.Output.Messages, m => m.StartsWith("byteshelf: 1.1.0 is skipped"));
+            }
+        }
+
+        [Fact]
+        public async Task Update_PastAVersionThatFailed_KeepsItSkippedWhileItIsKept()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfPastACrashingReleaseAsync();
+
+                Assert.Equal(new Version(1, 2, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
+            }
+        }
+
+        [Fact]
+        public async Task Update_NewerThanASkippedVersionThatIsNotKept_ClearsTheSkip()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                await h.SkipAsync("byteshelf", new Version(1, 1, 0));
+                h.AddRelease("owner/byteshelf", "1.2.0", AppHarness.ByteShelfManifest);
+
+                await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(new Version(1, 2, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
+            }
+        }
+
+        [Fact]
         public async Task Update_AlreadyLatest_DownloadsNothing()
         {
             using (AppHarness h = new AppHarness())

@@ -52,5 +52,20 @@ namespace Updaemon.Models
         /// <summary>Required settings of <paramref name="manifest"/> that have no value, in name order.</summary>
         public IReadOnlyList<string> MissingRequired(AppManifest manifest) =>
             manifest.MissingRequiredSettings(Settings.Keys.Concat(Secrets.Keys));
+
+        /// <summary>
+        /// Throws when <paramref name="version"/> needs a setting that has no value, before anything
+        /// changes. The message names the 'updaemon set' command, then <paramref name="retryCommand"/>.
+        /// </summary>
+        public void EnsureComplete(AppManifest manifest, Version version, Version running, string retryCommand)
+        {
+            IReadOnlyList<string> missing = MissingRequired(manifest);
+            if (missing.Count > 0)
+            {
+                string assignments = string.Join(' ', missing.Select(key => $"{key}=<value>"));
+                throw new InvalidOperationException(
+                    $"{version} needs {string.Join(", ", missing)}; {running} keeps running. Run 'updaemon set {App.Name} {assignments}', then '{retryCommand}'.");
+            }
+        }
     }
 }

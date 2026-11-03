@@ -1,5 +1,6 @@
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
@@ -31,21 +32,40 @@ namespace Updaemon.Services
         public Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
             => SystemctlAsync(cancellationToken, "disable", serviceName);
 
-        public async Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                ProcessRunner.Result result = await ProcessRunner.RunAsync("systemctl", Arguments("is-active", serviceName), cancellationToken);
-                return result.StdOut.Trim() == "active";
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                return false;
-            }
-        }
-
         public Task DaemonReloadAsync(CancellationToken cancellationToken = default)
             => SystemctlAsync(cancellationToken, "daemon-reload");
+
+        public async Task<ServiceState> GetStateAsync(string serviceName, CancellationToken cancellationToken = default)
+        {
+            ProcessRunner.Result result = await ProcessRunner.RunAndCheckAsync(
+                "systemctl", Arguments("show", "--property=ActiveState,NRestarts", serviceName), cancellationToken);
+            return ParseState(result.StdOut);
+        }
+
+        public Task<int> ShowLogsAsync(string serviceName, bool follow, CancellationToken cancellationToken = default)
+        {
+            return ProcessRunner.RunAttachedAsync("journalctl", JournalctlArguments(_scope, serviceName, follow), cancellationToken);
+        }
+
+        /// <summary>The service's last 100 journal lines, the same as <c>tail</c> shows on macOS.</summary>
+        internal static string[] JournalctlArguments(UpdaemonScope scope, string serviceName, bool follow)
+        {
+            return [.. scope.SystemdScopeArguments, "--unit", serviceName, "--lines", "100", "--no-pager", .. (follow ? new[] { "--follow" } : Array.Empty<string>())];
+        }
+
+        /// <summary>Reads the <c>KEY=value</c> lines of <c>systemctl show</c>.</summary>
+        internal static ServiceState ParseState(string output)
+        {
+            Dictionary<string, string> properties = output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Split('=', 2))
+                .Where(parts => parts.Length == 2)
+                .ToDictionary(parts => parts[0], parts => parts[1].Trim());
+
+            return new ServiceState(
+                properties.GetValueOrDefault("ActiveState") == "active",
+                int.TryParse(properties.GetValueOrDefault("NRestarts"), out int restarts) ? restarts : 0);
+        }
 
         public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {

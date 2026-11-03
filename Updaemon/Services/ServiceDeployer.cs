@@ -19,6 +19,9 @@ namespace Updaemon.Services
         private readonly IServiceManager _serviceManager;
         private readonly ISecretsManager _secretsManager;
         private readonly IOutputWriter _outputWriter;
+        private readonly HealthCheckWait _healthCheckWait;
+
+        private static readonly TimeSpan StartPollInterval = TimeSpan.FromMilliseconds(250);
 
         public ServiceDeployer(
             UpdaemonScope scope,
@@ -28,7 +31,8 @@ namespace Updaemon.Services
             AppFileWriter appFileWriter,
             IServiceManager serviceManager,
             ISecretsManager secretsManager,
-            IOutputWriter outputWriter)
+            IOutputWriter outputWriter,
+            HealthCheckWait healthCheckWait)
         {
             _scope = scope;
             _symlinkManager = symlinkManager;
@@ -38,6 +42,7 @@ namespace Updaemon.Services
             _serviceManager = serviceManager;
             _secretsManager = secretsManager;
             _outputWriter = outputWriter;
+            _healthCheckWait = healthCheckWait;
         }
 
         public async Task<Version> GetCurrentVersionAsync(string appName, CancellationToken cancellationToken = default)
@@ -50,7 +55,7 @@ namespace Updaemon.Services
             return await TryReadCurrentManifestAsync(appName, cancellationToken) ?? throw NotDeployed(appName);
         }
 
-        public async Task<StagedVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default)
+        public async Task<DeployableVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default)
         {
             string versionDirectory = Path.Combine(_scope.GetAppDirectory(app.Name), version.ToString());
             if (Directory.Exists(versionDirectory))
@@ -73,7 +78,7 @@ namespace Updaemon.Services
                 AppManifest? releaseManifest = await AppManifest.ReadAsync(versionDirectory, cancellationToken);
                 if (releaseManifest != null)
                 {
-                    return new StagedVersion { Version = version, Directory = versionDirectory, Manifest = releaseManifest, ManifestFromRelease = true };
+                    return new DeployableVersion { Version = version, Directory = versionDirectory, Manifest = releaseManifest, ManifestInDirectory = true };
                 }
 
                 if (app.Manifest == null)
@@ -90,7 +95,7 @@ namespace Updaemon.Services
                 }
 
                 AppManifest manifest = app.Manifest with { Executable = Path.GetRelativePath(versionDirectory, executablePath) };
-                return new StagedVersion { Version = version, Directory = versionDirectory, Manifest = manifest, ManifestFromRelease = false };
+                return new DeployableVersion { Version = version, Directory = versionDirectory, Manifest = manifest, ManifestInDirectory = false };
             }
             catch
             {
@@ -99,30 +104,45 @@ namespace Updaemon.Services
             }
         }
 
-        public void Discard(StagedVersion staged)
+        public void Discard(DeployableVersion staged)
         {
             TryDeleteDirectory(staged.Directory);
         }
 
-        public async Task ActivateAsync(InstalledApp app, StagedVersion staged, CancellationToken cancellationToken = default)
+        public IReadOnlyList<Version> GetRetainedVersions(string appName)
         {
-            AppManifest manifest = staged.Manifest;
+            return GetVersionDirectories(appName).Select(entry => entry.Version).OrderBy(version => version).ToList();
+        }
+
+        public async Task<DeployableVersion> OpenRetainedAsync(string appName, Version version, CancellationToken cancellationToken = default)
+        {
+            string directory = Path.Combine(_scope.GetAppDirectory(appName), version.ToString());
+            AppManifest manifest = (Directory.Exists(directory) ? await AppManifest.ReadAsync(directory, cancellationToken) : null)
+                ?? throw new InvalidOperationException(
+                    $"{appName} {version} is not kept. Kept versions: {string.Join(", ", GetRetainedVersions(appName))}.");
+
+            return new DeployableVersion { Version = version, Directory = directory, Manifest = manifest, ManifestInDirectory = true };
+        }
+
+        public async Task ActivateAsync(InstalledApp app, DeployableVersion version, CancellationToken cancellationToken = default)
+        {
+            AppManifest manifest = version.Manifest;
             if (manifest.Command != null)
             {
                 _appFileWriter.EnsureCommandIsFree(manifest.Command, app.Name);
             }
 
-            string executablePath = Path.Combine(staged.Directory, manifest.Executable);
+            string executablePath = Path.Combine(version.Directory, manifest.Executable);
             if (!File.Exists(executablePath))
             {
-                throw new InvalidOperationException($"{app.Name} {staged.Version}: the executable '{manifest.Executable}' named in {AppManifest.FileName} is not in the release.");
+                throw new InvalidOperationException($"{app.Name} {version.Version}: the executable '{manifest.Executable}' named in {AppManifest.FileName} is not in the release.");
             }
 
-            if (!staged.ManifestFromRelease)
+            if (!version.ManifestInDirectory)
             {
                 // Every version directory carries the manifest it runs with: the current one is read
                 // back by 'set', 'unset' and the next update.
-                await manifest.WriteAsync(staged.Directory, cancellationToken);
+                await manifest.WriteAsync(version.Directory, cancellationToken);
             }
 
             await _filePermissionManager.SetExecutablePermissionsAsync(executablePath, cancellationToken);
@@ -131,7 +151,7 @@ namespace Updaemon.Services
             string currentLink = _scope.GetCurrentLinkPath(app.Name);
             string? previousTarget = await _symlinkManager.ReadSymlinkAsync(currentLink, cancellationToken);
             AppManifest? previous = await TryReadCurrentManifestAsync(app.Name, cancellationToken);
-            await _symlinkManager.CreateOrUpdateSymlinkAsync(currentLink, staged.Directory, cancellationToken);
+            await _symlinkManager.CreateOrUpdateSymlinkAsync(currentLink, version.Directory, cancellationToken);
             try
             {
                 await _appFileWriter.WriteAsync(app, manifest, previous, cancellationToken);
@@ -158,15 +178,16 @@ namespace Updaemon.Services
             }
         }
 
-        public async Task StartAsync(string appName, CancellationToken cancellationToken = default)
+        public async Task<bool> StartAsync(string appName, CancellationToken cancellationToken = default)
         {
             await _serviceManager.EnableServiceAsync(appName, cancellationToken);
             await _serviceManager.StartServiceAsync(appName, cancellationToken);
+            return await StaysRunningAsync(appName, cancellationToken);
         }
 
-        public async Task RestartAsync(string appName, CancellationToken cancellationToken = default)
+        public async Task<bool> RestartAsync(string appName, CancellationToken cancellationToken = default)
         {
-            if (await _serviceManager.IsServiceRunningAsync(appName, cancellationToken))
+            if (await IsRunningAsync(appName, cancellationToken))
             {
                 await _serviceManager.RestartServiceAsync(appName, cancellationToken);
             }
@@ -174,11 +195,13 @@ namespace Updaemon.Services
             {
                 await _serviceManager.StartServiceAsync(appName, cancellationToken);
             }
+
+            return await StaysRunningAsync(appName, cancellationToken);
         }
 
         public async Task<bool> RestartIfRunningAsync(string appName, CancellationToken cancellationToken = default)
         {
-            if (!await _serviceManager.IsServiceRunningAsync(appName, cancellationToken))
+            if (!await IsRunningAsync(appName, cancellationToken))
             {
                 return false;
             }
@@ -220,17 +243,7 @@ namespace Updaemon.Services
             string? currentTarget = await _symlinkManager.ReadSymlinkAsync(_scope.GetCurrentLinkPath(appName), cancellationToken);
             string? normalizedCurrentTarget = currentTarget != null ? Path.GetFullPath(currentTarget, appDirectory) : null;
 
-            List<(string Path, Version Version)> versionDirectories = new List<(string, Version)>();
-            foreach (string directory in Directory.GetDirectories(appDirectory))
-            {
-                string dirName = Path.GetFileName(directory);
-                if (Version.TryParse(dirName, out Version? version))
-                {
-                    versionDirectories.Add((Path.GetFullPath(directory), version));
-                }
-            }
-
-            List<string> directoriesToDelete = versionDirectories
+            List<string> directoriesToDelete = GetVersionDirectories(appName)
                 .OrderByDescending(v => v.Version)
                 .Skip(retentionCount)
                 .Where(v => v.Path != normalizedCurrentTarget)
@@ -270,6 +283,36 @@ namespace Updaemon.Services
             }
         }
 
+        private async Task<bool> IsRunningAsync(string appName, CancellationToken cancellationToken)
+        {
+            return (await _serviceManager.GetStateAsync(appName, cancellationToken)).IsActive;
+        }
+
+        /// <summary>
+        /// Right after a (re)start: whether the service runs, then still runs after the wait without the
+        /// service manager having started it again. launchd starts a loaded job a moment after
+        /// <c>bootstrap</c> returns, so the first reading waits, within the same wait, for it to come up.
+        /// </summary>
+        private async Task<bool> StaysRunningAsync(string appName, CancellationToken cancellationToken)
+        {
+            DateTime deadline = DateTime.UtcNow + _healthCheckWait.Value;
+            ServiceState before = await _serviceManager.GetStateAsync(appName, cancellationToken);
+            while (!before.IsActive && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(StartPollInterval, cancellationToken);
+                before = await _serviceManager.GetStateAsync(appName, cancellationToken);
+            }
+
+            if (!before.IsActive)
+            {
+                return false;
+            }
+
+            await Task.Delay(_healthCheckWait.Value, cancellationToken);
+            ServiceState after = await _serviceManager.GetStateAsync(appName, cancellationToken);
+            return after.IsActive && after.Starts == before.Starts;
+        }
+
         private async Task<Version?> TryGetCurrentVersionAsync(string appName, CancellationToken cancellationToken)
         {
             string? target = await _symlinkManager.ReadSymlinkAsync(_scope.GetCurrentLinkPath(appName), cancellationToken);
@@ -285,6 +328,24 @@ namespace Updaemon.Services
             }
 
             return await AppManifest.ReadAsync(currentLink, cancellationToken);
+        }
+
+        /// <summary>The app's version directories (named by version) with their full paths.</summary>
+        private IEnumerable<(string Path, Version Version)> GetVersionDirectories(string appName)
+        {
+            string appDirectory = _scope.GetAppDirectory(appName);
+            if (!Directory.Exists(appDirectory))
+            {
+                yield break;
+            }
+
+            foreach (string directory in Directory.GetDirectories(appDirectory))
+            {
+                if (Version.TryParse(Path.GetFileName(directory), out Version? version))
+                {
+                    yield return (Path.GetFullPath(directory), version);
+                }
+            }
         }
 
         private static InvalidOperationException NotDeployed(string appName) =>

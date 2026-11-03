@@ -1,5 +1,7 @@
+using System.Text.RegularExpressions;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
@@ -9,7 +11,7 @@ namespace Updaemon.Services
     /// domain otherwise. launchd reads a plist only when it loads the job, so starting and
     /// restarting always reload it: that is how changed settings and arguments take effect.
     /// </summary>
-    public class MacServiceManager : IServiceManager
+    public partial class MacServiceManager : IServiceManager
     {
         // launchctl print emits a multi-line block; "state = running" is the contract for an alive job.
         private const string StateRunningMarker = "state = running";
@@ -41,11 +43,40 @@ namespace Updaemon.Services
         public Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
             => Launchd.UnloadAsync(_scope, Label(serviceName), cancellationToken);
 
-        public async Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default)
+        public async Task<ServiceState> GetStateAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             ProcessRunner.Result result = await ProcessRunner.RunAsync("launchctl", new[] { "print", Launchd.Target(_scope, Label(serviceName)) }, cancellationToken);
-            return result.Success && result.StdOut.Contains(StateRunningMarker, StringComparison.Ordinal);
+            return result.Success ? ParseState(result.StdOut) : new ServiceState(false, 0);
         }
+
+        public Task<int> ShowLogsAsync(string serviceName, bool follow, CancellationToken cancellationToken = default)
+        {
+            string[] files = new[] { _scope.GetOutputLogPath(serviceName), _scope.GetErrorLogPath(serviceName) }.Where(File.Exists).ToArray();
+            if (files.Length == 0)
+            {
+                _outputWriter.WriteLine($"{serviceName} has not written any log yet.");
+                return Task.FromResult(0);
+            }
+
+            return ProcessRunner.RunAttachedAsync("tail", TailArguments(files, follow), cancellationToken);
+        }
+
+        internal static string[] TailArguments(string[] files, bool follow)
+        {
+            return [.. (follow ? new[] { "-f" } : Array.Empty<string>()), "-n", "100", .. files];
+        }
+
+        /// <summary>Reads <c>launchctl print</c>: "state = running" and the "runs = N" launch count.</summary>
+        internal static ServiceState ParseState(string output)
+        {
+            Match runs = RunsRegex().Match(output);
+            return new ServiceState(
+                output.Contains(StateRunningMarker, StringComparison.Ordinal),
+                runs.Success ? int.Parse(runs.Groups[1].Value) : 0);
+        }
+
+        [GeneratedRegex(@"^\s*runs = (\d+)\s*$", RegexOptions.Multiline)]
+        private static partial Regex RunsRegex();
 
         public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {

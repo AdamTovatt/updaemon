@@ -16,18 +16,10 @@ namespace Updaemon.Services
 
         public static async Task<Result> RunAsync(string command, string[] arguments, CancellationToken cancellationToken)
         {
-            ProcessStartInfo startInfo = new ProcessStartInfo
-            {
-                FileName = command,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            foreach (string arg in arguments)
-            {
-                startInfo.ArgumentList.Add(arg);
-            }
+            ProcessStartInfo startInfo = StartInfo(command, arguments);
+            startInfo.RedirectStandardOutput = true;
+            startInfo.RedirectStandardError = true;
+            startInfo.CreateNoWindow = true;
 
             using (Process process = Process.Start(startInfo)!)
             {
@@ -40,6 +32,32 @@ namespace Updaemon.Services
                 string stdErr = await stdErrTask;
 
                 return new Result(process.ExitCode, stdOut, stdErr);
+            }
+        }
+
+        /// <summary>
+        /// Runs a command on updaemon's own terminal (stdin, stdout and stderr inherited) and returns
+        /// its exit code. Cancellation (Ctrl+C, which the terminal also sends the command) ends it
+        /// normally: that is how a followed log is stopped.
+        /// </summary>
+        public static async Task<int> RunAttachedAsync(string command, string[] arguments, CancellationToken cancellationToken)
+        {
+            using (Process process = Process.Start(StartInfo(command, arguments))!)
+            {
+                try
+                {
+                    await process.WaitForExitAsync(cancellationToken);
+                    return process.ExitCode;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill();
+                    }
+
+                    return 0;
+                }
             }
         }
 
@@ -57,6 +75,22 @@ namespace Updaemon.Services
                 throw new InvalidOperationException($"{command} {args} failed (exit {result.ExitCode}): {detail.Trim()}");
             }
             return result;
+        }
+
+        /// <summary>Runs <paramref name="command"/> directly, each argument passed as is (no shell).</summary>
+        private static ProcessStartInfo StartInfo(string command, string[] arguments)
+        {
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = command,
+                UseShellExecute = false,
+            };
+            foreach (string arg in arguments)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+
+            return startInfo;
         }
     }
 }

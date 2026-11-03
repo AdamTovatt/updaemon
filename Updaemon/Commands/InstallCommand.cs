@@ -1,6 +1,7 @@
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
+using Updaemon.Services;
 
 namespace Updaemon.Commands
 {
@@ -23,6 +24,7 @@ namespace Updaemon.Commands
         private readonly IPrompter _prompter;
         private readonly IOutputWriter _outputWriter;
         private readonly UpdaemonScope _scope;
+        private readonly PluginProvider _pluginProvider;
 
         public InstallCommand(
             IConfigManager configManager,
@@ -34,7 +36,8 @@ namespace Updaemon.Commands
             IFilePermissionManager filePermissionManager,
             IPrompter prompter,
             IOutputWriter outputWriter,
-            UpdaemonScope scope)
+            UpdaemonScope scope,
+            PluginProvider pluginProvider)
         {
             _configManager = configManager;
             _settingsStore = settingsStore;
@@ -46,6 +49,7 @@ namespace Updaemon.Commands
             _prompter = prompter;
             _outputWriter = outputWriter;
             _scope = scope;
+            _pluginProvider = pluginProvider;
         }
 
         public string Name => "install";
@@ -70,21 +74,20 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail(refusal);
             }
 
-            InstalledPluginInfo? plugin = await _configManager.GetPluginAsync(request.PluginAlias, cancellationToken);
-            if (plugin == null)
-            {
-                return _outputWriter.Fail($"The plugin '{request.PluginAlias}' is not installed. Install it with 'updaemon dist-install {request.PluginAlias}'.");
-            }
-
             InstalledApp app = request.CreateApp();
-            StagedVersion? staged;
+            DeployableVersion? staged;
             try
             {
+                InstalledPluginInfo plugin = await _pluginProvider.GetOrInstallAsync(app.Plugin, cancellationToken);
                 staged = await StageLatestAsync(app, plugin, cancellationToken);
             }
             catch (MissingManifestException ex)
             {
                 return _outputWriter.Fail($"{ex.Message} Pass --command <name> and/or --service to install it without one.");
+            }
+            catch (PluginException ex)
+            {
+                return _outputWriter.Fail($"{app.Name}: {ex.Message}");
             }
 
             if (staged == null)
@@ -92,7 +95,7 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"{app.Source} has no released version.");
             }
 
-            if (staged.ManifestFromRelease && app.Manifest != null)
+            if (staged.ManifestInDirectory && app.Manifest != null)
             {
                 _outputWriter.WriteLine($"The release has its own {AppManifest.FileName}; --command and --service are ignored.");
                 app.Manifest = null;
@@ -236,7 +239,7 @@ namespace Updaemon.Commands
         }
 
         /// <summary>Stages the latest release, or returns null when the remote has none.</summary>
-        private async Task<StagedVersion?> StageLatestAsync(InstalledApp app, InstalledPluginInfo plugin, CancellationToken cancellationToken)
+        private async Task<DeployableVersion?> StageLatestAsync(InstalledApp app, InstalledPluginInfo plugin, CancellationToken cancellationToken)
         {
             await _distributionClient.ConnectAsync(plugin.Path, cancellationToken);
             try
@@ -283,18 +286,16 @@ namespace Updaemon.Commands
         /// Saves the app, activates and starts it. On any failure, Ctrl+C included, removes everything
         /// the install created: a half-installed app could be neither updated nor installed again.
         /// </summary>
-        private async Task<int> CommitAsync(AppValues values, StagedVersion staged, CancellationToken cancellationToken)
+        private async Task<int> CommitAsync(AppValues values, DeployableVersion staged, CancellationToken cancellationToken)
         {
             InstalledApp app = values.App;
             bool dataDirectoryExisted = Directory.Exists(_scope.GetDataDirectory(app.Name));
+            bool staysRunning;
             try
             {
                 await _settingsStore.SaveAsync(values, cancellationToken);
                 await _serviceDeployer.ActivateAsync(app, staged, cancellationToken);
-                if (staged.Manifest.IsService)
-                {
-                    await _serviceDeployer.StartAsync(app.Name, cancellationToken);
-                }
+                staysRunning = !staged.Manifest.IsService || await _serviceDeployer.StartAsync(app.Name, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -320,6 +321,12 @@ namespace Updaemon.Commands
             if (staged.Manifest.Command != null && !IsOnPath(_scope.BinDirectory))
             {
                 _outputWriter.WriteLine($"Add {_scope.BinDirectory} to your PATH to run '{staged.Manifest.Command}'.");
+            }
+
+            // There is no earlier version to fall back to: the app stays installed, and the log says why.
+            if (!staysRunning)
+            {
+                return _outputWriter.Fail($"{app.Name}: {CommandErrors.NotRunning(app.Name, staged.Version)}");
             }
 
             return 0;

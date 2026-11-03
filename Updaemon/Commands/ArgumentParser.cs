@@ -1,7 +1,7 @@
 namespace Updaemon.Commands
 {
     /// <summary>
-    /// Parses a command's arguments. A <c>--name</c> argument takes the next argument as its value
+    /// Parses a command's arguments. A <c>--name</c> or <c>-x</c> argument takes the next argument as its value
     /// unless it is one of the boolean flags given to the constructor. Everything after a bare
     /// <c>--</c> is taken literally, as <see cref="Rest"/>.
     /// </summary>
@@ -98,6 +98,8 @@ namespace Updaemon.Commands
             return _args.Where(arg => IsFlag(arg) && !knownFlags.Contains(arg)).ToList();
         }
 
-        private static bool IsFlag(string arg) => arg.StartsWith("--", StringComparison.Ordinal);
+        /// <summary>A <c>--name</c> flag, or a one-letter <c>-x</c> one.</summary>
+        private static bool IsFlag(string arg) =>
+            arg.StartsWith("--", StringComparison.Ordinal) || (arg.Length == 2 && arg[0] == '-' && char.IsAsciiLetter(arg[1]));
     }
 }

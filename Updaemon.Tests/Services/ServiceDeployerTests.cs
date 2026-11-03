@@ -32,7 +32,7 @@ namespace Updaemon.Tests.Services
                 Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
                 File.WriteAllText(leftover, "from an interrupted attempt");
 
-                StagedVersion staged = await h.Deployer.StageAsync(App(), new Version(1, 0, 0), h.Client);
+                DeployableVersion staged = await h.Deployer.StageAsync(App(), new Version(1, 0, 0), h.Client);
 
                 Assert.False(File.Exists(leftover));
                 Assert.True(File.Exists(Path.Combine(staged.Directory, "bin", "byteshelf")));
@@ -64,7 +64,7 @@ namespace Updaemon.Tests.Services
                 h.ServiceManager.MethodCalls.Clear();
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
 
-                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+                DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
                 await h.Deployer.ActivateAsync(app, staged);
 
                 Assert.False(File.Exists(h.Scope.GetCommandPath("byteshelf")));
@@ -85,7 +85,7 @@ namespace Updaemon.Tests.Services
                 File.WriteAllText(h.Scope.GetCommandPath("shelf"), "#!/bin/sh\necho mine\n");
                 h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/byteshelf", "command": "shelf" }""");
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
-                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+                DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
 
                 InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged));
 
@@ -103,7 +103,7 @@ namespace Updaemon.Tests.Services
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/other", "1.0.0", """{ "executable": "bin/byteshelf", "command": "byteshelf" }""");
                 InstalledApp other = new InstalledApp { Name = "other", Plugin = "github", Remote = "owner/other" };
-                StagedVersion staged = await h.Deployer.StageAsync(other, new Version(1, 0, 0), h.Client);
+                DeployableVersion staged = await h.Deployer.StageAsync(other, new Version(1, 0, 0), h.Client);
 
                 InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(other, staged));
 
@@ -119,7 +119,7 @@ namespace Updaemon.Tests.Services
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/renamed", "service": {} }""");
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
-                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+                DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
 
                 InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged));
 
@@ -138,7 +138,7 @@ namespace Updaemon.Tests.Services
                 await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" });
                 h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/byteshelf", "command": "byteshelf", "service": {} }""");
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
-                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+                DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
                 // A file where the unit directory should be: writing the new service unit fails.
                 File.WriteAllText(h.Scope.UnitDirectory, "");
 
@@ -161,6 +161,59 @@ namespace Updaemon.Tests.Services
 
                 Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
                 Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task StartAsync_ServiceRestartedMeanwhile_IsUnhealthy()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.ServiceManager.RestartingServices.Add("byteshelf");
+
+                Assert.False(await h.Deployer.StartAsync("byteshelf"));
+            }
+        }
+
+        [Fact]
+        public async Task StartAsync_ServiceKeptRunning_IsHealthy()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                Assert.True(await h.Deployer.StartAsync("byteshelf"));
+            }
+        }
+
+        [Fact]
+        public async Task StartAsync_ServiceStopsDuringTheWait_IsUnhealthy()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.ServiceManager.ScriptedReadings["byteshelf"] = new Queue<bool>(new[] { true, false });
+
+                Assert.False(await h.Deployer.StartAsync("byteshelf"));
+            }
+        }
+
+        [Fact]
+        public async Task StartAsync_ServiceComesUpAMomentAfterStarting_IsHealthy()
+        {
+            using (AppHarness h = new AppHarness(healthCheckWait: TimeSpan.FromMilliseconds(300)))
+            {
+                h.ServiceManager.ScriptedReadings["byteshelf"] = new Queue<bool>(new[] { false, true, true });
+
+                Assert.True(await h.Deployer.StartAsync("byteshelf"));
+            }
+        }
+
+        [Fact]
+        public async Task StartAsync_ServiceNeverComesUp_IsUnhealthy()
+        {
+            using (AppHarness h = new AppHarness(healthCheckWait: TimeSpan.FromMilliseconds(300)))
+            {
+                h.ServiceManager.CrashOnNextStart.Add("byteshelf");
+
+                Assert.False(await h.Deployer.StartAsync("byteshelf"));
             }
         }
 
