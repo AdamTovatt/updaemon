@@ -8,7 +8,8 @@ namespace Updaemon.Services
 {
     /// <summary>
     /// Installs distribution plugins. The new binary is downloaded into the plugins directory,
-    /// smoke-run by reading its service information (which also refuses another plugin
+    /// verified against its release's checksum unless it comes from a plain URL, smoke-run by
+    /// reading its service information (which also refuses another plugin
     /// protocol version), and only then renamed over the installed one, so a failure at any
     /// step leaves the installed plugin untouched.
     /// </summary>
@@ -38,7 +39,7 @@ namespace Updaemon.Services
             PluginDownloadResult download;
             try
             {
-                download = await _pluginDownloader.DownloadAndInspectAsync(downloadUrl, _pluginsDirectory, cancellationToken);
+                download = await _pluginDownloader.DownloadAndInspectAsync(downloadUrl, verify: source.HasPublishedChecksums, _pluginsDirectory, cancellationToken);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound && source is PluginSource.Registry registry)
             {

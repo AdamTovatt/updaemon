@@ -1,3 +1,4 @@
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
@@ -74,7 +75,7 @@ namespace Updaemon.Services
             {
                 return (await _pluginInstaller.InstallAsync(new PluginSource.Registry(name, _updaemonVersion), alias, cancellationToken)).Plugin;
             }
-            catch (Exception ex) when (ex is PluginException or InvalidOperationException or HttpRequestException)
+            catch (Exception ex) when (ex is PluginException or InvalidOperationException or HttpRequestException or ChecksumException)
             {
                 throw new PluginException($"{(replacing ? "updating" : "installing")} the '{alias}' plugin failed: {ex.Message}");
             }

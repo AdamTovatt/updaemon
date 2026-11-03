@@ -244,7 +244,7 @@ namespace Updaemon.Services
             return Version.Parse(versionString);
         }
 
-        public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+        public async Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
         {
             DownloadVersionParameters parameters = new DownloadVersionParameters
             {
@@ -253,10 +253,13 @@ namespace Updaemon.Services
                 RuntimeIdentifier = _runtimeIdentifier,
                 TargetPath = targetPath,
             };
-            await InvokeMethodAsync(
+            string? resultJson = await InvokeMethodAsync(
                 "DownloadVersionAsync",
                 JsonSerializer.Serialize(parameters, CommonJsonContext.Default.DownloadVersionParameters),
                 cancellationToken);
+
+            return (resultJson == null ? null : JsonSerializer.Deserialize(resultJson, CommonJsonContext.Default.DownloadResult))
+                ?? throw new PluginException("the plugin's download reported no result, which its protocol version requires.");
         }
 
         /// <summary>

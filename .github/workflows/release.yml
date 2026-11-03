@@ -64,6 +64,10 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # updaemon, install.sh and the GitHub plugin verify every download against this.
+      - name: Write SHA256SUMS
+        run: cd dist && sha256sum * > SHA256SUMS
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

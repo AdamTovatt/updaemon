@@ -25,6 +25,8 @@ Each project produces one asset **per RID**. Asset filenames must include the RI
 
 Every release carries every project's binary for all three RIDs. Updaemon installs its first-party plugins from its own release (`releases/download/v<version>/<Plugin>-<rid>`), and self-update downloads `Updaemon-<rid>` from the latest release, so a missing build leaves the machines of that RID unable to update or to install the plugin.
 
+Every release also carries `SHA256SUMS`, with a line for each binary. `install.sh`, self-update and registry plugin installs refuse a binary without a matching line, so a release without it cannot be installed or updated to.
+
 ## Projects and their release assets
 
 | Project | Asset name (with RID suffix) |
@@ -122,7 +124,9 @@ git push
 Upload one asset per RID for every project. The asset list should mirror what you produced in Step 3 — if you built `Updaemon` for three RIDs, upload three `Updaemon-<rid>` files, and the same three for each plugin, since that updaemon version installs its plugins from this release.
 
 ```bash
+sha256sum Updaemon-* Updaemon.*-* > SHA256SUMS
 gh release create vX.Y.Z \
+  SHA256SUMS \
   Updaemon-linux-arm64 \
   Updaemon-linux-x64 \
   Updaemon-osx-arm64 \
@@ -145,7 +149,7 @@ gh release create vX.Y.Z \
 
 ## How installs pick up a release
 
-`install.sh` and self-update (the end of `updaemon update`) read the latest version from the `releases/latest` redirect, download `Updaemon-<rid>` from that release, and switch to it only if `updaemon --version` prints exactly the release's version (`1.2.0` for tag `v1.2.0`) within 10 seconds. So the tag must be `v` and three numbers, and match the project's `<Version>`.
+`install.sh` and self-update (the end of `updaemon update`) read the latest version from the `releases/latest` redirect, download `Updaemon-<rid>` from that release, check it against the release's `SHA256SUMS`, and switch to it only if `updaemon --version` prints exactly the release's version (`1.2.0` for tag `v1.2.0`) within 10 seconds. So the tag must be `v` and three numbers, and match the project's `<Version>`.
 
 A registry plugin is reinstalled from the running updaemon's release the first time it is used after updaemon changes version, so each release must carry the plugins built for each RID it carries.
 

@@ -1,3 +1,4 @@
+using System.Formats.Tar;
 using System.IO.Compression;
 using Updaemon.Common.Tests.Helpers;
 using Updaemon.Common.Utilities;
@@ -145,20 +146,150 @@ namespace Updaemon.Common.Tests
             }
         }
 
-        [Fact]
-        public async Task ProcessAsync_CorruptedZipFile_DoesNotThrow()
+        [Theory]
+        [InlineData("app.zip")]
+        [InlineData("app.tar.gz")]
+        public async Task ProcessAsync_CorruptArchive_FailsNamingIt(string archiveName)
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 string targetDirectory = tempHelper.CreateTempDirectory("corrupted");
-                tempHelper.CreateTempFile("corrupted/app.zip", "not a valid zip file");
+                tempHelper.CreateTempFile($"corrupted/{archiveName}", "not a valid archive");
 
-                DownloadPostProcessor processor = new DownloadPostProcessor();
+                InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() => new DownloadPostProcessor().ProcessAsync(targetDirectory));
 
-                await processor.ProcessAsync(targetDirectory);
+                Assert.StartsWith($"{archiveName} could not be extracted: ", exception.Message);
+            }
+        }
 
-                // Should not throw, and the corrupted file should still exist
-                Assert.True(File.Exists(Path.Combine(targetDirectory, "app.zip")));
+        [Fact]
+        public async Task ProcessAsync_TarGzWithSingleDirectory_ExtractsKeepingModesAndUnwraps()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string targetDirectory = tempHelper.CreateTempDirectory("targz");
+                WriteTarGz(Path.Combine(targetDirectory, "app-linux-arm64.tar.gz"), writer =>
+                {
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.Directory, "app-1.0.0/"));
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, "app-1.0.0/app") { Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute, DataStream = new MemoryStream("#!/bin/sh\n"u8.ToArray()) });
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, "app-1.0.0/readme.md") { Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead, DataStream = new MemoryStream("hi"u8.ToArray()) });
+                });
+
+                await new DownloadPostProcessor().ProcessAsync(targetDirectory);
+
+                Assert.Equal(new[] { "app", "readme.md" }, Directory.GetFileSystemEntries(targetDirectory).Select(Path.GetFileName).Order());
+                Assert.True(File.GetUnixFileMode(Path.Combine(targetDirectory, "app")).HasFlag(UnixFileMode.UserExecute));
+                Assert.False(File.GetUnixFileMode(Path.Combine(targetDirectory, "readme.md")).HasFlag(UnixFileMode.UserExecute));
+            }
+        }
+
+        [Fact]
+        public async Task ProcessAsync_SingleDirectoryHoldingAnEntryOfItsOwnName_Unwraps()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string targetDirectory = tempHelper.CreateTempDirectory("same-name");
+                string sourceDirectory = tempHelper.CreateTempDirectory("source");
+                tempHelper.CreateTempFile("source/app/app", "executable content");
+                ZipFile.CreateFromDirectory(sourceDirectory, Path.Combine(targetDirectory, "app.zip"));
+
+                await new DownloadPostProcessor().ProcessAsync(targetDirectory);
+
+                Assert.Equal("executable content", File.ReadAllText(Path.Combine(targetDirectory, "app")));
+                Assert.Single(Directory.GetFileSystemEntries(targetDirectory));
+            }
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ZipEntryOutsideTheTarget_IsRefused()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string targetDirectory = tempHelper.CreateTempDirectory("zip-escape");
+                using (ZipArchive zip = ZipFile.Open(Path.Combine(targetDirectory, "app.zip"), ZipArchiveMode.Create))
+                using (StreamWriter entry = new StreamWriter(zip.CreateEntry("../escaped").Open()))
+                {
+                    entry.Write("outside");
+                }
+
+                await Assert.ThrowsAsync<InvalidOperationException>(() => new DownloadPostProcessor().ProcessAsync(targetDirectory));
+
+                Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(targetDirectory)!, "escaped")));
+            }
+        }
+
+        [Fact]
+        public async Task ProcessAsync_TarEntryOutsideTheTarget_IsRefused()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string targetDirectory = tempHelper.CreateTempDirectory("tar-escape");
+                WriteTarGz(Path.Combine(targetDirectory, "app.tar.gz"), writer =>
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, "../escaped") { DataStream = new MemoryStream("outside"u8.ToArray()) }));
+
+                await Assert.ThrowsAsync<InvalidOperationException>(() => new DownloadPostProcessor().ProcessAsync(targetDirectory));
+
+                Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(targetDirectory)!, "escaped")));
+            }
+        }
+
+        /// <summary>Links named "link" whose target lies outside the extraction directory.</summary>
+        public static TheoryData<TarEntry> EscapingTarLinks => new TheoryData<TarEntry>
+        {
+            new PaxTarEntry(TarEntryType.SymbolicLink, "link") { LinkName = "../outside" },
+            new PaxTarEntry(TarEntryType.SymbolicLink, "link") { LinkName = "/etc/passwd" },
+            new PaxTarEntry(TarEntryType.HardLink, "link") { LinkName = "../outside" },
+        };
+
+        [Theory]
+        [MemberData(nameof(EscapingTarLinks))]
+        public async Task ProcessAsync_TarLinkOutsideTheTarget_IsRefused(TarEntry escaping)
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                // A real file outside, so a link to it could be made if extraction allowed it.
+                tempHelper.CreateTempFile("outside", "secret");
+                string targetDirectory = tempHelper.CreateTempDirectory("tar-escape");
+                WriteTarGz(Path.Combine(targetDirectory, "app.tar.gz"), writer => writer.WriteEntry(escaping));
+
+                await Assert.ThrowsAsync<InvalidOperationException>(() => new DownloadPostProcessor().ProcessAsync(targetDirectory));
+
+                Assert.DoesNotContain("link", Directory.GetFileSystemEntries(targetDirectory).Select(Path.GetFileName));
+            }
+        }
+
+        [Fact]
+        public async Task ProcessAsync_TarGzWithSymlinksInItsSingleDirectory_UnwrapsKeepingTheLinks()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                string targetDirectory = tempHelper.CreateTempDirectory("targz-links");
+                WriteTarGz(Path.Combine(targetDirectory, "app-linux-arm64.tar.gz"), writer =>
+                {
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.Directory, "app/"));
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.Directory, "app/bin/"));
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, "app/bin/tool") { DataStream = new MemoryStream("tool"u8.ToArray()) });
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, "app/current") { LinkName = "bin" });
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, "app/run") { LinkName = "bin/tool" });
+                });
+
+                await new DownloadPostProcessor().ProcessAsync(targetDirectory);
+
+                Assert.Equal(new[] { "bin", "current", "run" }, Directory.GetFileSystemEntries(targetDirectory).Select(Path.GetFileName).Order());
+                Assert.Equal("bin", new DirectoryInfo(Path.Combine(targetDirectory, "current")).LinkTarget);
+                Assert.Equal("bin/tool", new FileInfo(Path.Combine(targetDirectory, "run")).LinkTarget);
+                Assert.Equal("tool", File.ReadAllText(Path.Combine(targetDirectory, "current", "tool")));
+                Assert.Equal("tool", File.ReadAllText(Path.Combine(targetDirectory, "run")));
+            }
+        }
+
+        private static void WriteTarGz(string path, Action<TarWriter> write)
+        {
+            using (FileStream file = File.Create(path))
+            using (GZipStream gzip = new GZipStream(file, CompressionLevel.Fastest))
+            using (TarWriter writer = new TarWriter(gzip, TarEntryFormat.Pax))
+            {
+                write(writer);
             }
         }
 

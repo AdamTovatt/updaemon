@@ -264,7 +264,7 @@ namespace Updaemon.GithubDistributionService.Tests
                 () => service.DownloadVersionAsync("owner/repo", new Version(0, 1, 1), "linux-arm64", "/tmp/test"));
 
             Assert.Equal(
-                "No asset in the release v0.1.1 of owner/repo is named *-linux-arm64.zip or *-linux-arm64, the build for this machine. Its assets:\n" +
+                "No asset in the release v0.1.1 of owner/repo is named *-linux-arm64.zip, *-linux-arm64.tar.gz or *-linux-arm64, the build for this machine. Its assets:\n" +
                 "  MinerUHost-linux-arm64-framework-dependent.zip\n" +
                 "  MinerUHost-linux-arm64-self-contained.zip\n" +
                 "Pick one with the remote owner/repo/<pattern>, where <pattern> is an asset name and * matches any text.",
@@ -319,7 +319,7 @@ namespace Updaemon.GithubDistributionService.Tests
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), "linux-arm64", "/tmp/test"));
 
-            Assert.StartsWith("Several assets in the release v1.2.3 of owner/repo are named *-linux-arm64.zip or *-linux-arm64", exception.Message);
+            Assert.StartsWith("Several assets in the release v1.2.3 of owner/repo are named *-linux-arm64.zip, *-linux-arm64.tar.gz or *-linux-arm64", exception.Message);
             Assert.Contains("\n  app-linux-arm64.zip\n  app-linux-arm64\n", exception.Message);
         }
 

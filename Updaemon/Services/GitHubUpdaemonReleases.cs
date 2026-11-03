@@ -16,11 +16,13 @@ namespace Updaemon.Services
         private const string TagPrefix = "/releases/tag/v";
 
         private readonly HttpClient _httpClient;
+        private readonly IReleaseChecksums _checksums;
         private readonly HostPlatform _platform;
 
-        public GitHubUpdaemonReleases(HttpClient httpClient, HostPlatform platform)
+        public GitHubUpdaemonReleases(HttpClient httpClient, IReleaseChecksums checksums, HostPlatform platform)
         {
             _httpClient = httpClient;
+            _checksums = checksums;
             _platform = platform;
         }
 
@@ -51,6 +53,8 @@ namespace Updaemon.Services
                     await response.Content.CopyToAsync(file, cancellationToken);
                 }
             }
+
+            await _checksums.VerifyAsync(url, destinationPath, cancellationToken);
         }
 
         /// <summary>

@@ -64,10 +64,11 @@ public class MyDistributionService : IDistributionService
         // Return null if service doesn't exist
     }
 
-    public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
+    public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
     {
         // Download the build of the specified version for runtimeIdentifier to targetPath
-        // Extract/copy all necessary files
+        // Verify it against a published checksum if there is one, then extract/copy all necessary files
+        // Return new DownloadResult { Verified = <whether it was checked against a checksum> }
     }
 }
 ```
@@ -151,8 +152,12 @@ Download a specific version to the target directory.
 - `targetPath` - The directory path where files should be downloaded (e.g., `/opt/my-app/1.2.3/`)
 - `cancellationToken` - Cancellation token to cancel the operation.
 
+**Returns:**
+- `DownloadResult` - `Verified` says whether the download was checked against a checksum its source published. Updaemon tells the user when it was not.
+
 **Behavior:**
 - Download all necessary files for the service
+- Verify the download before extracting it when the source publishes a checksum (`Sha256Sums` reads a `SHA256SUMS` file), and throw on a mismatch
 - Extract archives if needed (see `DownloadPostProcessor` utility below)
 - Preserve file permissions (especially for executables)
 - Throw exceptions on failure
@@ -162,13 +167,13 @@ Download a specific version to the target directory.
 
 ### DownloadPostProcessor
 
-A helper utility for automatically extracting and unwrapping downloaded archives. This is useful when your distribution service downloads zip files.
+A helper utility for automatically extracting and unwrapping downloaded archives. This is useful when your distribution service downloads `.zip` or `.tar.gz` files.
 
 **Features:**
-- Automatically detects and extracts `.zip` files
+- Detects and extracts a lone `.zip` or `.tar.gz` file, keeping a tar entry's file mode
 - Unwraps single-directory structures (e.g., if a zip contains only `app-1.0.0/` with files inside, moves files up one level)
 - Deletes the archive file after extraction
-- Gracefully handles errors without failing the download
+- Throws `InvalidOperationException` when the archive cannot be extracted, including when an entry or link would land outside the target directory
 
 **Usage Example:**
 
@@ -180,7 +185,7 @@ public class MyDistributionService : IDistributionService
 {
     private readonly IDownloadPostProcessor _postProcessor = new DownloadPostProcessor();
 
-    public async Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
+    public async Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
     {
         // Download the zip file from your distribution server
         string zipPath = Path.Combine(targetPath, $"{serviceName}-{version}.zip");
@@ -189,20 +194,31 @@ public class MyDistributionService : IDistributionService
         // Automatically extract and unwrap
         await _postProcessor.ProcessAsync(targetPath, cancellationToken);
         
-        // Files are now ready for use
+        // Files are now ready for use; this source publishes no checksums
+        return new DownloadResult { Verified = false };
     }
 }
 ```
 
 **When to Use:**
-- Your distribution source provides `.zip` archives
+- Your distribution source provides `.zip` or `.tar.gz` archives
 - You want automatic extraction and directory unwrapping
 - You need consistent behavior across different archive structures
 
 **When NOT to Use:**
 - You download pre-extracted files directly
 - You need custom extraction logic
-- You use non-zip archive formats (implement your own logic)
+- You use other archive formats (implement your own logic)
+
+### Sha256Sums
+
+Reads a release's `SHA256SUMS` file, in `sha256sum`'s format, and checks a download against it.
+
+- `Sha256Sums.AssetName` - The file's name, `SHA256SUMS`
+- `Sha256Sums.Parse(text)` - Reads the file. Lines in another form are skipped, and a name is matched without its directory, so `sha256sum dist/*` output works
+- `VerifyAsync(filePath, assetName)` - Throws `ChecksumException` when there is no well-formed line for `assetName`, its lines disagree, or the file does not match
+
+Verify before extracting, so a tampered archive is never opened.
 
 ## RPC Protocol
 
@@ -223,6 +239,8 @@ Communication between updaemon and your plugin uses JSON-RPC over named pipes. R
 ```json
 "{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"
 ```
+
+Its result is a `DownloadResult` object: `"{\"verified\":true}"`.
 
 ### Response Format
 

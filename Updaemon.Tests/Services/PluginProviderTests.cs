@@ -1,3 +1,4 @@
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
@@ -39,17 +40,24 @@ namespace Updaemon.Tests.Services
             }
         }
 
-        [Fact]
-        public async Task GetOrInstallAsync_ReinstallFails_FailsNamingWhyAndKeepsTheInstalledOne()
+        public static TheoryData<Exception> ReinstallFailures => new TheoryData<Exception>
+        {
+            new HttpRequestException("offline"),
+            new ChecksumException("Updaemon.GithubDistributionService-linux-arm64 does not match its SHA-256 in SHA256SUMS."),
+        };
+
+        [Theory]
+        [MemberData(nameof(ReinstallFailures))]
+        public async Task GetOrInstallAsync_ReinstallFails_FailsNamingWhyAndKeepsTheInstalledOne(Exception failure)
         {
             using (AppHarness h = new AppHarness())
             {
                 await h.Config.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/old/plugin", OlderRelease));
-                h.PluginDownloader.ExceptionToThrow = new HttpRequestException("offline");
+                h.PluginDownloader.ExceptionToThrow = failure;
 
                 PluginException ex = await Assert.ThrowsAsync<PluginException>(() => h.Plugins.GetOrInstallAsync("github"));
 
-                Assert.Equal("updating the 'github' plugin failed: offline", ex.Message);
+                Assert.Equal($"updating the 'github' plugin failed: {failure.Message}", ex.Message);
                 InstalledPluginInfo kept = (await h.Config.GetPluginAsync("github"))!;
                 Assert.Equal("/old/plugin", kept.Path);
                 Assert.Equal(new PluginSource.Registry("github", OlderRelease), kept.Source);

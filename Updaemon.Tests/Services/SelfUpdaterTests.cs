@@ -1,3 +1,4 @@
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.IO;
 using Updaemon.Models;
@@ -149,6 +150,20 @@ namespace Updaemon.Tests.Services
                 Assert.False(await h.SelfUpdater().RunAsync());
 
                 AssertKeptTheOldOne(h, "the download failed: 404 (Not Found)");
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_BuildFailsItsChecksum_KeepsTheOldOne()
+        {
+            using (AppHarness h = ScopeRunningItsOwnUpdaemon())
+            {
+                h.Releases.Publish(Next);
+                h.Releases.DownloadFailure = new ChecksumException("Updaemon-linux-arm64 does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with.");
+
+                Assert.False(await h.SelfUpdater().RunAsync());
+
+                AssertKeptTheOldOne(h, "Updaemon-linux-arm64 does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with");
             }
         }
 

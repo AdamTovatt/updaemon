@@ -58,7 +58,10 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult(LatestVersions.GetValueOrDefault(serviceName));
         }
 
-        public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+        /// <summary>Whether downloads report they were verified against a checksum.</summary>
+        public bool DownloadsVerified { get; set; } = true;
+
+        public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(DownloadVersionAsync)}:{serviceName}:{version}:{targetPath}");
             Downloads.Add((serviceName, version, targetPath));
@@ -67,7 +70,7 @@ namespace Updaemon.Tests.Mocks
                 writeRelease(targetPath);
             }
 
-            return Task.CompletedTask;
+            return Task.FromResult(new DownloadResult { Verified = DownloadsVerified });
         }
 
         /// <summary>Writes a release's files into the download directory, by "remote:version".</summary>

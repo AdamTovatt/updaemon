@@ -10,23 +10,26 @@ namespace Updaemon.Services
     public class PluginDownloader : IPluginDownloader
     {
         private readonly HttpClient _httpClient;
+        private readonly IReleaseChecksums _checksums;
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IFilePermissionManager _filePermissionManager;
         private readonly IOutputWriter _outputWriter;
 
         public PluginDownloader(
             HttpClient httpClient,
+            IReleaseChecksums checksums,
             IDistributionServiceClient distributionClient,
             IFilePermissionManager filePermissionManager,
             IOutputWriter outputWriter)
         {
             _httpClient = httpClient;
+            _checksums = checksums;
             _distributionClient = distributionClient;
             _filePermissionManager = filePermissionManager;
             _outputWriter = outputWriter;
         }
 
-        public async Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, string targetDirectory, CancellationToken cancellationToken = default)
+        public async Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, bool verify, string targetDirectory, CancellationToken cancellationToken = default)
         {
             byte[] pluginData = await _httpClient.GetByteArrayAsync(downloadUrl, cancellationToken);
             _outputWriter.WriteLine($"Downloaded {pluginData.Length} bytes");
@@ -37,6 +40,12 @@ namespace Updaemon.Services
             try
             {
                 await File.WriteAllBytesAsync(tempPath, pluginData, cancellationToken);
+
+                // Before it is made executable and run to read its service information.
+                if (verify)
+                {
+                    await _checksums.VerifyAsync(downloadUrl, tempPath, cancellationToken);
+                }
 
                 await _filePermissionManager.SetExecutablePermissionsAsync(tempPath, cancellationToken);
 

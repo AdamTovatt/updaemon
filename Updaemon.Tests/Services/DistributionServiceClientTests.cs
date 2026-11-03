@@ -42,6 +42,58 @@ namespace Updaemon.Tests.Services
             }
         }
 
+        [Theory]
+        [InlineData("owner/repo", true)]
+        [InlineData("unverified", false)]
+        public async Task DownloadVersionAsync_ReturnsWhetherThePluginVerifiedTheDownload(string remote, bool expected)
+        {
+            string pluginPath = TestPluginPathResolver.Resolve();
+            string targetPath = Path.Combine(Path.GetTempPath(), $"updaemon_test_{Guid.NewGuid():N}");
+
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
+            try
+            {
+                await client.ConnectAsync(pluginPath);
+                DownloadResult result = await client.DownloadVersionAsync(remote, new Version(1, 0, 0), targetPath);
+
+                Assert.Equal(expected, result.Verified);
+            }
+            finally
+            {
+                await client.DisposeAsync();
+                if (Directory.Exists(targetPath))
+                {
+                    Directory.Delete(targetPath, recursive: true);
+                }
+            }
+        }
+
+        [Fact]
+        public async Task DownloadVersionAsync_PluginReportsNoResult_Fails()
+        {
+            string pluginPath = TestPluginPathResolver.Resolve();
+            string targetPath = Path.Combine(Path.GetTempPath(), $"updaemon_test_{Guid.NewGuid():N}");
+
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
+            try
+            {
+                await client.ConnectAsync(pluginPath);
+
+                PluginException exception = await Assert.ThrowsAsync<PluginException>(
+                    () => client.DownloadVersionAsync("no-result", new Version(1, 0, 0), targetPath));
+
+                Assert.Equal("the plugin's download reported no result, which its protocol version requires.", exception.Message);
+            }
+            finally
+            {
+                await client.DisposeAsync();
+                if (Directory.Exists(targetPath))
+                {
+                    Directory.Delete(targetPath, recursive: true);
+                }
+            }
+        }
+
         [Fact]
         public async Task PluginError_ReachesTheCallerAsThePluginsMessageAlone()
         {

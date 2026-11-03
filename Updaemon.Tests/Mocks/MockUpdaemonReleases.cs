@@ -18,8 +18,8 @@ namespace Updaemon.Tests.Mocks
         /// <summary>Thrown when reading the latest release, as when GitHub cannot be reached.</summary>
         public HttpRequestException? LatestFailure { get; set; }
 
-        /// <summary>Thrown when downloading, as when the release has no build for this machine.</summary>
-        public HttpRequestException? DownloadFailure { get; set; }
+        /// <summary>Thrown when downloading, as when the release has no build for this machine or it fails its checksum.</summary>
+        public Exception? DownloadFailure { get; set; }
 
         /// <summary>Publishes <paramref name="version"/> as the latest release; its build prints <paramref name="printedVersion"/>, by default its own.</summary>
         public void Publish(UpdaemonVersion version, string? printedVersion = null, int exitCode = 0)

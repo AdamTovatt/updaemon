@@ -22,6 +22,10 @@ namespace Updaemon.Models
         [JsonIgnore]
         public bool FollowsUpdaemon => this is Registry;
 
+        /// <summary>Whether its download is checked against its release's SHA256SUMS; a plain URL has none.</summary>
+        [JsonIgnore]
+        public bool HasPublishedChecksums => this is not Url;
+
         /// <summary>
         /// Whether this is a registry plugin built for another updaemon than <paramref name="running"/>.
         /// Such a plugin is not run: it is reinstalled from the running updaemon's release first (see

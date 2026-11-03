@@ -58,13 +58,19 @@ namespace Updaemon.TestPlugin
 
         /// <summary>
         /// Writes one empty file named after the runtime identifier it was given, so tests can
-        /// see which identifier crossed the pipe.
+        /// see which identifier crossed the pipe. The remote "unverified" reports an unverified
+        /// download and "no-result" reports none, so tests can see how the result crosses it.
         /// </summary>
-        public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
+        public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
         {
             Directory.CreateDirectory(targetPath);
             File.WriteAllBytes(Path.Combine(targetPath, runtimeIdentifier), Array.Empty<byte>());
-            return Task.CompletedTask;
+            return Task.FromResult(serviceName switch
+            {
+                "unverified" => new DownloadResult { Verified = false },
+                "no-result" => null!,
+                _ => new DownloadResult { Verified = true },
+            });
         }
     }
 }

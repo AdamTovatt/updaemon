@@ -1,4 +1,7 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
@@ -33,8 +36,17 @@ namespace Updaemon.Tests.Services
             }
         }
 
-        private static GitHubUpdaemonReleases Releasing(FakeGitHub github) =>
-            new GitHubUpdaemonReleases(new HttpClient(github), new HostPlatform(false, "linux-arm64"));
+        private static GitHubUpdaemonReleases Releasing(FakeGitHub github)
+        {
+            HttpClient client = new HttpClient(github);
+            return new GitHubUpdaemonReleases(client, new ReleaseChecksums(client), new HostPlatform(false, "linux-arm64"));
+        }
+
+        private const string Build = $"{Releases}/download/v1.2.0/Updaemon-linux-arm64";
+
+        private const string Sums = $"{Releases}/download/v1.2.0/SHA256SUMS";
+
+        private static string Sha256(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
         [Theory]
         [InlineData("https://github.com/AdamTovatt/updaemon/releases/tag/v1.2.0", "1.2.0")]
@@ -59,12 +71,40 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper temp = new TempFileHelper())
             {
                 FakeGitHub github = new FakeGitHub();
-                github.Assets[$"{Releases}/download/v1.2.0/Updaemon-linux-arm64"] = "binary";
+                github.Assets[Build] = "binary";
+                github.Assets[Sums] = $"{Sha256("other")}  Updaemon-osx-arm64\n{Sha256("binary")}  Updaemon-linux-arm64\n";
                 string destination = temp.GetFullPath("updaemon");
 
                 await Releasing(github).DownloadAsync(UpdaemonVersion.Of(1, 2, 0), destination);
 
                 Assert.Equal("binary", File.ReadAllText(destination));
+            }
+        }
+
+        /// <summary>The release's SHA256SUMS (null: it has none) and why the build is refused.</summary>
+        public static TheoryData<string?, string> UnverifiableBuilds => new TheoryData<string?, string>
+        {
+            { $"{Sha256("tampered")}  Updaemon-linux-arm64\n", "Updaemon-linux-arm64 does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with." },
+            { null, "Updaemon-linux-arm64 cannot be verified: its release has no SHA256SUMS." },
+            { $"{Sha256("binary")}  Updaemon-osx-arm64\n", "SHA256SUMS has no '<sha-256>  Updaemon-linux-arm64' line, so Updaemon-linux-arm64 cannot be verified." },
+        };
+
+        [Theory]
+        [MemberData(nameof(UnverifiableBuilds))]
+        public async Task DownloadAsync_BuildThatCannotBeVerified_IsRefused(string? sums, string expected)
+        {
+            using (TempFileHelper temp = new TempFileHelper())
+            {
+                FakeGitHub github = new FakeGitHub();
+                github.Assets[Build] = "binary";
+                if (sums != null)
+                {
+                    github.Assets[Sums] = sums;
+                }
+
+                ChecksumException exception = await Assert.ThrowsAsync<ChecksumException>(() => Releasing(github).DownloadAsync(UpdaemonVersion.Of(1, 2, 0), temp.GetFullPath("updaemon")));
+
+                Assert.Equal(expected, exception.Message);
             }
         }
 

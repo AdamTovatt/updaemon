@@ -12,7 +12,8 @@ This plugin enables Updaemon to download and manage applications distributed via
 - **Automatic Version Detection** - Parses version information from subtenant names (supports `v1.2.3`, `1.2.3`, and other formats)
 - **Asset Pattern Matching** - Use wildcards to select specific files from version folders with multiple files
 - **Secure Authentication** - API key authentication for accessing private ByteShelf instances
-- **Automatic Extraction** - Automatically extracts and unwraps `.zip` archives
+- **Automatic Extraction** - Extracts and unwraps `.zip` and `.tar.gz` archives; an archive that cannot be extracted fails the download
+- **Not Verified** - ByteShelf publishes no checksums, so `install` and `update` say each download was not verified
 - **AOT Compiled** - Fast startup with no runtime dependencies
 
 ## ByteShelf Structure Requirements
@@ -135,9 +136,10 @@ This plugin implements the `IDistributionService` interface from **Updaemon.Comm
 ```csharp
 public interface IDistributionService
 {
+    DistributionServiceInformation GetServiceInformation();
     Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default);
     Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default);
-    Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default);
+    Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -145,7 +147,7 @@ public interface IDistributionService
 - `ByteShelfDistributionService` - Main service implementation
 - `ByteShelfApiClient` - ByteShelf API communication layer using HttpShelfFileProvider
 - `VersionParser` - Extracts versions from subtenant names (shared from Updaemon.Common)
-- `DownloadPostProcessor` - Handles zip extraction and unwrapping (shared from Updaemon.Common)
+- `DownloadPostProcessor` - Extracts a `.zip` or `.tar.gz` and unwraps a single top-level directory (shared from Updaemon.Common)
 
 For more details on creating distribution plugins, see [Updaemon.Common/README.md](../Updaemon.Common/README.md).
 

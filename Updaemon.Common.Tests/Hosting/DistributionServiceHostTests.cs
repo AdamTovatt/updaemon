@@ -226,6 +226,7 @@ namespace Updaemon.Common.Tests.Hosting
                 Assert.NotNull(response);
                 Assert.Equal("test-4", response.Id);
                 Assert.True(response.Success);
+                Assert.True(JsonSerializer.Deserialize(response.Result!, CommonJsonContext.Default.DownloadResult)!.Verified);
                 Assert.Equal("TestService", service.LastDownloadServiceName);
                 Assert.Equal(new Version(2, 0, 1), service.LastDownloadVersion);
                 Assert.Equal("linux-arm64", service.LastDownloadRuntimeIdentifier);
@@ -388,7 +389,7 @@ namespace Updaemon.Common.Tests.Hosting
                 return Task.FromResult(LatestVersion);
             }
 
-            public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
+            public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
             {
                 if (ShouldThrowException)
                 {
@@ -399,7 +400,7 @@ namespace Updaemon.Common.Tests.Hosting
                 LastDownloadVersion = version;
                 LastDownloadRuntimeIdentifier = runtimeIdentifier;
                 LastDownloadTargetPath = targetPath;
-                return Task.CompletedTask;
+                return Task.FromResult(new DownloadResult { Verified = true });
             }
         }
     }

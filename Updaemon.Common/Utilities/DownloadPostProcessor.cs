@@ -1,12 +1,30 @@
+using System.Formats.Tar;
 using System.IO.Compression;
 
 namespace Updaemon.Common.Utilities
 {
     /// <summary>
-    /// Post-processes downloaded files by extracting archives and unwrapping directory structures.
+    /// Extracts a downloaded archive (one of <see cref="ArchiveEndings"/>) in place, then unwraps a single top-level
+    /// directory. Any other download is left as it is.
     /// </summary>
     public class DownloadPostProcessor : IDownloadPostProcessor
     {
+        private delegate Task Extractor(string archive, string targetDirectory, CancellationToken cancellationToken);
+
+        // Both refuse an entry whose path, or link target, leads outside the target directory.
+        private static readonly (string Ending, Extractor Extract)[] Archives =
+        [
+            (".zip", ExtractZipAsync),
+            (".tar.gz", ExtractTarGzAsync),
+        ];
+
+        /// <summary>The file name endings of the archives that get extracted.</summary>
+        public static IReadOnlyList<string> ArchiveEndings { get; } = Archives.Select(archive => archive.Ending).ToArray();
+
+        /// <exception cref="InvalidOperationException">
+        /// The archive could not be extracted: it is corrupt, or an entry would land outside the
+        /// target directory.
+        /// </exception>
         public async Task ProcessAsync(string targetDirectory, CancellationToken cancellationToken = default)
         {
             if (!Directory.Exists(targetDirectory))
@@ -14,89 +32,77 @@ namespace Updaemon.Common.Utilities
                 return;
             }
 
-            // Check if there's only a single file in the directory
             string[] files = Directory.GetFiles(targetDirectory);
-            string[] directories = Directory.GetDirectories(targetDirectory);
-
-            if (files.Length == 1 && directories.Length == 0)
+            if (files.Length != 1 || Directory.GetDirectories(targetDirectory).Length != 0)
             {
-                string filePath = files[0];
-                string extension = Path.GetExtension(filePath).ToLowerInvariant();
-
-                // Check if it's a zip file
-                if (extension == ".zip")
-                {
-                    await ExtractAndDeleteZipAsync(filePath, targetDirectory, cancellationToken);
-                }
+                return;
             }
-        }
 
-        private async Task ExtractAndDeleteZipAsync(string zipFilePath, string targetDirectory, CancellationToken cancellationToken)
-        {
+            string archive = files[0];
+            Extractor? extract = ExtractorFor(archive);
+            if (extract == null)
+            {
+                return;
+            }
+
             try
             {
-                // Extract the zip file
-                await Task.Run(() => ZipFile.ExtractToDirectory(zipFilePath, targetDirectory), cancellationToken);
-
-                // Delete the zip file
-                File.Delete(zipFilePath);
-
-                // After extraction, check if we should unwrap a single directory
-                await UnwrapSingleDirectoryAsync(targetDirectory, cancellationToken);
+                await extract(archive, targetDirectory, cancellationToken);
+                File.Delete(archive);
+                UnwrapSingleDirectory(targetDirectory);
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Gracefully handle any errors (corrupted zip, permission issues, etc.)
-                // Don't fail the update process
+                throw new InvalidOperationException($"{Path.GetFileName(archive)} could not be extracted: {ex.Message}", ex);
             }
         }
 
-        private async Task UnwrapSingleDirectoryAsync(string targetDirectory, CancellationToken cancellationToken)
+        private static Extractor? ExtractorFor(string path)
         {
-            try
-            {
-                string[] files = Directory.GetFiles(targetDirectory);
-                string[] directories = Directory.GetDirectories(targetDirectory);
+            string name = Path.GetFileName(path);
+            return Archives.FirstOrDefault(archive => name.EndsWith(archive.Ending, StringComparison.OrdinalIgnoreCase)).Extract;
+        }
 
-                // Only unwrap if there's a single directory and no files at the top level
-                if (files.Length == 0 && directories.Length == 1)
-                {
-                    string singleDirectory = directories[0];
-                    string[] nestedFiles = Directory.GetFiles(singleDirectory, "*", SearchOption.AllDirectories);
+        private static Task ExtractZipAsync(string archive, string targetDirectory, CancellationToken cancellationToken)
+        {
+            return Task.Run(() => ZipFile.ExtractToDirectory(archive, targetDirectory), cancellationToken);
+        }
 
-                    // Only unwrap if the directory actually contains files
-                    if (nestedFiles.Length > 0)
-                    {
-                        await Task.Run(() => UnwrapDirectory(singleDirectory, targetDirectory), cancellationToken);
-                    }
-                }
-            }
-            catch
+        /// <summary>Extracts with each entry's file mode, so executables stay executable.</summary>
+        private static async Task ExtractTarGzAsync(string archive, string targetDirectory, CancellationToken cancellationToken)
+        {
+            await using (FileStream file = File.OpenRead(archive))
+            await using (GZipStream gzip = new GZipStream(file, CompressionMode.Decompress))
             {
-                // Gracefully handle any errors
+                await TarFile.ExtractToDirectoryAsync(gzip, targetDirectory, overwriteFiles: false, cancellationToken);
             }
         }
 
-        private void UnwrapDirectory(string sourceDirectory, string targetDirectory)
+        /// <summary>Moves the contents of a lone top-level directory up into <paramref name="targetDirectory"/>.</summary>
+        private static void UnwrapSingleDirectory(string targetDirectory)
         {
-            // Move all contents from the nested directory up one level
-            foreach (string filePath in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            if (Directory.GetFiles(targetDirectory).Length != 0 || Directory.GetDirectories(targetDirectory) is not [string lone])
             {
-                string relativePath = Path.GetRelativePath(sourceDirectory, filePath);
-                string destinationPath = Path.Combine(targetDirectory, relativePath);
-
-                string? destinationDirectoryPath = Path.GetDirectoryName(destinationPath);
-                if (destinationDirectoryPath != null)
-                {
-                    Directory.CreateDirectory(destinationDirectoryPath);
-                }
-
-                File.Move(filePath, destinationPath);
+                return;
             }
 
-            // Delete the now-empty nested directory
-            Directory.Delete(sourceDirectory, recursive: true);
+            // Renamed first, so an entry with the directory's own name (app/app) has room.
+            string single = Path.Combine(targetDirectory, $".unwrap-{Guid.NewGuid():N}");
+            Directory.Move(lone, single);
+            foreach (string entry in Directory.GetFileSystemEntries(single))
+            {
+                string destination = Path.Combine(targetDirectory, Path.GetFileName(entry));
+                if (Directory.Exists(entry) && new DirectoryInfo(entry).LinkTarget == null)
+                {
+                    Directory.Move(entry, destination);
+                }
+                else
+                {
+                    File.Move(entry, destination);
+                }
+            }
+
+            Directory.Delete(single);
         }
     }
 }
-

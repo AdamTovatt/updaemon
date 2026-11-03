@@ -84,6 +84,29 @@ if ! curl -fsSL -o "$download" "$asset"; then
   echo "No updaemon $VERSION build for $RID at $asset" >&2
   exit 1
 fi
+
+# Install only a build that matches its line in the release's SHA256SUMS.
+if ! sums=$(curl -fsSL "$REPO/releases/download/v$VERSION/SHA256SUMS"); then
+  discard
+  echo "updaemon $VERSION was not installed: its release has no SHA256SUMS to verify it against." >&2
+  exit 1
+fi
+# release.yml writes it with plain `sha256sum *`: lowercase hashes, bare names, no '*'.
+expected=$(awk -v name="Updaemon-$RID" '$2 == name { print $1; exit }' <<<"$sums")
+if [ -z "$expected" ]; then
+  discard
+  echo "updaemon $VERSION was not installed: SHA256SUMS has no line for Updaemon-$RID." >&2
+  exit 1
+fi
+case "$RID" in
+  osx-*) actual=$(shasum -a 256 "$download" | cut -d' ' -f1) ;;
+  *)     actual=$(sha256sum "$download" | cut -d' ' -f1) ;;
+esac
+if [ "$actual" != "$expected" ]; then
+  discard
+  echo "updaemon $VERSION was not installed: Updaemon-$RID does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with." >&2
+  exit 1
+fi
 chmod 755 "$download"
 
 # Switch only to a build that runs.

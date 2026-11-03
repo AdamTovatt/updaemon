@@ -29,6 +29,24 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        [Theory]
+        [InlineData(false, "1.0.0")]
+        [InlineData(true, "1.1.0")]
+        public async Task InstallAndUpdate_DownloadWithoutAChecksum_SayItWasNotVerified(bool installVerified, string unverifiedVersion)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.Client.DownloadsVerified = installVerified;
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+                h.Client.DownloadsVerified = !installVerified;
+                await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                string[] notVerified = h.Output.Messages.Where(message => message.StartsWith("Not verified: ", StringComparison.Ordinal)).ToArray();
+                Assert.Equal(new[] { $"Not verified: byteshelf {unverifiedVersion} came without a checksum to check it against." }, notVerified);
+            }
+        }
+
         [Fact]
         public async Task Update_NewVersionDoesNotStayRunning_RunsThePreviousAgainAndSkipsTheNew()
         {

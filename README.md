@@ -145,6 +145,8 @@ Downloads the latest release, reads its `updaemon.json`, asks for each required 
 
 A service must keep running for 10 seconds after it starts. If it does not, the app stays installed and `install` fails, pointing to `updaemon logs <app>`.
 
+A release that publishes a `SHA256SUMS` must match it, or nothing is installed. A download its plugin could not check against a published checksum is still installed, and `install` says it was not verified (see [Publishing with Updaemon](PublishingWithUpdaemon.md) for `SHA256SUMS`).
+
 ```bash
 sudo updaemon install byteshelf --from github:owner/byteshelf --set BYTESHELF_URL=https://shelf.example
 updaemon install mytool --from github:me/mytool --command mytool
@@ -156,7 +158,7 @@ updaemon install mytool --from github:me/mytool --command mytool
 updaemon update [app]
 ```
 
-Installs each app's latest release. The new release's `updaemon.json` is read again, so a release can add settings or change its arguments. If it needs a setting the app has no value for, the current version keeps running and the message names the `updaemon set` command to run.
+Installs each app's latest release, checked against its `SHA256SUMS` as `install` does. The new release's `updaemon.json` is read again, so a release can add settings or change its arguments. If it needs a setting the app has no value for, the current version keeps running and the message names the `updaemon set` command to run.
 
 A restarted service must keep running for 10 seconds. If it does not, the previous version runs again, `update` fails pointing to `updaemon logs <app>`, and the new version is skipped: later updates pass over it until a newer release appears. `updaemon status` lists skipped versions.
 
@@ -237,7 +239,7 @@ Runs `updaemon update` every `interval` (`30s`, `10m`, `1h`): a systemd timer on
 updaemon self-update [on|off]
 ```
 
-When on, the default, `updaemon update` ends by updating updaemon to its latest release. The new version is downloaded into its own directory, beside the one running, and must run (`updaemon --version`) before the `updaemon` command is switched to it in one step. If anything fails, the running version stays and `update` reports why. The previous version is kept until the next self-update.
+When on, the default, `updaemon update` ends by updating updaemon to its latest release. The new version is downloaded into its own directory, beside the one running, must match its line in the release's `SHA256SUMS`, and must run (`updaemon --version`) before the `updaemon` command is switched to it in one step. If anything fails, the running version stays and `update` reports why. The previous version is kept until the next self-update.
 
 Registry plugins always come from the release of the updaemon that runs them: the first install or update after a self-update reinstalls them from the new release. If that fails, the apps using that plugin fail with the reason, and the installed plugin is kept. Plugins installed from a URL are not updated; reinstall them with `dist-install` if a new updaemon needs a newer build.
 
@@ -253,7 +255,7 @@ updaemon dist-install [--as <alias>] <plugin-name|url>
 
 Installs a distribution plugin by registry name or from a URL. A registry plugin comes from the release of the updaemon you run, built for your machine. Each release carries the registry plugins for every platform updaemon itself is released for (see [RELEASE_GUIDE.md](RELEASE_GUIDE.md)); on another platform, build the plugin and install it from its URL. `install` already installs a missing registry plugin, so this is mostly for URL plugins and aliases.
 
-A plugin already installed under the alias is replaced, but only once the new one has started and answered.
+A plugin already installed under the alias is replaced, but only once the new one has started and answered. A registry plugin must first match its line in the release's `SHA256SUMS`; a plugin from a plain URL is not verified.
 
 ### dist-list
 
@@ -354,7 +356,7 @@ Distribution plugins are separate AOT-compiled executables that communicate with
        public DistributionServiceInformation GetServiceInformation() { /* ... */ }
        public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default) { /* ... */ }
        public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default) { /* ... */ }
-       public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default) { /* ... */ }
+       public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default) { /* ... */ }
    }
    ```
 
@@ -397,7 +399,7 @@ The RPC types (`RpcRequest` and `RpcResponse`) are defined in `Updaemon.Common.R
 }
 ```
 
-`DownloadVersionAsync` takes an object: `"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"`.
+`DownloadVersionAsync` takes an object: `"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"`, and returns whether the download was verified against a checksum: `"{\"verified\":true}"`.
 
 **Response:**
 ```json

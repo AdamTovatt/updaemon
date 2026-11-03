@@ -59,6 +59,41 @@ namespace Updaemon.GithubDistributionService.Services
             string? token,
             CancellationToken cancellationToken = default)
         {
+            HttpResponseMessage response = await GetReleaseAssetAsync(owner, repo, assetId, token, cancellationToken);
+
+            string? directory = Path.GetDirectoryName(targetFilePath);
+            if (directory != null && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using (Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            using (FileStream fileStream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, useAsync: true))
+            {
+                await contentStream.CopyToAsync(fileStream, cancellationToken);
+            }
+        }
+
+        public async Task<string> ReadReleaseAssetTextAsync(
+            string owner,
+            string repo,
+            long assetId,
+            string? token,
+            CancellationToken cancellationToken = default)
+        {
+            using (HttpResponseMessage response = await GetReleaseAssetAsync(owner, repo, assetId, token, cancellationToken))
+            {
+                return await response.Content.ReadAsStringAsync(cancellationToken);
+            }
+        }
+
+        private async Task<HttpResponseMessage> GetReleaseAssetAsync(
+            string owner,
+            string repo,
+            long assetId,
+            string? token,
+            CancellationToken cancellationToken)
+        {
             string url = $"https://api.github.com/repos/{owner}/{repo}/releases/assets/{assetId}";
 
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -75,18 +110,7 @@ namespace Updaemon.GithubDistributionService.Services
                 cancellationToken);
 
             response.EnsureSuccessStatusCode();
-
-            string? directory = Path.GetDirectoryName(targetFilePath);
-            if (directory != null && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            using (Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
-            using (FileStream fileStream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, useAsync: true))
-            {
-                await contentStream.CopyToAsync(fileStream, cancellationToken);
-            }
+            return response;
         }
 
         public async Task DownloadAssetAsync(

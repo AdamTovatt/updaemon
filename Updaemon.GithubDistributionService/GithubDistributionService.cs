@@ -68,7 +68,7 @@ namespace Updaemon.GithubDistributionService
             return version;
         }
 
-        public async Task DownloadVersionAsync(
+        public async Task<DownloadResult> DownloadVersionAsync(
             string serviceName,
             Version version,
             string runtimeIdentifier,
@@ -92,12 +92,37 @@ namespace Updaemon.GithubDistributionService
                 Directory.CreateDirectory(targetPath);
             }
 
-            // Download the asset
             string targetFilePath = Path.Combine(targetPath, asset.Name);
             await _apiClient.DownloadReleaseAssetAsync(owner, repo, asset.Id, targetFilePath, _githubToken, cancellationToken);
+            bool verified = await VerifyAsync(owner, repo, release, asset, targetFilePath, cancellationToken);
 
-            // Post-process (extract if zip)
+            // Extracts a .zip or .tar.gz; only a verified (or unverifiable) download gets this far.
             await _postProcessor.ProcessAsync(targetPath, cancellationToken);
+            return new DownloadResult { Verified = verified };
+        }
+
+        /// <summary>
+        /// Checks the downloaded asset against the release's <c>SHA256SUMS</c>. False when the release
+        /// has none; throws when it has one without a matching line for the asset.
+        /// </summary>
+        private async Task<bool> VerifyAsync(string owner, string repo, GithubRelease release, GithubAsset asset, string downloadedFile, CancellationToken cancellationToken)
+        {
+            GithubAsset? sumsAsset = release.Assets.FirstOrDefault(candidate => candidate.Name == Sha256Sums.AssetName);
+            if (sumsAsset == null)
+            {
+                return false;
+            }
+
+            string sums = await _apiClient.ReadReleaseAssetTextAsync(owner, repo, sumsAsset.Id, _githubToken, cancellationToken);
+            try
+            {
+                await Sha256Sums.Parse(sums).VerifyAsync(downloadedFile, asset.Name, cancellationToken);
+                return true;
+            }
+            catch (ChecksumException ex)
+            {
+                throw new InvalidOperationException($"The release {release.TagName} of {owner}/{repo} was not installed: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -127,9 +152,10 @@ namespace Updaemon.GithubDistributionService
 
         /// <summary>
         /// Picks the one asset to download. With a pattern, that is the asset matching it
-        /// (wildcards like *.zip); without one, the build for this machine, named
-        /// *-&lt;rid&gt;.zip or *-&lt;rid&gt;. Anything but exactly one match fails with the release's
-        /// asset names, one per line, and how to pick one.
+        /// (wildcards like *.zip); without one, the build for this machine, named *-&lt;rid&gt;
+        /// with one of <see cref="DownloadPostProcessor.ArchiveEndings"/> or none. The release's
+        /// SHA256SUMS is never one. Anything but exactly one match fails with the release's asset
+        /// names, one per line, and how to pick one.
         /// </summary>
         private static GithubAsset SelectAsset(
             GithubAsset[] assets,
@@ -145,16 +171,18 @@ namespace Updaemon.GithubDistributionService
                 throw new InvalidOperationException($"The {releaseLabel} has no assets.");
             }
 
+            string[] buildEndings = BuildEndings(runtimeIdentifier);
             Func<GithubAsset, bool> matches = pattern == null
-                ? asset => IsBuildFor(asset.Name, runtimeIdentifier)
+                ? asset => buildEndings.Any(ending => asset.Name.EndsWith(ending, StringComparison.OrdinalIgnoreCase))
                 : WildcardMatcher(pattern);
-            GithubAsset[] matchingAssets = assets.Where(matches).ToArray();
+            GithubAsset[] matchingAssets = assets.Where(asset => asset.Name != Sha256Sums.AssetName && matches(asset)).ToArray();
             if (matchingAssets.Length == 1)
             {
                 return matchingAssets[0];
             }
 
-            string buildName = $"*-{runtimeIdentifier}.zip or *-{runtimeIdentifier}";
+            string[] buildNames = buildEndings.Select(ending => $"*{ending}").ToArray();
+            string buildName = $"{string.Join(", ", buildNames[..^1])} or {buildNames[^1]}";
             string problem = (pattern, matchingAssets.Length) switch
             {
                 (null, 0) => $"No asset in the {releaseLabel} is named {buildName}, the build for this machine.",
@@ -169,10 +197,10 @@ namespace Updaemon.GithubDistributionService
                 $"Pick one with the remote {owner}/{repo}/<pattern>, where <pattern> is an asset name and * matches any text.");
         }
 
-        private static bool IsBuildFor(string assetName, string runtimeIdentifier)
+        /// <summary>How the build for <paramref name="runtimeIdentifier"/> may end: each archive, then a bare binary.</summary>
+        private static string[] BuildEndings(string runtimeIdentifier)
         {
-            return assetName.EndsWith($"-{runtimeIdentifier}.zip", StringComparison.OrdinalIgnoreCase)
-                || assetName.EndsWith($"-{runtimeIdentifier}", StringComparison.OrdinalIgnoreCase);
+            return [.. DownloadPostProcessor.ArchiveEndings.Select(ending => $"-{runtimeIdentifier}{ending}"), $"-{runtimeIdentifier}"];
         }
 
         private static Func<GithubAsset, bool> WildcardMatcher(string pattern)

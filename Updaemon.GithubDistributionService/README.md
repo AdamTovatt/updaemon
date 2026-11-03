@@ -11,7 +11,8 @@ This plugin enables Updaemon to download and manage applications distributed via
 - **Automatic Version Detection** - Parses version information from GitHub release tags (supports `v1.2.3`, `1.2.3`, `curl-8_16_0`, and other formats)
 - **Asset Pattern Matching** - Use wildcards to select specific assets from releases with multiple files
 - **Optional Authentication** - GitHub token support for private repositories and higher rate limits
-- **Automatic Extraction** - Automatically extracts and unwraps `.zip` archives (only `.zip` format is supported)
+- **Checksums** - When the release has a `SHA256SUMS` asset, the download is checked against it before it is extracted, and refused on a mismatch or a missing line
+- **Automatic Extraction** - Extracts and unwraps `.zip` and `.tar.gz` archives, keeping file modes; an archive that cannot be extracted fails the download
 - **AOT Compiled** - Fast startup with no runtime dependencies
 - **Rate Limit Friendly** - Efficient API usage with clear error messages
 
@@ -49,7 +50,7 @@ updaemon secret-set github githubToken ghp_your_token_here
 The service name determines which GitHub repository and asset to download:
 
 **Format: `owner/repo` or `owner/repo/<pattern>`**
-- With just `owner/repo`, the plugin picks the build for the machine updaemon runs on: the one asset named `*-<rid>.zip` or `*-<rid>` (a bare binary), where `<rid>` is the machine's runtime identifier such as `linux-arm64`, `linux-x64` or `osx-arm64`. Name your release assets this way, e.g. `myapp-linux-arm64.zip`.
+- With just `owner/repo`, the plugin picks the build for the machine updaemon runs on: the one asset named `*-<rid>.zip`, `*-<rid>.tar.gz` or `*-<rid>` (a bare binary), where `<rid>` is the machine's runtime identifier such as `linux-arm64`, `linux-x64` or `osx-arm64`. Name your release assets this way, e.g. `myapp-linux-arm64.zip`.
 - A pattern picks the asset instead. It supports wildcards: `*` (matches anything) and `?` (matches one character). Example: `microsoft/winget-cli/*.zip`
 
 ## Usage
@@ -75,7 +76,7 @@ Without a pattern (`--from github:organization/myapp`), the plugin picks the ass
 
 | Pattern | Matches | Use Case |
 |---------|---------|----------|
-| `owner/repo` | `*-<rid>.zip` or `*-<rid>` for this machine | Releases that follow the naming convention |
+| `owner/repo` | `*-<rid>.zip`, `*-<rid>.tar.gz` or `*-<rid>` for this machine | Releases that follow the naming convention |
 | `owner/repo/*.zip` | Any `.zip` file | Releases with mixed file types |
 | `owner/repo/app-linux-*.zip` | Files starting with `app-linux-` and ending with `.zip` | Platform-specific binaries |
 | `owner/repo/*-x64.zip` | Files ending with `-x64.zip` | Architecture-specific archives |
@@ -118,15 +119,15 @@ public interface IDistributionService
     DistributionServiceInformation GetServiceInformation();
     Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default);
     Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default);
-    Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default);
+    Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default);
 }
 ```
 
 **Components:**
-- `GithubDistributionService` - Main service implementation
+- `GithubDistributionService` - Main service implementation; checks the chosen asset against the release's `SHA256SUMS` (via `Sha256Sums`) before extracting it
 - `GithubApiClient` - GitHub API communication layer
 - `VersionParser` - Extracts versions from tag names
-- `DownloadPostProcessor` - Handles zip extraction and unwrapping
+- `DownloadPostProcessor` - Extracts a `.zip` or `.tar.gz` and unwraps a single top-level directory
 
 For more details on creating distribution plugins, see [Updaemon.Common/README.md](../Updaemon.Common/README.md).
 
@@ -140,7 +141,7 @@ For more details on creating distribution plugins, see [Updaemon.Common/README.m
 
 ### No Matching Asset, or Several
 
-**Problem:** `No asset in the release ... is named *-linux-arm64.zip or *-linux-arm64` or `Several assets in the release ... match '*.zip'`
+**Problem:** `No asset in the release ... is named *-linux-arm64.zip, *-linux-arm64.tar.gz or *-linux-arm64` or `Several assets in the release ... match '*.zip'`
 
 **Solution:** The error lists the release's assets. Set the remote to `owner/repo/<pattern>` with a pattern that matches exactly one of them, for example `owner/repo/*-linux-arm64-self-contained.zip`.
 

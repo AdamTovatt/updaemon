@@ -14,9 +14,13 @@ namespace Updaemon.Interfaces
         /// The caller is responsible for moving or deleting TempFilePath in the result.
         /// </summary>
         /// <param name="downloadUrl">The URL to download the plugin binary from.</param>
+        /// <param name="verify">
+        /// Whether to verify the download against its GitHub release's SHA256SUMS before running it;
+        /// one that fails is deleted (see <see cref="IReleaseChecksums"/>).
+        /// </param>
         /// <param name="targetDirectory">The directory to save the temporary file in.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         /// <returns>Result containing the temp file path and service information.</returns>
-        Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, string targetDirectory, CancellationToken cancellationToken = default);
+        Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, bool verify, string targetDirectory, CancellationToken cancellationToken = default);
     }
 }

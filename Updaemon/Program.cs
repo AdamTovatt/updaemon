@@ -91,8 +91,9 @@ namespace Updaemon
             // Distribution service client
             services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();
 
-            // HTTP client for downloading plugins
+            // HTTP client for downloading plugins, and updaemon's own builds
             services.AddSingleton<HttpClient>();
+            services.AddSingleton<IReleaseChecksums, ReleaseChecksums>();
 
             // Plugin resolution, download and installation
             services.AddSingleton<IPluginUrlResolver, GitHubPluginUrlResolver>();

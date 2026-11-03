@@ -8,10 +8,12 @@ How to publish an app so that `updaemon install` can set it up and `updaemon upd
 
 Publish one asset per platform, named after the platform's .NET runtime identifier (RID):
 
-- `<name>-<rid>.zip`: an archive, extracted on install. If it holds a single top-level directory, that directory becomes the release root.
+- `<name>-<rid>.zip` or `<name>-<rid>.tar.gz`: an archive, extracted on install with its file modes. If it holds a single top-level directory, that directory becomes the release root. An archive that cannot be extracted, or has an entry that would land outside it, fails the install.
 - `<name>-<rid>`: a bare executable. It cannot carry an `updaemon.json`, so it is installed with `--command` or `--service` (see [Releases without a manifest](#releases-without-a-manifest)).
 
 For example `byteshelf-linux-arm64.zip`, `byteshelf-linux-x64.zip` and `byteshelf-osx-arm64.zip`. Updaemon picks the asset for the machine it runs on. If a release has no asset for that RID, or several, the install fails and lists the assets; the remote can then name a pattern instead, as in `github:owner/repo/<pattern>`.
+
+Also publish a `SHA256SUMS` asset: one `<sha-256>  <asset name>` line per asset, as `sha256sum * > SHA256SUMS` writes it (a directory before the name, as in `dist/app-linux-x64.zip`, is ignored). Updaemon then checks the download against it before installing and refuses one that does not match. Without it, `install` and `update` still install the release but say it was not verified.
 
 Versions come from the release tag, for example `v1.2.0`.
 

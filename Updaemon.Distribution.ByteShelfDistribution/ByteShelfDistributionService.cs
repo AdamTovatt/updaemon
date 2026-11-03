@@ -121,7 +121,7 @@ namespace Updaemon.Distribution.ByteShelfDistribution
             return latestVersion;
         }
 
-        public async Task DownloadVersionAsync(
+        public async Task<DownloadResult> DownloadVersionAsync(
             string serviceName,
             Version version,
             string runtimeIdentifier,
@@ -170,6 +170,9 @@ namespace Updaemon.Distribution.ByteShelfDistribution
 
             // Post-process (extract if zip)
             await _postProcessor.ProcessAsync(targetPath, cancellationToken);
+
+            // ByteShelf keeps no checksums to verify against.
+            return new DownloadResult { Verified = false };
         }
 
         /// <summary>

@@ -1,3 +1,4 @@
+using Updaemon.Common.Models;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
@@ -73,7 +74,11 @@ namespace Updaemon.Services
             {
                 _outputWriter.WriteLine($"Downloading {app.Name} {version}...");
                 Directory.CreateDirectory(versionDirectory);
-                await distributionClient.DownloadVersionAsync(app.Remote, version, versionDirectory, cancellationToken);
+                DownloadResult download = await distributionClient.DownloadVersionAsync(app.Remote, version, versionDirectory, cancellationToken);
+                if (!download.Verified)
+                {
+                    _outputWriter.WriteLine($"Not verified: {app.Name} {version} came without a checksum to check it against.");
+                }
 
                 AppManifest? releaseManifest = await AppManifest.ReadAsync(versionDirectory, cancellationToken);
                 if (releaseManifest != null)

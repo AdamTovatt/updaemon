@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Services;
@@ -41,8 +42,8 @@ namespace Updaemon.Tests.Services
                 PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github", RunningRelease), alias);
 
                 Assert.Equal(
-                    "DownloadAndInspectAsync:https://github.com/AdamTovatt/updaemon/releases/download/v1.2.0/Updaemon.GithubDistributionService-linux-arm64",
-                    Assert.Single(downloader.MethodCalls));
+                    ("https://github.com/AdamTovatt/updaemon/releases/download/v1.2.0/Updaemon.GithubDistributionService-linux-arm64", true),
+                    Assert.Single(downloader.Downloads));
                 InstalledPluginInfo? recorded = await configManager.GetPluginAsync(expectedAlias);
                 Assert.NotNull(recorded);
                 Assert.Equal(new PluginSource.Registry("github", RunningRelease), recorded.Source);
@@ -61,11 +62,13 @@ namespace Updaemon.Tests.Services
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginsDirectory = tempHelper.GetFullPath(PluginsRelativePath);
-                PluginInstaller installer = Installer(tempHelper, new MockPluginDownloader(), configManager);
+                MockPluginDownloader downloader = new MockPluginDownloader();
+                PluginInstaller installer = Installer(tempHelper, downloader, configManager);
                 PluginSource source = new PluginSource.Url("https://example.com/path/to/my-plugin");
 
                 await installer.InstallAsync(source, alias);
 
+                Assert.Equal(("https://example.com/path/to/my-plugin", false), Assert.Single(downloader.Downloads));
                 InstalledPluginInfo? recorded = await configManager.GetPluginAsync(expectedAlias);
                 Assert.NotNull(recorded);
                 Assert.Equal(source, recorded.Source);
@@ -133,6 +136,28 @@ namespace Updaemon.Tests.Services
                     "https://github.com/AdamTovatt/updaemon/releases/download/v1.2.0/Updaemon.GithubDistributionService-linux-arm64 was not found. " +
                     "Build the plugin for this machine and install it with 'updaemon dist-install <url>'.",
                     exception.Message);
+            }
+        }
+
+        [Fact]
+        public async Task InstallAsync_NewPluginFailsItsChecksum_KeepsTheInstalledPlugin()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string installedPath = tempHelper.CreateTempFile($"{PluginsRelativePath}/github/Updaemon.GithubDistributionService-linux-arm64", "installed");
+                InstalledPluginInfo installed = PluginRecords.Installed("github", installedPath);
+                await configManager.AddOrUpdatePluginAsync(installed);
+                MockPluginDownloader downloader = new MockPluginDownloader
+                {
+                    ExceptionToThrow = new ChecksumException("Updaemon.GithubDistributionService-linux-arm64 does not match its SHA-256 in SHA256SUMS."),
+                };
+
+                await Assert.ThrowsAsync<ChecksumException>(
+                    () => Installer(tempHelper, downloader, configManager).InstallAsync(new PluginSource.Registry("github", RunningRelease), null));
+
+                Assert.Equal("installed", File.ReadAllText(installedPath));
+                Assert.Same(installed, await configManager.GetPluginAsync("github"));
             }
         }
 

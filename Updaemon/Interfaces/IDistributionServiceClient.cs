@@ -41,6 +41,7 @@ namespace Updaemon.Interfaces
         /// <param name="version">The version to download.</param>
         /// <param name="targetPath">The directory path where the version should be downloaded.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
-        Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default);
+        /// <returns>Whether the plugin verified the download against a checksum its release published.</returns>
+        Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default);
     }
 }

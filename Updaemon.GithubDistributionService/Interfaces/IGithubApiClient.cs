@@ -36,6 +36,12 @@ namespace Updaemon.GithubDistributionService.Interfaces
             CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Reads a small text release asset, such as SHA256SUMS, via the GitHub API.
+        /// Works for private repositories when authenticated.
+        /// </summary>
+        Task<string> ReadReleaseAssetTextAsync(string owner, string repo, long assetId, string? token, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Downloads an asset from a URL to a target file path.
         /// </summary>
         /// <param name="url">The download URL</param>

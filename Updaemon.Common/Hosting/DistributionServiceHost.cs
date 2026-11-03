@@ -240,13 +240,13 @@ namespace Updaemon.Common.Hosting
 
             Version version = Version.Parse(parameters.Version);
 
-            await implementation.DownloadVersionAsync(parameters.ServiceName, version, parameters.RuntimeIdentifier, parameters.TargetPath, cancellationToken);
+            DownloadResult result = await implementation.DownloadVersionAsync(parameters.ServiceName, version, parameters.RuntimeIdentifier, parameters.TargetPath, cancellationToken);
 
             return new RpcResponse
             {
                 Id = request.Id,
                 Success = true,
-                Result = null,
+                Result = JsonSerializer.Serialize(result, CommonJsonContext.Default.DownloadResult),
             };
         }
 
