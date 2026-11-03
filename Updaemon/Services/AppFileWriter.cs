@@ -145,6 +145,15 @@ namespace Updaemon.Services
                 await RemoveServiceAsync(appName, cancellationToken);
             }
 
+            RemoveCommandAndSettings(appName, manifest);
+        }
+
+        /// <summary>
+        /// Deletes the app's wrapper if it still owns it, and its settings file; leaves its service
+        /// unit. <paramref name="manifest"/> is null when it is unknown.
+        /// </summary>
+        public void RemoveCommandAndSettings(string appName, AppManifest? manifest)
+        {
             if (manifest?.Command != null)
             {
                 DeleteOwnWrapper(manifest.Command, appName);

@@ -32,6 +32,7 @@ namespace Updaemon.Commands
                 ["dist-list"] = typeof(DistListCommand),
                 ["secret-set"] = typeof(SecretSetCommand),
                 ["timer"] = typeof(TimerCommand),
+                ["migrate"] = typeof(MigrateCommand),
             };
         }
 

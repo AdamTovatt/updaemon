@@ -23,12 +23,5 @@ namespace Updaemon.Commands
 
         public static int FailUnknownOption(this IOutputWriter outputWriter, string option) =>
             outputWriter.Fail($"Unknown option '{option}'.");
-
-        /// <summary>
-        /// A service failed its health check: <c>{version} did not stay running{consequence}.</c>, then
-        /// where to look. The caller names the app in front.
-        /// </summary>
-        public static string NotRunning(string appName, Version version, string consequence = "") =>
-            $"{version} did not stay running{consequence}. See 'updaemon logs {appName}'.";
     }
 }

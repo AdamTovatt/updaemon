@@ -13,6 +13,12 @@ namespace Updaemon.Interfaces
         IReadOnlyCollection<string> PluginNames { get; }
 
         /// <summary>
+        /// The registry name of the plugin a downloaded file is a build of, going by its file name
+        /// (<c>&lt;asset&gt;</c> or <c>&lt;asset&gt;-&lt;rid&gt;</c>); null when it is no registry plugin.
+        /// </summary>
+        string? FindPluginName(string fileName);
+
+        /// <summary>
         /// Returns the URL of a registry plugin's build for this machine in the given updaemon
         /// release, or null when the name is not in the registry.
         /// </summary>

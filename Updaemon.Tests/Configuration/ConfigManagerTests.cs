@@ -21,7 +21,9 @@ namespace Updaemon.Tests.Configuration
         }
 
         [Theory]
-        [InlineData("{\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"version\":\"1.0.0\"}},\"services\":[{\"localName\":\"api\"}]}", "is from updaemon 0.x")]
+        [InlineData("{\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"version\":\"1.0.0\"}},\"services\":[{\"localName\":\"api\"}]}", "is from updaemon 0.x and not converted yet. Convert it with 'sudo updaemon migrate'.")]
+        [InlineData("{\"format\":null}", "cannot be read: it is not an object with a whole-number 'format'.")]
+        [InlineData("[]", "cannot be read: it is not an object with a whole-number 'format'.")]
         [InlineData("{\"format\":2,\"apps\":[]}", "has format 2")]
         [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\"}}}}", "cannot be read: JSON deserialization for type 'Updaemon.Models.PluginSource+Registry' was missing required properties including: 'release'.")]
         [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\",\"release\":\"1.3\"}}}}", "cannot be read: '1.3' is not an updaemon release version (x.y.z).")]

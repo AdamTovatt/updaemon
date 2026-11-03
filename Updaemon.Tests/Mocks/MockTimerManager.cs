@@ -1,3 +1,4 @@
+using Updaemon.Conversion;
 using Updaemon.Interfaces;
 
 namespace Updaemon.Tests.Mocks
@@ -15,6 +16,11 @@ namespace Updaemon.Tests.Mocks
         public Task SetTimerAsync(TimeSpan interval, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(SetTimerAsync)}:{interval}");
+            if (SetFailure != null)
+            {
+                throw SetFailure;
+            }
+
             LastSetInterval = interval;
             IsEnabled = true;
             CurrentInterval = ConvertToDisplayFormat(interval);
@@ -39,6 +45,24 @@ namespace Updaemon.Tests.Mocks
         {
             MethodCalls.Add(nameof(GetCurrentIntervalAsync));
             return Task.FromResult(CurrentInterval);
+        }
+
+        /// <summary>The 0.x timer this scope has, if any; removing it clears this.</summary>
+        public ZeroXTimer? ZeroX { get; set; }
+
+        /// <summary>When set, <see cref="SetTimerAsync"/> throws it.</summary>
+        public Exception? SetFailure { get; set; }
+
+        public Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ZeroX);
+        }
+
+        public Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add(nameof(RemoveZeroXTimerAsync));
+            ZeroX = null;
+            return Task.CompletedTask;
         }
 
         private static string ConvertToDisplayFormat(TimeSpan interval)

@@ -123,6 +123,11 @@ namespace Updaemon.Models
 
         public static bool IsValidName(string name) => NameRegex().IsMatch(name);
 
+        /// <summary>Updaemon's own name, which its timer unit and command take, so no app may.</summary>
+        public const string ReservedAppName = "updaemon";
+
+        public static bool IsValidAppName(string name) => IsValidName(name) && name != ReservedAppName;
+
         public static bool IsValidSettingKey(string key) => SettingKeyRegex().IsMatch(key);
 
         private void Validate()

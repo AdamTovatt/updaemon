@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Updaemon.Commands;
 using Updaemon.Configuration;
+using Updaemon.Conversion;
 using Updaemon.Interfaces;
 using Updaemon.Services;
 
@@ -114,6 +115,8 @@ namespace Updaemon
             services.AddTransient<DistListCommand>();
             services.AddTransient<SecretSetCommand>();
             services.AddTransient<TimerCommand>();
+            services.AddTransient<MigrateCommand>();
+            services.AddTransient<IZeroXConverter, ZeroXConverter>();
 
             // Command infrastructure
             services.AddSingleton<ICommandFactory, CommandFactory>();

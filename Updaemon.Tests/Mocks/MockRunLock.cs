@@ -11,9 +11,13 @@ namespace Updaemon.Tests.Mocks
 
         public bool IsHeld { get; private set; }
 
+        /// <summary>Called as the lock is taken, as by another updaemon that held it until then.</summary>
+        public Action? OnAcquire { get; set; }
+
         public Task<IDisposable> AcquireAsync(CancellationToken cancellationToken = default)
         {
             Acquisitions++;
+            OnAcquire?.Invoke();
             IsHeld = true;
             return Task.FromResult<IDisposable>(new Release(this));
         }

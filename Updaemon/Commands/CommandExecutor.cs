@@ -12,13 +12,15 @@ namespace Updaemon.Commands
         private readonly IOutputWriter _outputWriter;
         private readonly IRunLock _runLock;
         private readonly UpdaemonVersion _version;
+        private readonly IZeroXConverter _converter;
 
-        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock, UpdaemonVersion version)
+        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock, UpdaemonVersion version, IZeroXConverter converter)
         {
             _commandFactory = commandFactory;
             _outputWriter = outputWriter;
             _runLock = runLock;
             _version = version;
+            _converter = converter;
         }
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
@@ -73,13 +75,23 @@ namespace Updaemon.Commands
             try
             {
                 ICommand command = _commandFactory.GetCommand(commandName);
-                if (!command.ChangesState)
+
+                // An updaemon 0.x setup is converted once, before any command reads it; 'migrate' is that
+                // conversion, and its --dry-run must change nothing.
+                bool convertsFirst = command is not MigrateCommand;
+                if (!command.ChangesState && !(convertsFirst && _converter.IsPending()))
                 {
                     return await command.ExecuteAsync(args[1..], cancellationToken);
                 }
 
                 using (await _runLock.AcquireAsync(cancellationToken))
                 {
+                    // Asked again under the lock: another command may have converted it meanwhile.
+                    if (convertsFirst && _converter.IsPending())
+                    {
+                        await _converter.RunAsync(dryRun: false, cancellationToken);
+                    }
+
                     return await command.ExecuteAsync(args[1..], cancellationToken);
                 }
             }

@@ -102,26 +102,15 @@ A system-wide service runs as root unless installed with `--run-as <user>`. A us
 
 ### Upgrading from 0.x
 
-Updaemon 1.0 does not read a 0.x setup; reinstall the apps instead. For each app 0.x installed, stop and remove its service, then delete its versions:
-
-```bash
-sudo systemctl disable --now my-api
-sudo rm /etc/systemd/system/my-api.service
-sudo systemctl daemon-reload
-sudo rm -r /opt/my-api
-```
-
-On macOS, unload `/Library/LaunchDaemons/com.updaemon.my-api.plist` with `sudo launchctl bootout system/com.updaemon.my-api`, then delete it and `/usr/local/opt/my-api`.
-
-Then install updaemon 1.0 over 0.x, move the old config aside and install the apps again:
+Re-run `install.sh` with `sudo`. The rest is automatic: the first `updaemon` command run as root (the update timer's included) converts the 0.x setup before it does anything else, and says what it converted.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
-sudo mv /var/lib/updaemon/config.json /var/lib/updaemon/config.0x.json
-sudo updaemon install my-api --from github:owner/my-api
 ```
 
-Until the old config is moved, every command that reads it stops and says so. `install` refuses a name that already has a service, so a missed unit is reported rather than overwritten.
+Each 0.x service or CLI tool becomes a system-wide app with the same name, source and restart setting. Its versions stay where they are, so nothing is downloaded again. `Environment=` lines in a service's unit (`EnvironmentVariables` in a plist) become the app's settings. A service set to `restart=manual` keeps running its old process until it next restarts. A CLI tool's command is its executable's name; the second link 0.x made under the tool's own name (`ripgrep` beside `rg`) is removed. Registry plugins are reinstalled from the new release and keep their secrets; any other plugin is reported with the `updaemon dist-install --as <alias> <url>` that installs it again. The update timer keeps its interval.
+
+An app is left out, and keeps running as before, when its unit was edited by hand in any other way, its name is not a valid app name, it has no current version, or its unit, executable or command link is not what 0.x made. The report says which and what to do. Fix it, then run `sudo updaemon migrate` to convert what was left out; this also retries a plugin or the timer that failed. `sudo updaemon migrate --dry-run` shows what would be converted without changing anything. What the conversion replaces (the old config, unit template, units and timer) is kept in `0.x-backup` beside `config.json`.
 
 ## CLI Commands
 
@@ -143,6 +132,7 @@ An argument in angle brackets (`< >`) is required; one in square brackets (`[ ]`
 | [dist-install](#dist-install) | Install a distribution plugin. |
 | [dist-list](#dist-list) | List the installed plugins. |
 | [secret-set](#secret-set) | Set a secret for a plugin. |
+| [migrate](#migrate) | Convert an updaemon 0.x setup. |
 | help | `updaemon help [command]` shows help, and the version. |
 
 ### install
@@ -261,7 +251,7 @@ Without an argument, shows whether self-update is on.
 updaemon dist-install [--as <alias>] <plugin-name|url>
 ```
 
-Installs a distribution plugin by registry name or from a URL. A registry plugin comes from the release of the updaemon you run, built for your machine. Releases carry builds for `linux-arm64` and `osx-arm64`; on another platform, build the plugin and install it from its URL. `install` already installs a missing registry plugin, so this is mostly for URL plugins and aliases.
+Installs a distribution plugin by registry name or from a URL. A registry plugin comes from the release of the updaemon you run, built for your machine. Each release carries the registry plugins for every platform updaemon itself is released for (see [RELEASE_GUIDE.md](RELEASE_GUIDE.md)); on another platform, build the plugin and install it from its URL. `install` already installs a missing registry plugin, so this is mostly for URL plugins and aliases.
 
 A plugin already installed under the alias is replaced, but only once the new one has started and answered.
 
@@ -281,6 +271,14 @@ updaemon secret-set <plugin-alias> <key> <value>
 
 Sets a secret for a plugin, such as `githubToken` for `github`.
 
+### migrate
+
+```bash
+updaemon migrate [--dry-run]
+```
+
+Converts what is left of an updaemon 0.x setup (see [Upgrading from 0.x](#upgrading-from-0x)). With `--dry-run`, only shows what it would do.
+
 [↑ Back to top](#updaemon)
 
 ## Configuration
@@ -294,6 +292,7 @@ plugins/<alias>/       each plugin's executable and secrets.txt
 settings/<app>.env     each app's settings, readable by everyone
 secrets/<app>.env      each app's secrets, readable by the owner only
 data/<app>/            each app's data, kept across updates; passed as UPDAEMON_DATA_DIR
+0.x-backup/            what converting an updaemon 0.x setup replaced (system scope only)
 ```
 
 Each app's versions sit next to a `current` link to the one that runs:

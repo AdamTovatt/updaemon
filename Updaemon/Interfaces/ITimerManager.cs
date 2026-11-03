@@ -1,3 +1,5 @@
+using Updaemon.Conversion;
+
 namespace Updaemon.Interfaces
 {
     /// <summary>
@@ -25,5 +27,13 @@ namespace Updaemon.Interfaces
         /// Gets a human-readable representation of the current interval if the timer is enabled.
         /// </summary>
         Task<string?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Updaemon 0.x's update timer where it is not this updaemon's own, or null. Changes nothing.
+        /// </summary>
+        Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>Stops a timer from <see cref="FindZeroXTimerAsync"/> and deletes its file.</summary>
+        Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default);
     }
 }

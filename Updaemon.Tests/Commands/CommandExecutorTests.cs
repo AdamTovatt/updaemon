@@ -1,5 +1,6 @@
 using Updaemon.Commands;
 using Updaemon.Configuration;
+using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
@@ -8,8 +9,89 @@ namespace Updaemon.Tests.Commands
     {
         private static readonly UpdaemonVersion RunningVersion = UpdaemonVersion.FromAssembly(new Version(1, 2, 0, 0));
 
-        private static CommandExecutor Executor(MockCommandFactory factory, MockOutputWriter outputWriter, MockRunLock? runLock = null) =>
-            new CommandExecutor(factory, outputWriter, runLock ?? new MockRunLock(), RunningVersion);
+        private static CommandExecutor Executor(MockCommandFactory factory, MockOutputWriter outputWriter, MockRunLock? runLock = null, MockZeroXConverter? converter = null) =>
+            new CommandExecutor(factory, outputWriter, runLock ?? new MockRunLock(), RunningVersion, converter ?? new MockZeroXConverter());
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task ExecuteAsync_ZeroXSetup_IsConvertedOnceUnderTheLockBeforeTheCommand(bool changesState)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockRunLock runLock = new MockRunLock();
+            bool heldWhileConverting = false;
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true, OnRun = () => heldWhileConverting = runLock.IsHeld };
+            bool convertedFirst = false;
+            factory.RegisterCommand("cmd", new MockCommand { Name = "cmd", ChangesState = changesState, OnExecute = () => convertedFirst = converter.Runs.Count == 1 });
+            CommandExecutor executor = Executor(factory, new MockOutputWriter(), runLock, converter);
+
+            await executor.ExecuteAsync(new[] { "cmd" });
+            await executor.ExecuteAsync(new[] { "cmd" });
+
+            Assert.True(convertedFirst);
+            Assert.True(heldWhileConverting);
+            Assert.Equal(new[] { false }, converter.Runs);
+            Assert.Equal(changesState ? 2 : 1, runLock.Acquisitions);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ZeroXSetupConvertedByAnotherUpdaemonWhileWaitingForTheLock_IsNotConvertedAgain()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true };
+            MockRunLock runLock = new MockRunLock { OnAcquire = () => converter.Pending = false };
+            factory.RegisterCommand("status", new MockCommand { Name = "status", ChangesState = false });
+
+            int exitCode = await Executor(factory, new MockOutputWriter(), runLock, converter).ExecuteAsync(new[] { "status" });
+
+            Assert.Equal(0, exitCode);
+            Assert.Empty(converter.Runs);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ConversionLeavesSomethingOut_StillRunsTheCommand()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockCommand command = new MockCommand { Name = "status", ChangesState = false };
+            factory.RegisterCommand("status", command);
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true, Result = false };
+
+            int exitCode = await Executor(factory, new MockOutputWriter(), converter: converter).ExecuteAsync(new[] { "status", "x" });
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(new[] { "x" }, command.ReceivedArgs);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ConversionFails_ReportsItAndDoesNotRunTheCommand()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockCommand command = new MockCommand { Name = "status", ChangesState = false };
+            factory.RegisterCommand("status", command);
+            MockOutputWriter output = new MockOutputWriter();
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true, Failure = new IOException("disk full") };
+
+            int exitCode = await Executor(factory, output, converter: converter).ExecuteAsync(new[] { "status" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { "Error: disk full" }, output.Errors);
+            Assert.Null(command.ReceivedArgs);
+        }
+
+        [Theory]
+        [InlineData("--version")]
+        [InlineData("help")]
+        [InlineData("migrate")]
+        public async Task ExecuteAsync_ZeroXSetup_IsNotConvertedByVersionHelpOrMigrateItself(string commandName)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            factory.RegisterCommand("migrate", new MigrateCommand(new MockZeroXConverter(), new MockOutputWriter(), TestScope.Create("/nonexistent", isSystem: true)));
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true };
+
+            await Executor(factory, new MockOutputWriter(), converter: converter).ExecuteAsync(new[] { commandName });
+
+            Assert.Empty(converter.Runs);
+        }
 
         [Fact]
         public async Task ExecuteAsync_VersionFlag_PrintsTheReleaseVersionOnly()

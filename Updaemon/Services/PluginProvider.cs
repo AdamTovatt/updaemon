@@ -50,23 +50,33 @@ namespace Updaemon.Services
                     $"Install it with 'updaemon dist-install --as {alias} <url>'.");
             }
 
-            return await InstallAsync(alias, replacing: plugin, cancellationToken);
+            string name = (plugin?.Source as PluginSource.Registry)?.Name ?? alias;
+            return await InstallAsync(alias, name, replacing: plugin != null, cancellationToken);
         }
 
-        /// <summary>Installs registry plugin <paramref name="alias"/> from the running release, over <paramref name="replacing"/> if given.</summary>
-        private async Task<InstalledPluginInfo> InstallAsync(string alias, InstalledPluginInfo? replacing, CancellationToken cancellationToken)
+        /// <summary>
+        /// Installs registry plugin <paramref name="name"/> as <paramref name="alias"/> from the running
+        /// release in place of what is installed under that alias, keeping the alias's secrets.
+        /// </summary>
+        /// <exception cref="PluginException">Installing failed; what was installed is left as it was.</exception>
+        public Task<InstalledPluginInfo> ReinstallAsync(string alias, string name, CancellationToken cancellationToken = default)
         {
-            string name = (replacing?.Source as PluginSource.Registry)?.Name ?? alias;
-            _outputWriter.WriteLine(replacing == null
-                ? $"Installing the '{alias}' plugin..."
-                : $"Updating the '{alias}' plugin to updaemon {_updaemonVersion}'s build...");
+            return InstallAsync(alias, name, replacing: true, cancellationToken);
+        }
+
+        /// <summary>Installs registry plugin <paramref name="name"/> as <paramref name="alias"/> from the running release.</summary>
+        private async Task<InstalledPluginInfo> InstallAsync(string alias, string name, bool replacing, CancellationToken cancellationToken)
+        {
+            _outputWriter.WriteLine(replacing
+                ? $"Updating the '{alias}' plugin to updaemon {_updaemonVersion}'s build..."
+                : $"Installing the '{alias}' plugin...");
             try
             {
                 return (await _pluginInstaller.InstallAsync(new PluginSource.Registry(name, _updaemonVersion), alias, cancellationToken)).Plugin;
             }
             catch (Exception ex) when (ex is PluginException or InvalidOperationException or HttpRequestException)
             {
-                throw new PluginException($"{(replacing == null ? "installing" : "updating")} the '{alias}' plugin failed: {ex.Message}");
+                throw new PluginException($"{(replacing ? "updating" : "installing")} the '{alias}' plugin failed: {ex.Message}");
             }
         }
     }

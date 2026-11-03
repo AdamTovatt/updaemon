@@ -11,9 +11,6 @@ namespace Updaemon.Commands
     /// </summary>
     public class InstallCommand : ICommand
     {
-        /// <summary>Reserved: the update timer's unit and updaemon's own command use this name.</summary>
-        private const string ReservedName = "updaemon";
-
         private readonly IConfigManager _configManager;
         private readonly AppSettingsStore _settingsStore;
         private readonly ISecretsManager _secretsManager;
@@ -168,9 +165,9 @@ namespace Updaemon.Commands
                 return null;
             }
 
-            if (!AppManifest.IsValidName(appName) || appName == ReservedName)
+            if (!AppManifest.IsValidAppName(appName))
             {
-                problem = $"'{appName}' is not a valid app name. Use letters, digits, '.', '_' and '-'; '{ReservedName}' is reserved.";
+                problem = $"'{appName}' is not a valid app name. Use letters, digits, '.', '_' and '-'; '{AppManifest.ReservedAppName}' is reserved.";
                 return null;
             }
 
@@ -232,7 +229,7 @@ namespace Updaemon.Commands
 
             if (await _serviceManager.ServiceExistsAsync(request.AppName, cancellationToken))
             {
-                return $"A service named '{request.AppName}' already exists. If updaemon 0.x installed it, remove its unit first; otherwise choose another app name.";
+                return $"A service named '{request.AppName}' already exists. If updaemon 0.x installed it, run 'sudo updaemon migrate'; otherwise choose another app name.";
             }
 
             return null;
@@ -326,7 +323,7 @@ namespace Updaemon.Commands
             // There is no earlier version to fall back to: the app stays installed, and the log says why.
             if (!staysRunning)
             {
-                return _outputWriter.Fail($"{app.Name}: {CommandErrors.NotRunning(app.Name, staged.Version)}");
+                return _outputWriter.Fail($"{app.Name}: {ServiceDeployer.NotRunning(app.Name, staged.Version)}");
             }
 
             return 0;

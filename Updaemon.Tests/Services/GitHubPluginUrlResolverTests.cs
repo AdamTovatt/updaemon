@@ -17,6 +17,20 @@ namespace Updaemon.Tests.Services
             Assert.Equal(expectedUrl, resolver.Resolve(pluginName, UpdaemonVersion.Of(1, 2, 0)));
         }
 
+        [Theory]
+        [InlineData("Updaemon.GithubDistributionService-linux-arm64", "github")]
+        [InlineData("Updaemon.GithubDistributionService", "github")]
+        [InlineData("Updaemon.GithubDistributionServiceX", null)]
+        [InlineData("my-own-plugin", null)]
+        public void FindPluginName_GoesByTheAssetBaseNameWithOrWithoutAPlatform(string fileName, string? expected)
+        {
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(
+                new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" },
+                new HostPlatform(false, "linux-x64"));
+
+            Assert.Equal(expected, resolver.FindPluginName(fileName));
+        }
+
         [Fact]
         public void LoadEmbeddedRegistry_MapsEachFirstPartyPluginToItsReleaseAssetBaseName()
         {

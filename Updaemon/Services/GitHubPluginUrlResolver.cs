@@ -38,6 +38,14 @@ namespace Updaemon.Services
 
         public IReadOnlyCollection<string> PluginNames => _assetBaseNames.Keys.ToList();
 
+        public string? FindPluginName(string fileName)
+        {
+            return _assetBaseNames
+                .Where(entry => fileName == entry.Value || fileName.StartsWith(entry.Value + "-", StringComparison.Ordinal))
+                .Select(entry => entry.Key)
+                .FirstOrDefault();
+        }
+
         public string? Resolve(string pluginName, UpdaemonVersion updaemonVersion)
         {
             if (!_assetBaseNames.TryGetValue(pluginName, out string? assetBaseName))

@@ -1,13 +1,15 @@
 using System.Security;
 using System.Text;
+using System.Xml;
+using System.Xml.Linq;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 
 namespace Updaemon.Services
 {
     /// <summary>
-    /// What app services and the update timer share on macOS: writing a launchd plist, and loading
-    /// one into the scope's launchd domain.
+    /// What app services and the update timer share on macOS: writing and reading a launchd plist,
+    /// and loading one into the scope's launchd domain.
     /// </summary>
     public static class Launchd
     {
@@ -38,6 +40,43 @@ namespace Updaemon.Services
         }
 
         public static string Target(UpdaemonScope scope, string label) => $"{scope.LaunchdDomain}/{label}";
+
+        /// <summary>A plist's top-level dictionary, its values by key; null when the text is not such a plist.</summary>
+        public static Dictionary<string, XElement>? ReadPlist(string text)
+        {
+            XDocument document;
+            try
+            {
+                // Indentation means nothing in a plist, so values compare equal however they are laid out.
+                XmlReaderSettings readerSettings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Ignore, XmlResolver = null, IgnoreWhitespace = true };
+                using (XmlReader reader = XmlReader.Create(new StringReader(text), readerSettings))
+                {
+                    document = XDocument.Load(reader);
+                }
+            }
+            catch (XmlException)
+            {
+                return null;
+            }
+
+            XElement? dictionary = document.Root?.Name == "plist" ? document.Root.Elements().SingleOrDefault() : null;
+            if (dictionary?.Name != "dict")
+            {
+                return null;
+            }
+
+            Dictionary<string, XElement> entries = new Dictionary<string, XElement>();
+            List<XElement> elements = dictionary.Elements().ToList();
+            for (int i = 0; i < elements.Count; i += 2)
+            {
+                if (elements[i].Name != "key" || i + 1 >= elements.Count || !entries.TryAdd(elements[i].Value, elements[i + 1]))
+                {
+                    return null;
+                }
+            }
+
+            return entries;
+        }
 
         /// <summary>Builds a property list; every value is XML-escaped.</summary>
         public sealed class Plist

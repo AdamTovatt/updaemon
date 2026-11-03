@@ -80,7 +80,7 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine(target < current
                 ? $"Rolled back {appName} from {current} to {target}. 'updaemon update' skips {current} from now on."
                 : $"Switched {appName} from {current} to {target}.");
-            return staysRunning ? 0 : _outputWriter.Fail($"{appName}: {CommandErrors.NotRunning(appName, target)}");
+            return staysRunning ? 0 : _outputWriter.Fail($"{appName}: {ServiceDeployer.NotRunning(appName, target)}");
         }
 
         /// <summary>"1.2" names the version kept as "1.2.0": missing parts count as zero.</summary>

@@ -41,6 +41,9 @@ namespace Updaemon.Configuration
 
         public string PluginsDirectory => Path.Combine(RootDirectory, "plugins");
 
+        /// <summary>What converting an updaemon 0.x setup replaced: its config, units, template and timer.</summary>
+        public string ZeroXBackupDirectory => Path.Combine(RootDirectory, "0.x-backup");
+
         /// <summary>The <c>updaemon</c> command: a link to one of the versions in <see cref="UpdaemonVersionsDirectory"/>.</summary>
         public string UpdaemonCommandPath => Path.Combine(BinDirectory, "updaemon");
 

@@ -1,4 +1,5 @@
 using Updaemon.Configuration;
+using Updaemon.Conversion;
 using Updaemon.Interfaces;
 using Updaemon.IO;
 
@@ -77,6 +78,20 @@ namespace Updaemon.Services
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Always null: 0.x's timer units have the system scope's names and run the same command, so
+        /// they already are this updaemon's timer.
+        /// </summary>
+        public Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<ZeroXTimer?>(null);
+        }
+
+        public Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("On Linux, updaemon 0.x's timer is this updaemon's own; there is none to remove.");
         }
 
         private string[] Arguments(params string[] verb) => [.. _scope.SystemdScopeArguments, .. verb];

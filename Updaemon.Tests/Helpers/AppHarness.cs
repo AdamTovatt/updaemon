@@ -1,5 +1,6 @@
 using Updaemon.Commands;
 using Updaemon.Configuration;
+using Updaemon.Conversion;
 using Updaemon.IO;
 using Updaemon.Models;
 using Updaemon.Services;
@@ -35,12 +36,13 @@ namespace Updaemon.Tests.Helpers
             Config = new ConfigManager(Scope);
             Secrets = new SecretsManager(Scope);
             SettingsStore = new AppSettingsStore(Config, Secrets);
+            Files = new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Secrets, Output);
             Deployer = new ServiceDeployer(
                 Scope,
                 new SymlinkManager(),
                 new ExecutableDetector(),
                 Permissions,
-                new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Secrets, Output),
+                Files,
                 ServiceManager,
                 Secrets,
                 Output,
@@ -100,6 +102,8 @@ namespace Updaemon.Tests.Helpers
 
         public ServiceDeployer Deployer { get; }
 
+        public AppFileWriter Files { get; }
+
         public MockServiceManager ServiceManager { get; } = new MockServiceManager();
 
         public MockFilePermissionManager Permissions { get; } = new MockFilePermissionManager();
@@ -128,6 +132,9 @@ namespace Updaemon.Tests.Helpers
         public SetArgsCommand SetArgs() => new SetArgsCommand(Config, Deployer, Output);
 
         public RemoveCommand Remove() => new RemoveCommand(Config, Deployer, Output, Scope);
+
+        public ZeroXConverter Converter() => new ZeroXConverter(
+            Scope, Config, Deployer, ServiceManager, Timer, new ExecutableDetector(), new SymlinkManager(), Files, Plugins, PluginUrlResolver, Output);
 
         public async Task AddPluginAsync(string alias = "github")
         {

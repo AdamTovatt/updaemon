@@ -1,5 +1,6 @@
-using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Updaemon.Configuration;
+using Updaemon.Conversion;
 using Updaemon.Interfaces;
 using Updaemon.IO;
 
@@ -10,10 +11,10 @@ namespace Updaemon.Services
     /// LaunchDaemon (system scope) or LaunchAgent (user scope) plist that runs <c>updaemon update</c> every <c>StartInterval</c> seconds.
     /// Constructed only on macOS by Program.cs.
     /// </summary>
-    public partial class MacTimerManager : ITimerManager
+    public class MacTimerManager : ITimerManager
     {
-        [GeneratedRegex("<key>StartInterval</key>\\s*<integer>(\\d+)</integer>", RegexOptions.IgnoreCase)]
-        private static partial Regex StartIntervalRegex();
+        /// <summary>Updaemon 0.x's timer label, in the system domain.</summary>
+        private const string ZeroXLabel = "com.updaemon.timer";
 
         private readonly IOutputWriter _outputWriter;
         private readonly UpdaemonScope _scope;
@@ -60,19 +61,34 @@ namespace Updaemon.Services
                 return null;
             }
 
-            string content = await File.ReadAllTextAsync(_plistPath, cancellationToken);
-            Match match = StartIntervalRegex().Match(content);
-            if (!match.Success)
+            int? seconds = ReadStartInterval(await File.ReadAllTextAsync(_plistPath, cancellationToken));
+            return seconds == null ? null : FormatInterval(seconds.Value);
+        }
+
+        public async Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
+        {
+            string path = Path.Combine(_scope.UnitDirectory, ZeroXLabel + ".plist");
+            if (!_scope.IsSystem || !File.Exists(path))
             {
                 return null;
             }
 
-            if (!int.TryParse(match.Groups[1].Value, out int seconds))
-            {
-                return null;
-            }
+            int? seconds = ReadStartInterval(await File.ReadAllTextAsync(path, cancellationToken));
+            ProcessRunner.Result loaded = await ProcessRunner.RunAsync("launchctl", new[] { "print", Launchd.Target(_scope, ZeroXLabel) }, cancellationToken);
+            return new ZeroXTimer(path, loaded.Success, seconds == null ? null : TimeSpan.FromSeconds(seconds.Value));
+        }
 
-            return FormatInterval(seconds);
+        public async Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default)
+        {
+            // 0.x's label differs from this updaemon's, so its job would otherwise run beside the new one.
+            await Launchd.UnloadAsync(_scope, ZeroXLabel, cancellationToken);
+            File.Delete(timer.FilePath);
+        }
+
+        internal static int? ReadStartInterval(string plist)
+        {
+            XElement? interval = Launchd.ReadPlist(plist)?.GetValueOrDefault("StartInterval");
+            return interval?.Name == "integer" && int.TryParse(interval.Value, out int seconds) ? seconds : null;
         }
 
         private static int ClampToInt(double value)

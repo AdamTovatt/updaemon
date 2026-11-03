@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Updaemon.Conversion;
 using Updaemon.Interfaces;
 using Updaemon.IO;
 using Updaemon.Models;
@@ -26,9 +27,9 @@ namespace Updaemon.Configuration
             }
 
             string json = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
-            CheckFormat(json);
             try
             {
+                CheckFormat(json);
                 return JsonSerializer.Deserialize(json, UpdaemonJsonContext.Default.UpdaemonConfig) ?? new UpdaemonConfig();
             }
             catch (JsonException ex)
@@ -43,11 +44,16 @@ namespace Updaemon.Configuration
         /// </summary>
         private void CheckFormat(string json)
         {
+            if (ZeroXConfig.IsZeroX(json))
+            {
+                throw new InvalidOperationException($"{_configFilePath} is from updaemon 0.x and not converted yet. Convert it with 'sudo updaemon migrate'.");
+            }
+
             int? format = null;
             using (JsonDocument document = JsonDocument.Parse(json))
             {
                 if (document.RootElement.ValueKind == JsonValueKind.Object
-                    && document.RootElement.TryGetProperty("format", out JsonElement element)
+                    && document.RootElement.GetProperty("format") is { ValueKind: JsonValueKind.Number } element
                     && element.TryGetInt32(out int value))
                 {
                     format = value;
@@ -56,7 +62,7 @@ namespace Updaemon.Configuration
 
             if (format == null)
             {
-                throw new InvalidOperationException($"{_configFilePath} is from updaemon 0.x. Move it aside, then reinstall your apps with 'updaemon install'.");
+                throw new InvalidOperationException($"{_configFilePath} cannot be read: it is not an object with a whole-number 'format'.");
             }
 
             if (format != UpdaemonConfig.CurrentFormat)

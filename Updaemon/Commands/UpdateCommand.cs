@@ -232,13 +232,13 @@ namespace Updaemon.Commands
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 throw new InvalidOperationException(
-                    CommandErrors.NotRunning(app.Name, newVersion, $", and going back to {previousVersion} failed: {ex.Message.TrimEnd('.')}"));
+                    ServiceDeployer.NotRunning(app.Name, newVersion, $", and going back to {previousVersion} failed: {ex.Message.TrimEnd('.')}"));
             }
 
             string consequence = previousStaysRunning
                 ? $", so {previousVersion} runs again and {newVersion} is skipped"
                 : $", so it is skipped; {previousVersion} is current again but did not stay running either";
-            throw new InvalidOperationException(CommandErrors.NotRunning(app.Name, newVersion, consequence));
+            throw new InvalidOperationException(ServiceDeployer.NotRunning(app.Name, newVersion, consequence));
         }
 
         private async Task DisposeClientAsync(string pluginAlias)
