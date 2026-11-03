@@ -92,7 +92,15 @@ namespace Updaemon.Common.Utilities
             foreach (string entry in Directory.GetFileSystemEntries(single))
             {
                 string destination = Path.Combine(targetDirectory, Path.GetFileName(entry));
-                if (Directory.Exists(entry) && new DirectoryInfo(entry).LinkTarget == null)
+                string? linkTarget = new FileInfo(entry).LinkTarget;
+                if (linkTarget != null)
+                {
+                    // File.Move refuses a link to a directory and Directory.Move one to nothing, so a
+                    // link is made again as it was. Its target moves up beside it, so it still resolves.
+                    File.CreateSymbolicLink(destination, linkTarget);
+                    File.Delete(entry);
+                }
+                else if (Directory.Exists(entry))
                 {
                     Directory.Move(entry, destination);
                 }

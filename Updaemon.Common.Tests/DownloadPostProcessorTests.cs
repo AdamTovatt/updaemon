@@ -271,11 +271,17 @@ namespace Updaemon.Common.Tests
                     writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, "app/bin/tool") { DataStream = new MemoryStream("tool"u8.ToArray()) });
                     writer.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, "app/current") { LinkName = "bin" });
                     writer.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, "app/run") { LinkName = "bin/tool" });
+
+                    // Whatever order the entries move in, one link's target is missing and one's is a directory.
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, "app/pending") { LinkName = "made-at-first-run" });
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, "app/here") { LinkName = "." });
                 });
 
                 await new DownloadPostProcessor().ProcessAsync(targetDirectory);
 
-                Assert.Equal(new[] { "bin", "current", "run" }, Directory.GetFileSystemEntries(targetDirectory).Select(Path.GetFileName).Order());
+                Assert.Equal(new[] { "bin", "current", "here", "pending", "run" }, Directory.GetFileSystemEntries(targetDirectory).Select(Path.GetFileName).Order());
+                Assert.Equal("made-at-first-run", new FileInfo(Path.Combine(targetDirectory, "pending")).LinkTarget);
+                Assert.Equal(".", new FileInfo(Path.Combine(targetDirectory, "here")).LinkTarget);
                 Assert.Equal("bin", new DirectoryInfo(Path.Combine(targetDirectory, "current")).LinkTarget);
                 Assert.Equal("bin/tool", new FileInfo(Path.Combine(targetDirectory, "run")).LinkTarget);
                 Assert.Equal("tool", File.ReadAllText(Path.Combine(targetDirectory, "current", "tool")));
