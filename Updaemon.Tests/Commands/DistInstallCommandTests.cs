@@ -1,6 +1,6 @@
 using Updaemon.Commands;
-using Updaemon.Common.Models;
 using Updaemon.Models;
+using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -8,170 +8,64 @@ namespace Updaemon.Tests.Commands
 {
     public class DistInstallCommandTests
     {
-        [Fact]
-        public async Task ExecuteAsync_UpdatesConfigWithPluginPath()
+        public static TheoryData<string, PluginSource, string, string> Arguments => new TheoryData<string, PluginSource, string, string>
+        {
+            {
+                "github",
+                new PluginSource.Registry("github"),
+                "github",
+                "https://github.com/AdamTovatt/updaemon/releases/download/v0.11.0/Updaemon.GithubDistributionService-osx-arm64"
+            },
+            {
+                "https://example.com/path/to/plugin-bin",
+                new PluginSource.Url("https://example.com/path/to/plugin-bin"),
+                "mock",
+                "https://example.com/path/to/plugin-bin"
+            },
+        };
+
+        private static DistInstallCommand Command(TempFileHelper tempHelper, MockConfigManager configManager, MockPluginDownloader downloader, MockOutputWriter outputWriter)
+        {
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(
+                new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" },
+                "osx-arm64");
+            PluginInstaller installer = new PluginInstaller(resolver, downloader, configManager, tempHelper.CreateTempDirectory("plugins"));
+            return new DistInstallCommand(outputWriter, installer, new Version(0, 11, 0, 0));
+        }
+
+        [Theory]
+        [MemberData(nameof(Arguments))]
+        public async Task ExecuteAsync_NameOrUrl_InstallsFromTheRegistryAtTheRunningVersionOrFromTheUrl(string argument, PluginSource expectedSource, string expectedAlias, string expectedDownloadUrl)
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                MockPluginDownloader downloader = new MockPluginDownloader();
 
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                int exitCode = await Command(tempHelper, configManager, downloader, new MockOutputWriter()).ExecuteAsync(new[] { argument });
 
-                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/plugins/my-plugin" });
                 Assert.Equal(0, exitCode);
-
-                Assert.Contains(configManager.MethodCalls, call => call.StartsWith("AddOrUpdatePluginAsync:"));
-                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
-                Assert.NotEmpty(plugins);
-                Assert.Contains("my-plugin", plugins.Values.First().Path);
+                Assert.Equal($"DownloadAndInspectAsync:{expectedDownloadUrl}", Assert.Single(downloader.MethodCalls));
+                InstalledPluginInfo? recorded = await configManager.GetPluginAsync(expectedAlias);
+                Assert.NotNull(recorded);
+                Assert.Equal(expectedSource, recorded.Source);
             }
         }
 
         [Fact]
-        public async Task ExecuteAsync_UsesProvidedAlias_WhenAsSpecified()
+        public async Task ExecuteAsync_AliasAlreadyInstalled_SaysItWasReplaced()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
-
-                int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
-                Assert.Equal(0, exitCode);
-
-                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
-                Assert.True(plugins.ContainsKey("github"));
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_UsesDefaultAlias_WhenAliasNotProvided()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                // MockPluginDownloader returns DefaultAlias = "mock" by default
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
-
-                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
-                Assert.Equal(0, exitCode);
-
-                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
-                Assert.True(plugins.ContainsKey("mock"));
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_Throws_WhenAliasAlreadyExists()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                // Pre-register alias
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "dup", Path = "/existing/path" });
-
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
-
-                int exitCode = await command.ExecuteAsync(new[] { "--as", "dup", "https://example.com/path/to/plugin-bin" });
-                Assert.Equal(1, exitCode);
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_DoesNotDownload_WhenExplicitAliasAlreadyExists()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                // Pre-register alias
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/existing/path" });
-
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
+                string installedPath = tempHelper.CreateTempFile("plugins/github/old-plugin", "old");
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", installedPath));
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
 
-                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                int exitCode = await Command(tempHelper, configManager, new MockPluginDownloader(), outputWriter).ExecuteAsync(new[] { "github" });
 
-                int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
-                Assert.Equal(1, exitCode);
-
-                // Verify that the downloader was never called (no download occurred)
-                Assert.Empty(pluginDownloader.MethodCalls);
-                Assert.Contains(outputWriter.Errors, e => e.Contains("already installed"));
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_HandlesDownloadFailure()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                pluginDownloader.ExceptionToThrow = new HttpRequestException("Network error");
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
-
-                await Assert.ThrowsAsync<HttpRequestException>(
-                    async () => await command.ExecuteAsync(new[] { "https://example.com/invalid-plugin" })
-                );
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_ExtractsFilenameFromUrl()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
-
-                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/byteshelf-dist" });
                 Assert.Equal(0, exitCode);
-
-                IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
-                Assert.NotEmpty(plugins);
-                Assert.Contains("byteshelf-dist", plugins.Values.First().Path);
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_Throws_WhenPluginHasEmptyDefaultAliasAndNoAliasProvided()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                pluginDownloader.ServiceInformation = new DistributionServiceInformation
-                {
-                    FullName = "Test Plugin",
-                    DefaultAlias = "", // Empty alias
-                    Description = "Test",
-                    Version = "1.0.0",
-                    Secrets = new List<DistributionSecretInfo>()
-                };
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
-
-                int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
-                Assert.Equal(1, exitCode);
-                Assert.Contains(outputWriter.Errors, e => e.Contains("does not provide a default alias"));
+                Assert.Contains("Distribution plugin 'github' replaced successfully", outputWriter.Messages);
             }
         }
     }

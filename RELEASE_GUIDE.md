@@ -7,10 +7,9 @@ How to create a new release for Updaemon.
 Pushing a `v*` tag triggers the `Release` workflow (`.github/workflows/release.yml`), which AOT-builds every project for `linux-arm64` and `osx-arm64`, then creates the GitHub release with auto-generated notes and the binaries attached. The normal flow is therefore:
 
 1. Bump the `<Version>` in the relevant `.csproj` file(s) (see [Step 1](#1-bump-version-numbers)).
-2. If a plugin changed, update `PluginRegistry.json` and commit it to `master` (see [Step 4](#4-update-pluginregistryjson)).
-3. Commit and push to `master`, then push a `vX.Y.Z` tag — the workflow does the rest.
+2. Commit and push to `master`, then push a `vX.Y.Z` tag — the workflow does the rest.
 
-The workflow does **not** bump versions, edit `PluginRegistry.json`, or build `linux-x64`. Use the manual steps below when you need a `linux-x64` asset or want to build/upload by hand.
+The workflow does **not** bump versions or build `linux-x64`. Use the manual steps below when you need a `linux-x64` asset or want to build/upload by hand.
 
 ## Overview
 
@@ -20,32 +19,27 @@ A release consists of AOT-compiled, self-contained binaries uploaded as GitHub r
 - `linux-x64` — x86_64 Linux servers (build-only target; release as needed)
 - `osx-arm64` — Apple Silicon macOS
 
-Each project produces one asset **per RID**. Asset filenames must include the RID suffix (e.g. `Updaemon-linux-arm64`, `Updaemon-osx-arm64`) so that `install.sh` and `PluginRegistry.json` can route to the correct binary at install/update time.
+Each project produces one asset **per RID**. Asset filenames must include the RID suffix (e.g. `Updaemon-linux-arm64`, `Updaemon-osx-arm64`) so that `install.sh` and updaemon itself can route to the correct binary at install/update time.
 
-The main binary (`Updaemon`) is always included. Distribution plugin binaries are included only when their code has changed since the last release they were included in.
+For every RID a release carries, it includes every project's binary. Updaemon installs its first-party plugins from its own release (`releases/download/v<version>/<Plugin>-<rid>`), so a release with `Updaemon-<rid>` but no plugin build for that RID leaves that version unable to install the plugin there. A release without `linux-x64` at all is fine: updaemon on such a machine reports that the release has no plugin built for it.
 
 ## Projects and their release assets
 
-| Project | Asset name (with RID suffix) | Include when |
-|---------|------------------------------|--------------|
-| `Updaemon/Updaemon.csproj` | `Updaemon-<rid>` | Always |
-| `Updaemon.GithubDistributionService/Updaemon.GithubDistributionService.csproj` | `Updaemon.GithubDistributionService-<rid>` | Code in that project or `Updaemon.Common` changed |
-| `Updaemon.Distribution.ByteShelfDistribution/Updaemon.Distribution.ByteShelfDistribution.csproj` | `Updaemon.Distribution.ByteShelfDistribution-<rid>` | Code in that project or `Updaemon.Common` changed |
-
-Check what changed since the last release tag:
-```bash
-git diff v0.8.1..HEAD --stat -- Updaemon.GithubDistributionService/ Updaemon.Distribution.ByteShelfDistribution/ Updaemon.Common/
-```
+| Project | Asset name (with RID suffix) |
+|---------|------------------------------|
+| `Updaemon/Updaemon.csproj` | `Updaemon-<rid>` |
+| `Updaemon.GithubDistributionService/Updaemon.GithubDistributionService.csproj` | `Updaemon.GithubDistributionService-<rid>` |
+| `Updaemon.Distribution.ByteShelfDistribution/Updaemon.Distribution.ByteShelfDistribution.csproj` | `Updaemon.Distribution.ByteShelfDistribution-<rid>` |
 
 ## Step-by-step
 
 ### 1. Bump version numbers
 
-Update the `<Version>` element in each `.csproj` file that will be published:
+Update the `<Version>` element in `Updaemon/Updaemon.csproj`, and in a plugin's `.csproj` when its code changed:
 
-- `Updaemon/Updaemon.csproj` (always)
-- `Updaemon.GithubDistributionService/Updaemon.GithubDistributionService.csproj` (if included)
-- `Updaemon.Distribution.ByteShelfDistribution/Updaemon.Distribution.ByteShelfDistribution.csproj` (if included)
+- `Updaemon/Updaemon.csproj`
+- `Updaemon.GithubDistributionService/Updaemon.GithubDistributionService.csproj`
+- `Updaemon.Distribution.ByteShelfDistribution/Updaemon.Distribution.ByteShelfDistribution.csproj`
 
 ### 2. Run tests
 
@@ -100,28 +94,18 @@ cp Updaemon/bin/Release/net8.0/linux-x64/native/Updaemon         Updaemon-linux-
 cp Updaemon/bin/Release/net8.0/osx-arm64/native/Updaemon         Updaemon-osx-arm64
 ```
 
-### 4. Update PluginRegistry.json
+### 4. Plugin registry (only when adding a plugin)
 
-`PluginRegistry.json` in the repository root maps plugin names to per-RID download URLs. When a user runs `updaemon dist-install github`, the URL is resolved from this file (fetched from the `master` branch via `GitHubPluginUrlResolver`) using the running platform's RID.
+`Updaemon/PluginAssets.json` maps each first-party plugin's name to its asset base name. It is compiled into the updaemon binary, so `updaemon dist-install github` resolves to `releases/download/v<running version>/Updaemon.GithubDistributionService-<rid>` with no network lookup. It holds no URLs or versions, so a release needs no edit to it; add an entry only when a new first-party plugin is added to the release workflow.
 
-Update the URLs for any plugins included in the release. Only include RIDs you actually built and uploaded — and keep each plugin's RID list complete so users on every supported platform can install. Only update entries for plugins that are being published in this release; leave others pointing at their most recent release.
+`PluginRegistry.json` at the repository root is the old per-RID URL registry. Updaemon 0.x fetches it from `master` on every `dist-install` and `dist-update`, so leave it unchanged.
 
 ```json
 {
-  "github": {
-    "linux-arm64": "https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.GithubDistributionService-linux-arm64",
-    "linux-x64":   "https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.GithubDistributionService-linux-x64",
-    "osx-arm64":   "https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.GithubDistributionService-osx-arm64"
-  },
-  "byteshelf": {
-    "linux-arm64": "https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.Distribution.ByteShelfDistribution-linux-arm64",
-    "linux-x64":   "https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.Distribution.ByteShelfDistribution-linux-x64",
-    "osx-arm64":   "https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.Distribution.ByteShelfDistribution-osx-arm64"
-  }
+  "github": "Updaemon.GithubDistributionService",
+  "byteshelf": "Updaemon.Distribution.ByteShelfDistribution"
 }
 ```
-
-**Important:** This file must be committed and pushed to `master` before (or as part of) the release, since the resolver fetches it from `master` at runtime.
 
 ### 5. Commit, tag, and push
 
@@ -133,7 +117,7 @@ git push
 
 ### 6. Create the GitHub release
 
-Upload one asset per RID per project that's being published. The asset list should mirror what you produced in Step 3 — if you built `Updaemon` for three RIDs, upload three `Updaemon-<rid>` files; same for each plugin. The `dist-install` resolver will fail with a clear error if a user's RID is missing from the registry but listed in `PluginRegistry.json`, so prefer keeping the lists consistent.
+Upload one asset per RID for every project. The asset list should mirror what you produced in Step 3 — if you built `Updaemon` for three RIDs, upload three `Updaemon-<rid>` files, and the same three for each plugin, since that updaemon version installs its plugins from this release.
 
 ```bash
 gh release create vX.Y.Z \
@@ -150,8 +134,6 @@ gh release create vX.Y.Z \
   --notes "Short description of what changed."
 ```
 
-If a plugin isn't being republished this release, drop its rows from the `gh release create` invocation and leave its existing entries in `PluginRegistry.json` pointing at the previous tag.
-
 ## macOS notes
 
 - `install.sh` auto-detects Apple Silicon (`Darwin-arm64`) and downloads the `osx-arm64` asset.
@@ -161,7 +143,7 @@ If a plugin isn't being republished this release, drop its rows from the `gh rel
 
 ## Updating installed plugins
 
-Users who already have a plugin installed can update it with `updaemon dist-update`. The resolver picks the URL matching the running platform's RID.
+Users who already have a plugin installed can update it with `updaemon dist-update`. A registry plugin is fetched from the running updaemon's release, built for the machine's RID.
 
 ## Version history
 

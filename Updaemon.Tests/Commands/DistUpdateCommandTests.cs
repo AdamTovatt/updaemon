@@ -1,6 +1,7 @@
 using Updaemon.Commands;
 using Updaemon.Common.Models;
 using Updaemon.Models;
+using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -8,6 +9,29 @@ namespace Updaemon.Tests.Commands
 {
     public class DistUpdateCommandTests
     {
+        private static DistributionServiceInformation Information(string version)
+        {
+            return new DistributionServiceInformation { FullName = "Plugin", DefaultAlias = "plugin", Version = version };
+        }
+
+        private static DistUpdateCommand Command(
+            TempFileHelper tempHelper,
+            MockConfigManager configManager,
+            MockOutputWriter outputWriter,
+            MockPluginDownloader pluginDownloader,
+            Version? updaemonVersion = null)
+        {
+            GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(
+                new Dictionary<string, string>
+                {
+                    ["github"] = "Updaemon.GithubDistributionService",
+                    ["byteshelf"] = "Updaemon.Distribution.ByteShelfDistribution",
+                },
+                "linux-arm64");
+            PluginInstaller installer = new PluginInstaller(resolver, pluginDownloader, configManager, tempHelper.CreateTempDirectory("plugins"));
+            return new DistUpdateCommand(configManager, outputWriter, installer, pluginDownloader, updaemonVersion ?? new Version(1, 0, 0));
+        }
+
         [Fact]
         public async Task ExecuteAsync_NewerVersionAvailable_UpdatesPlugin()
         {
@@ -15,162 +39,138 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockPluginUrlResolver pluginUrlResolver = new MockPluginUrlResolver();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader { ServiceInformation = Information("0.4.0") };
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/Updaemon.GithubDistributionService", "old");
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
+                pluginDownloader.LocalServiceInformationByPath[pluginPath] = Information("0.3.0");
 
-                // Set up installed plugin
-                string pluginPath = tempHelper.CreateTempFile("plugins/github", "Updaemon.GithubDistributionService");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-
-                // Current version (returned when inspecting installed binary)
-                pluginDownloader.LocalServiceInformationByPath[pluginPath] = new DistributionServiceInformation
-                {
-                    FullName = "GitHub Distribution", DefaultAlias = "github", Version = "0.3.0",
-                    Secrets = new List<DistributionSecretInfo>(),
-                };
-
-                // New version (returned by download)
-                pluginDownloader.ServiceInformation = new DistributionServiceInformation
-                {
-                    FullName = "GitHub Distribution", DefaultAlias = "github", Version = "0.4.0",
-                    Secrets = new List<DistributionSecretInfo>(),
-                };
-
-                pluginUrlResolver.SetPluginUrl("github", "https://example.com/plugins/github-dist");
-
-                DistUpdateCommand command = new DistUpdateCommand(
-                    configManager, outputWriter, pluginUrlResolver, pluginDownloader);
-
-                int exitCode = await command.ExecuteAsync(new[] { "github" });
+                int exitCode = await Command(tempHelper, configManager, outputWriter, pluginDownloader).ExecuteAsync(new[] { "github" });
 
                 Assert.Equal(0, exitCode);
                 Assert.Contains(outputWriter.Messages, m => m.Contains("Updated 'github' to version 0.4.0"));
+                InstalledPluginInfo? recorded = await configManager.GetPluginAsync("github");
+                Assert.NotNull(recorded);
+                Assert.True(File.Exists(recorded.Path));
             }
         }
 
         [Fact]
-        public async Task ExecuteAsync_AlreadyUpToDate_SkipsUpdate()
+        public async Task ExecuteAsync_AlreadyUpToDate_SaysSo()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockPluginUrlResolver pluginUrlResolver = new MockPluginUrlResolver();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader { ServiceInformation = Information("1.0.0") };
+                string pluginPath = tempHelper.CreateTempFile("plugins/github/Updaemon.GithubDistributionService-linux-arm64", "current");
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
+                pluginDownloader.LocalServiceInformationByPath[pluginPath] = Information("1.0.0");
 
-                string pluginPath = tempHelper.CreateTempFile("plugins/github", "Updaemon.GithubDistributionService");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-
-                // Both return same version
-                DistributionServiceInformation sameVersionInfo = new DistributionServiceInformation
-                {
-                    FullName = "GitHub Distribution", DefaultAlias = "github", Version = "1.0.0",
-                    Secrets = new List<DistributionSecretInfo>(),
-                };
-                pluginDownloader.LocalServiceInformationByPath[pluginPath] = sameVersionInfo;
-                pluginDownloader.ServiceInformation = sameVersionInfo;
-
-                pluginUrlResolver.SetPluginUrl("github", "https://example.com/plugins/github-dist");
-
-                DistUpdateCommand command = new DistUpdateCommand(
-                    configManager, outputWriter, pluginUrlResolver, pluginDownloader);
-
-                int exitCode = await command.ExecuteAsync(new[] { "github" });
+                int exitCode = await Command(tempHelper, configManager, outputWriter, pluginDownloader).ExecuteAsync(new[] { "github" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Contains(outputWriter.Messages, m => m.Contains("already up to date"));
+                Assert.Contains(outputWriter.Messages, m => m.Contains("Plugin 'github' is already up to date."));
             }
         }
 
         [Fact]
         public async Task ExecuteAsync_PluginNotInstalled_ReturnsError()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockOutputWriter outputWriter = new MockOutputWriter();
 
-            DistUpdateCommand command = new DistUpdateCommand(
-                configManager, outputWriter, new MockPluginUrlResolver(), new MockPluginDownloader());
+                int exitCode = await Command(tempHelper, new MockConfigManager(), outputWriter, new MockPluginDownloader()).ExecuteAsync(new[] { "non-existent" });
 
-            int exitCode = await command.ExecuteAsync(new[] { "non-existent" });
-
-            Assert.Equal(1, exitCode);
-            Assert.Contains(outputWriter.Errors, e => e.Contains("not installed"));
+                Assert.Equal(1, exitCode);
+                Assert.Contains(outputWriter.Errors, e => e.Contains("not installed"));
+            }
         }
 
         [Fact]
         public async Task ExecuteAsync_NoPluginsInstalled_ReturnsSuccess()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-
-            DistUpdateCommand command = new DistUpdateCommand(
-                configManager, outputWriter, new MockPluginUrlResolver(), new MockPluginDownloader());
-
-            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
-
-            Assert.Equal(0, exitCode);
-            Assert.Contains(outputWriter.Messages, m => m.Contains("No distribution plugins installed"));
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_PluginNotInRegistry_SkipsWithMessage()
-        {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockPluginUrlResolver pluginUrlResolver = new MockPluginUrlResolver();
-                // Don't register any URL — resolver will throw
 
-                string pluginPath = tempHelper.CreateTempFile("plugins/custom", "custom-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "custom", Path = pluginPath };
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-
-                DistUpdateCommand command = new DistUpdateCommand(
-                    configManager, outputWriter, pluginUrlResolver, new MockPluginDownloader());
-
-                int exitCode = await command.ExecuteAsync(new[] { "custom" });
+                int exitCode = await Command(tempHelper, new MockConfigManager(), outputWriter, new MockPluginDownloader()).ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(0, exitCode);
-                Assert.Contains(outputWriter.Messages, m => m.Contains("not found in plugin registry"));
+                Assert.Contains(outputWriter.Messages, m => m.Contains("No distribution plugins installed"));
             }
         }
 
         [Fact]
-        public async Task ExecuteAsync_PluginBinaryMissing_StillDownloadsUpdate()
+        public async Task ExecuteAsync_PluginInstalledFromUrl_IsSkipped()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockPluginUrlResolver pluginUrlResolver = new MockPluginUrlResolver();
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-
-                // Register plugin with path that doesn't exist
-                string pluginDir = tempHelper.CreateTempDirectory("plugins/github");
-                string pluginPath = Path.Combine(pluginDir, "missing-binary");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-
-                pluginDownloader.ServiceInformation = new DistributionServiceInformation
+                string pluginPath = tempHelper.CreateTempFile("plugins/custom/custom-plugin", "custom");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo
                 {
-                    FullName = "GitHub Distribution", DefaultAlias = "github", Version = "1.0.0",
-                    Secrets = new List<DistributionSecretInfo>(),
-                };
+                    Alias = "custom",
+                    Path = pluginPath,
+                    Source = new PluginSource.Url("https://example.com/custom-plugin"),
+                });
 
-                pluginUrlResolver.SetPluginUrl("github", "https://example.com/plugins/github-dist");
+                int exitCode = await Command(tempHelper, configManager, outputWriter, pluginDownloader).ExecuteAsync(new[] { "custom" });
 
-                DistUpdateCommand command = new DistUpdateCommand(
-                    configManager, outputWriter, pluginUrlResolver, pluginDownloader);
+                Assert.Equal(0, exitCode);
+                Assert.Contains(outputWriter.Messages, m => m.Contains("Skipping 'custom': it was installed from a URL."));
+                Assert.Empty(pluginDownloader.MethodCalls);
+            }
+        }
 
-                int exitCode = await command.ExecuteAsync(new[] { "github" });
+        [Fact]
+        public async Task ExecuteAsync_RegistryPluginUnderAnotherAlias_UpdatesFromTheRunningReleaseByRegistryName()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader { ServiceInformation = Information("0.5.0") };
+                string pluginPath = tempHelper.CreateTempFile("plugins/gh/Updaemon.GithubDistributionService-linux-arm64", "old");
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo
+                {
+                    Alias = "gh",
+                    Path = pluginPath,
+                    Source = new PluginSource.Registry("github"),
+                });
+
+                int exitCode = await Command(tempHelper, configManager, outputWriter, pluginDownloader, new Version(1, 4, 0)).ExecuteAsync(new[] { "gh" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains(
+                    "DownloadAndInspectAsync:https://github.com/AdamTovatt/updaemon/releases/download/v1.4.0/Updaemon.GithubDistributionService-linux-arm64",
+                    pluginDownloader.MethodCalls);
+                InstalledPluginInfo? recorded = await configManager.GetPluginAsync("gh");
+                Assert.NotNull(recorded);
+                Assert.Equal(new PluginSource.Registry("github"), recorded.Source);
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_PluginBinaryMissing_StillInstallsIt()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader { ServiceInformation = Information("1.0.0") };
+                string pluginPath = Path.Combine(tempHelper.CreateTempDirectory("plugins/github"), "missing-binary");
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
+
+                int exitCode = await Command(tempHelper, configManager, outputWriter, pluginDownloader).ExecuteAsync(new[] { "github" });
 
                 Assert.Equal(0, exitCode);
                 Assert.Contains(outputWriter.Messages, m => m.Contains("Updated 'github' to version 1.0.0"));
-                // Binary should now exist at the plugin path
-                Assert.True(File.Exists(pluginPath));
+                InstalledPluginInfo? recorded = await configManager.GetPluginAsync("github");
+                Assert.NotNull(recorded);
+                Assert.True(File.Exists(recorded.Path));
             }
         }
 
@@ -181,37 +181,19 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                MockPluginUrlResolver pluginUrlResolver = new MockPluginUrlResolver();
-                MockPluginDownloader pluginDownloader = new MockPluginDownloader();
+                MockPluginDownloader pluginDownloader = new MockPluginDownloader { ServiceInformation = Information("1.0.0") };
+                string githubPath = tempHelper.CreateTempFile("plugins/github/Updaemon.GithubDistributionService-linux-arm64", "github");
+                string byteshelfPath = tempHelper.CreateTempFile("plugins/byteshelf/Updaemon.Distribution.ByteShelfDistribution-linux-arm64", "byteshelf");
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", githubPath));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("byteshelf", byteshelfPath));
+                pluginDownloader.LocalServiceInformationByPath[githubPath] = Information("1.0.0");
+                pluginDownloader.LocalServiceInformationByPath[byteshelfPath] = Information("1.0.0");
 
-                // Install two plugins
-                string githubPath = tempHelper.CreateTempFile("plugins/github", "github-plugin");
-                string byteshelfPath = tempHelper.CreateTempFile("plugins/byteshelf", "byteshelf-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = githubPath });
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = byteshelfPath });
-
-                // Both already up to date
-                DistributionServiceInformation sameVersionInfo = new DistributionServiceInformation
-                {
-                    FullName = "Plugin", DefaultAlias = "plugin", Version = "1.0.0",
-                    Secrets = new List<DistributionSecretInfo>(),
-                };
-                pluginDownloader.LocalServiceInformationByPath[githubPath] = sameVersionInfo;
-                pluginDownloader.LocalServiceInformationByPath[byteshelfPath] = sameVersionInfo;
-                pluginDownloader.ServiceInformation = sameVersionInfo;
-
-                pluginUrlResolver.SetPluginUrl("github", "https://example.com/github");
-                pluginUrlResolver.SetPluginUrl("byteshelf", "https://example.com/byteshelf");
-
-                DistUpdateCommand command = new DistUpdateCommand(
-                    configManager, outputWriter, pluginUrlResolver, pluginDownloader);
-
-                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
+                int exitCode = await Command(tempHelper, configManager, outputWriter, pluginDownloader).ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(0, exitCode);
-                // Should have resolved both plugins
-                Assert.Contains(pluginUrlResolver.MethodCalls, c => c == "ResolveAsync:github");
-                Assert.Contains(pluginUrlResolver.MethodCalls, c => c == "ResolveAsync:byteshelf");
+                Assert.Contains(outputWriter.Messages, m => m.Contains("Plugin 'github' is already up to date."));
+                Assert.Contains(outputWriter.Messages, m => m.Contains("Plugin 'byteshelf' is already up to date."));
                 Assert.Contains(outputWriter.Messages, m => m.Contains("All plugins are up to date"));
             }
         }

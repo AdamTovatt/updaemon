@@ -1,16 +1,22 @@
+using Updaemon.Common.Models;
+using Updaemon.Models;
+
 namespace Updaemon.Interfaces
 {
     /// <summary>
     /// Client for communicating with distribution service plugins via named pipes.
+    /// A call the plugin fails throws <see cref="PluginException"/> with the plugin's message.
     /// </summary>
     public interface IDistributionServiceClient : IAsyncDisposable
     {
         /// <summary>
-        /// Connects to the distribution service plugin executable.
+        /// Starts the plugin executable, connects to it and reads its service information.
+        /// A plugin speaking another plugin protocol version is refused.
         /// </summary>
         /// <param name="pluginExecutablePath">Path to the plugin executable.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
-        Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default);
+        /// <returns>The plugin's service information.</returns>
+        Task<DistributionServiceInformation> ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Initializes the distribution service with secrets.
@@ -28,20 +34,13 @@ namespace Updaemon.Interfaces
         Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Downloads a specific version of a service to the target path.
+        /// Downloads a specific version of a service to the target path. The plugin is told
+        /// this machine's runtime identifier so it can pick the matching build.
         /// </summary>
         /// <param name="serviceName">The remote service name to download.</param>
         /// <param name="version">The version to download.</param>
         /// <param name="targetPath">The directory path where the version should be downloaded.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Gets service information from the distribution plugin.
-        /// </summary>
-        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
-        /// <returns>Distribution service information.</returns>
-        Task<Updaemon.Common.Models.DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default);
     }
 }
-

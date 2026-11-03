@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Updaemon.Commands;
 using Updaemon.Configuration;
@@ -72,15 +73,21 @@ namespace Updaemon
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
 
+            // MERGE(19-redesign): placeholder. The platform type there owns the RID detector and the
+            // running version; wire both from it and delete these two lines.
+            string runtimeIdentifier = $"{(OperatingSystem.IsMacOS() ? "osx" : "linux")}-{RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()}";
+            Version updaemonVersion = typeof(Program).Assembly.GetName().Version!;
+
             // Distribution service client
-            services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();
+            services.AddTransient<IDistributionServiceClient>(_ => new DistributionServiceClient(runtimeIdentifier));
 
             // HTTP client for downloading plugins
             services.AddSingleton<HttpClient>();
 
-            // Plugin URL resolver and downloader
-            services.AddSingleton<IPluginUrlResolver, GitHubPluginUrlResolver>();
+            // Plugin resolution, download and installation
+            services.AddSingleton<IPluginUrlResolver>(new GitHubPluginUrlResolver(GitHubPluginUrlResolver.LoadEmbeddedRegistry(), runtimeIdentifier));
             services.AddTransient<IPluginDownloader, PluginDownloader>();
+            services.AddTransient<IPluginInstaller, PluginInstaller>();
 
             // Commands - transient (created per invocation)
             services.AddTransient<NewCommand>();
@@ -90,8 +97,16 @@ namespace Updaemon
             services.AddTransient<SetRemoteCommand>();
             services.AddTransient<SetExecNameCommand>();
             services.AddTransient<SetRestartCommand>();
-            services.AddTransient<DistInstallCommand>();
-            services.AddTransient<DistUpdateCommand>();
+            services.AddTransient(provider => new DistInstallCommand(
+                provider.GetRequiredService<IOutputWriter>(),
+                provider.GetRequiredService<IPluginInstaller>(),
+                updaemonVersion));
+            services.AddTransient(provider => new DistUpdateCommand(
+                provider.GetRequiredService<IConfigManager>(),
+                provider.GetRequiredService<IOutputWriter>(),
+                provider.GetRequiredService<IPluginInstaller>(),
+                provider.GetRequiredService<IPluginDownloader>(),
+                updaemonVersion));
             services.AddTransient<DistListCommand>();
             services.AddTransient<SecretSetCommand>();
             services.AddTransient<TimerCommand>();

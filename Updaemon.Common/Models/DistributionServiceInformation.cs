@@ -15,6 +15,12 @@ namespace Updaemon.Common.Models
         public string Version { get; set; } = string.Empty;
 
         public List<DistributionSecretInfo> Secrets { get; set; } = new List<DistributionSecretInfo>();
+
+        /// <summary>
+        /// The plugin protocol version this plugin was built with. It comes from the
+        /// Updaemon.Common the plugin is compiled against, so a plugin cannot misreport it.
+        /// </summary>
+        public int ProtocolVersion => PluginProtocol.Version;
     }
 }
 

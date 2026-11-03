@@ -161,7 +161,7 @@ namespace Updaemon.GithubDistributionService.Tests
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
             string targetPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
-            await service.DownloadVersionAsync("owner/repo/*-linux-arm.zip", new Version(1, 2, 3), targetPath);
+            await service.DownloadVersionAsync("owner/repo/*-linux-arm.zip", new Version(1, 2, 3), "linux-x64", targetPath);
 
             await apiClient.Received(1).DownloadReleaseAssetAsync(
                 Arg.Is<string>(value => value == "owner"),
@@ -192,7 +192,7 @@ namespace Updaemon.GithubDistributionService.Tests
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
             string targetPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
-            await service.DownloadVersionAsync("owner/repo/*.zip", new Version(1, 2, 3), targetPath);
+            await service.DownloadVersionAsync("owner/repo/*.zip", new Version(1, 2, 3), "linux-arm64", targetPath);
 
             await apiClient.Received(1).DownloadReleaseAssetAsync(
                 Arg.Is<string>(value => value == "owner"),
@@ -203,35 +203,12 @@ namespace Updaemon.GithubDistributionService.Tests
                 Arg.Any<CancellationToken>());
         }
 
-        [Fact]
-        public async Task DownloadVersionAsync_WithoutPattern_UsesSingleAsset()
-        {
-            IGithubApiClient apiClient = Substitute.For<IGithubApiClient>();
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            GithubRelease release = new GithubRelease
-            {
-                TagName = "v1.2.3",
-                Assets = new[] { new GithubAsset { Id = 301, Name = "app.zip", BrowserDownloadUrl = "https://example.com/app.zip" } },
-            };
-            apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
-                .Returns(release);
-            GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
-            string targetPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-
-            await service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), targetPath);
-
-            await apiClient.Received(1).DownloadReleaseAssetAsync(
-                Arg.Is<string>(value => value == "owner"),
-                Arg.Is<string>(value => value == "repo"),
-                Arg.Is<long>(value => value == 301),
-                Arg.Any<string>(),
-                Arg.Is<string?>(token => token == null),
-                Arg.Any<CancellationToken>());
-        }
-
-        [Fact]
-        public async Task DownloadVersionAsync_WithoutPatternAndMultipleAssets_ThrowsException()
+        [Theory]
+        [InlineData("linux-arm64", 302)]
+        [InlineData("linux-arm", 303)]
+        [InlineData("osx-arm64", 304)]
+        [InlineData("LINUX-X64", 301)]
+        public async Task DownloadVersionAsync_WithoutPattern_PicksTheBuildForTheRuntime(string runtimeIdentifier, long expectedAssetId)
         {
             IGithubApiClient apiClient = Substitute.For<IGithubApiClient>();
             IVersionParser versionParser = Substitute.For<IVersionParser>();
@@ -241,8 +218,42 @@ namespace Updaemon.GithubDistributionService.Tests
                 TagName = "v1.2.3",
                 Assets = new[]
                 {
-                    new GithubAsset { Name = "file1.zip", BrowserDownloadUrl = "https://example.com/file1.zip" },
-                    new GithubAsset { Name = "file2.zip", BrowserDownloadUrl = "https://example.com/file2.zip" },
+                    new GithubAsset { Id = 301, Name = "app-linux-x64.zip" },
+                    new GithubAsset { Id = 302, Name = "app-linux-arm64.zip" },
+                    new GithubAsset { Id = 303, Name = "app-linux-arm.zip" },
+                    new GithubAsset { Id = 304, Name = "app-osx-arm64" },
+                    new GithubAsset { Id = 305, Name = "app-osx-arm64.sha256" },
+                },
+            };
+            apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
+                .Returns(release);
+            GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
+            string targetPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+
+            await service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), runtimeIdentifier, targetPath);
+
+            await apiClient.Received(1).DownloadReleaseAssetAsync(
+                Arg.Is<string>(value => value == "owner"),
+                Arg.Is<string>(value => value == "repo"),
+                Arg.Is<long>(value => value == expectedAssetId),
+                Arg.Any<string>(),
+                Arg.Is<string?>(token => token == null),
+                Arg.Any<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task DownloadVersionAsync_WithoutPatternAndNoBuildForTheRuntime_ListsAssetsOnePerLine()
+        {
+            IGithubApiClient apiClient = Substitute.For<IGithubApiClient>();
+            IVersionParser versionParser = Substitute.For<IVersionParser>();
+            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
+            GithubRelease release = new GithubRelease
+            {
+                TagName = "v0.1.1",
+                Assets = new[]
+                {
+                    new GithubAsset { Name = "MinerUHost-linux-arm64-framework-dependent.zip" },
+                    new GithubAsset { Name = "MinerUHost-linux-arm64-self-contained.zip" },
                 },
             };
             apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
@@ -250,9 +261,66 @@ namespace Updaemon.GithubDistributionService.Tests
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), "/tmp/test"));
+                () => service.DownloadVersionAsync("owner/repo", new Version(0, 1, 1), "linux-arm64", "/tmp/test"));
 
-            Assert.Contains("Multiple assets found", exception.Message);
+            Assert.Equal(
+                "No asset in the release v0.1.1 of owner/repo is named *-linux-arm64.zip or *-linux-arm64, the build for this machine. Its assets:\n" +
+                "  MinerUHost-linux-arm64-framework-dependent.zip\n" +
+                "  MinerUHost-linux-arm64-self-contained.zip\n" +
+                "Pick one with the remote owner/repo/<pattern>, where <pattern> is an asset name and * matches any text.",
+                exception.Message);
+        }
+
+        [Fact]
+        public async Task DownloadVersionAsync_ReleaseWithoutAssets_SaysSo()
+        {
+            IGithubApiClient apiClient = Substitute.For<IGithubApiClient>();
+            apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
+                .Returns(new GithubRelease { TagName = "v1.2.3" });
+            GithubDistributionService service = new GithubDistributionService(apiClient, Substitute.For<IVersionParser>(), Substitute.For<IDownloadPostProcessor>());
+
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), "linux-arm64", "/tmp/test"));
+
+            Assert.Equal("The release v1.2.3 of owner/repo has no assets.", exception.Message);
+        }
+
+        [Fact]
+        public async Task GetLatestVersionAsync_RemoteWithoutRepo_SaysWhatFormIsExpected()
+        {
+            GithubDistributionService service = new GithubDistributionService(
+                Substitute.For<IGithubApiClient>(), Substitute.For<IVersionParser>(), Substitute.For<IDownloadPostProcessor>());
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(
+                () => service.GetLatestVersionAsync("mineru-host"));
+
+            Assert.Equal("Invalid GitHub remote 'mineru-host': expected owner/repo or owner/repo/<pattern>.", exception.Message);
+        }
+
+        [Fact]
+        public async Task DownloadVersionAsync_WithoutPatternAndSeveralBuildsForTheRuntime_ThrowsException()
+        {
+            IGithubApiClient apiClient = Substitute.For<IGithubApiClient>();
+            IVersionParser versionParser = Substitute.For<IVersionParser>();
+            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
+            GithubRelease release = new GithubRelease
+            {
+                TagName = "v1.2.3",
+                Assets = new[]
+                {
+                    new GithubAsset { Name = "app-linux-arm64.zip" },
+                    new GithubAsset { Name = "app-linux-arm64" },
+                },
+            };
+            apiClient.GetLatestReleaseAsync("owner", "repo", null, Arg.Any<CancellationToken>())
+                .Returns(release);
+            GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
+
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), "linux-arm64", "/tmp/test"));
+
+            Assert.StartsWith("Several assets in the release v1.2.3 of owner/repo are named *-linux-arm64.zip or *-linux-arm64", exception.Message);
+            Assert.Contains("\n  app-linux-arm64.zip\n  app-linux-arm64\n", exception.Message);
         }
 
         [Fact]
@@ -275,9 +343,9 @@ namespace Updaemon.GithubDistributionService.Tests
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.DownloadVersionAsync("owner/repo/*-linux-*.zip", new Version(1, 2, 3), "/tmp/test"));
+                () => service.DownloadVersionAsync("owner/repo/*-linux-*.zip", new Version(1, 2, 3), "linux-arm", "/tmp/test"));
 
-            Assert.Contains("Multiple assets match pattern", exception.Message);
+            Assert.StartsWith("Several assets in the release v1.2.3 of owner/repo match '*-linux-*.zip'.", exception.Message);
         }
 
         [Fact]
@@ -296,9 +364,10 @@ namespace Updaemon.GithubDistributionService.Tests
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.DownloadVersionAsync("owner/repo/*.zip", new Version(1, 2, 3), "/tmp/test"));
+                () => service.DownloadVersionAsync("owner/repo/*.zip", new Version(1, 2, 3), "linux-arm64", "/tmp/test"));
 
-            Assert.Contains("No assets matching pattern", exception.Message);
+            Assert.StartsWith("No asset in the release v1.2.3 of owner/repo matches '*.zip'.", exception.Message);
+            Assert.Contains("\n  app.tar.gz\n", exception.Message);
         }
 
         [Fact]
@@ -317,7 +386,7 @@ namespace Updaemon.GithubDistributionService.Tests
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
             string targetPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
-            await service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), targetPath);
+            await service.DownloadVersionAsync("owner/repo/app.zip", new Version(1, 2, 3), "linux-arm64", targetPath);
 
             await postProcessor.Received(1).ProcessAsync(targetPath, Arg.Any<CancellationToken>());
         }
@@ -340,7 +409,7 @@ namespace Updaemon.GithubDistributionService.Tests
 
             try
             {
-                await service.DownloadVersionAsync("owner/repo", new Version(1, 2, 3), targetPath);
+                await service.DownloadVersionAsync("owner/repo/app.zip", new Version(1, 2, 3), "linux-arm64", targetPath);
 
                 Assert.True(Directory.Exists(targetPath));
             }

@@ -1,0 +1,4 @@
+{
+  "github": "Updaemon.GithubDistributionService",
+  "byteshelf": "Updaemon.Distribution.ByteShelfDistribution"
+}

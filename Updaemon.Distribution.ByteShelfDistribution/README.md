@@ -31,7 +31,7 @@ Root Tenant (authenticated with API key)
 ## Installation
 
 ```bash
-sudo updaemon dist-install --as byteshelf https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.Distribution.ByteShelfDistribution
+sudo updaemon dist-install byteshelf
 ```
 
 ## Configuration
@@ -216,7 +216,7 @@ Here's a complete example deploying an application via ByteShelf:
 
 ```bash
 # 1. Configure ByteShelf (one-time setup)
-sudo updaemon dist-install https://example.com/updaemon-byteshelf-plugin
+sudo updaemon dist-install byteshelf
 sudo updaemon secret-set byteShelfUrl https://byteshelf.example.com
 sudo updaemon secret-set byteShelfApiKey your-api-key
 

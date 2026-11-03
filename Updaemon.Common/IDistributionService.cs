@@ -35,9 +35,14 @@ namespace Updaemon.Common
         /// </summary>
         /// <param name="serviceName">The remote service name to download.</param>
         /// <param name="version">The version to download.</param>
+        /// <param name="runtimeIdentifier">The runtime identifier of the machine updaemon runs on (e.g. "linux-arm64"), for picking the build that runs there.</param>
         /// <param name="targetPath">The directory path where the version should be downloaded.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
-        Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default);
+        /// <remarks>
+        /// A thrown exception's message is shown to the user as is, without a stack trace,
+        /// so it should say what went wrong and what to change.
+        /// </remarks>
+        Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default);
     }
 }
 

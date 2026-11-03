@@ -49,7 +49,7 @@ namespace Updaemon.Tests.Commands
                 string pluginAlias = "github")
             {
                 string pluginPath = TempHelper.CreateTempFile("plugin/github-dist", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = pluginAlias, Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed(pluginAlias, pluginPath);
                 await ConfigManager.AddOrUpdatePluginAsync(pluginInfo);
                 await ConfigManager.RegisterServiceAsync(localName, remoteName, pluginAlias);
             }
@@ -63,7 +63,7 @@ namespace Updaemon.Tests.Commands
                 string pluginAlias = "github")
             {
                 string pluginPath = TempHelper.CreateTempFile("plugin/github-dist", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = pluginAlias, Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed(pluginAlias, pluginPath);
                 await ConfigManager.AddOrUpdatePluginAsync(pluginInfo);
                 await ConfigManager.RegisterServiceAsync(localName, remoteName, pluginAlias, ServiceType.Cli);
             }
@@ -148,7 +148,7 @@ namespace Updaemon.Tests.Commands
         {
             using (InitCommandTestBuilder b = new InitCommandTestBuilder())
             {
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/nonexistent/plugin" };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", "/nonexistent/plugin");
                 await b.ConfigManager.AddOrUpdatePluginAsync(pluginInfo);
                 await b.ConfigManager.RegisterServiceAsync("my-api", "owner/repo", "github");
 

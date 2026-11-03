@@ -29,7 +29,7 @@ namespace Updaemon.Tests.Commands
             /// </summary>
             public async Task InstallPluginAsync(string pluginAlias = "github")
             {
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = pluginAlias, Path = "/path/to/plugin" };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed(pluginAlias, "/path/to/plugin");
                 await ConfigManager.AddOrUpdatePluginAsync(pluginInfo);
             }
 

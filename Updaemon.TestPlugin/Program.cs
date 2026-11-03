@@ -37,13 +37,33 @@ namespace Updaemon.TestPlugin
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// The remotes "fail" and "fail-silently" make the plugin fail, with and without a
+        /// message, so tests can see how plugin errors reach updaemon.
+        /// </summary>
         public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult<Version?>(new Version(1, 0, 0));
+            switch (serviceName)
+            {
+                case "fail":
+                    throw new InvalidOperationException("Remote 'fail' does not exist. Check the remote name.");
+
+                case "fail-silently":
+                    throw new InvalidOperationException(string.Empty);
+
+                default:
+                    return Task.FromResult<Version?>(new Version(1, 0, 0));
+            }
         }
 
-        public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Writes one empty file named after the runtime identifier it was given, so tests can
+        /// see which identifier crossed the pipe.
+        /// </summary>
+        public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
         {
+            Directory.CreateDirectory(targetPath);
+            File.WriteAllBytes(Path.Combine(targetPath, runtimeIdentifier), Array.Empty<byte>());
             return Task.CompletedTask;
         }
     }

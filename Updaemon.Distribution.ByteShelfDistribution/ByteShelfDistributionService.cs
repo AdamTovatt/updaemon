@@ -124,9 +124,12 @@ namespace Updaemon.Distribution.ByteShelfDistribution
         public async Task DownloadVersionAsync(
             string serviceName,
             Version version,
+            string runtimeIdentifier,
             string targetPath,
             CancellationToken cancellationToken = default)
         {
+            // runtimeIdentifier is unused: a ByteShelf version holds the files to download, and
+            // the remote's pattern picks among them.
             if (_apiClient == null)
             {
                 throw new InvalidOperationException("API client not initialized. Call InitializeAsync first.");

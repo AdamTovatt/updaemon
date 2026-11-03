@@ -211,7 +211,7 @@ namespace Updaemon.Common.Tests.Hosting
                 {
                     Id = "test-4",
                     Method = "DownloadVersionAsync",
-                    Parameters = "{\"serviceName\":\"TestService\",\"version\":\"2.0.1\",\"targetPath\":\"/opt/test/2.0.1\"}",
+                    Parameters = "{\"serviceName\":\"TestService\",\"version\":\"2.0.1\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/test/2.0.1\"}",
                 };
 
                 string requestJson = JsonSerializer.Serialize(request, CommonJsonContext.Default.RpcRequest);
@@ -228,6 +228,7 @@ namespace Updaemon.Common.Tests.Hosting
                 Assert.True(response.Success);
                 Assert.Equal("TestService", service.LastDownloadServiceName);
                 Assert.Equal(new Version(2, 0, 1), service.LastDownloadVersion);
+                Assert.Equal("linux-arm64", service.LastDownloadRuntimeIdentifier);
                 Assert.Equal("/opt/test/2.0.1", service.LastDownloadTargetPath);
             }
         }
@@ -274,7 +275,7 @@ namespace Updaemon.Common.Tests.Hosting
         }
 
         [Fact]
-        public async Task RunAsync_ExceptionInImplementation_ReturnsErrorWithStackTrace()
+        public async Task RunAsync_ExceptionInImplementation_ReturnsMessageWithoutStackTrace()
         {
             string pipeName = $"test_pipe_{Guid.NewGuid():N}";
             string[] args = new string[] { "--pipe-name", pipeName };
@@ -313,8 +314,7 @@ namespace Updaemon.Common.Tests.Hosting
                 Assert.NotNull(response);
                 Assert.Equal("test-6", response.Id);
                 Assert.False(response.Success);
-                Assert.Contains("Test exception", response.Error);
-                Assert.Contains("at ", response.Error); // Should contain stack trace
+                Assert.Equal("Test exception", response.Error);
             }
         }
 
@@ -349,6 +349,7 @@ namespace Updaemon.Common.Tests.Hosting
             public string? LastServiceName { get; private set; }
             public string? LastDownloadServiceName { get; private set; }
             public Version? LastDownloadVersion { get; private set; }
+            public string? LastDownloadRuntimeIdentifier { get; private set; }
             public string? LastDownloadTargetPath { get; private set; }
             public Version? LatestVersion { get; set; }
             public bool ShouldThrowException { get; set; }
@@ -387,7 +388,7 @@ namespace Updaemon.Common.Tests.Hosting
                 return Task.FromResult(LatestVersion);
             }
 
-            public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+            public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
             {
                 if (ShouldThrowException)
                 {
@@ -396,6 +397,7 @@ namespace Updaemon.Common.Tests.Hosting
 
                 LastDownloadServiceName = serviceName;
                 LastDownloadVersion = version;
+                LastDownloadRuntimeIdentifier = runtimeIdentifier;
                 LastDownloadTargetPath = targetPath;
                 return Task.CompletedTask;
             }

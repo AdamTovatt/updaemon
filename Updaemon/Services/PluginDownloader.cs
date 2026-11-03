@@ -67,11 +67,9 @@ namespace Updaemon.Services
 
         private async Task<DistributionServiceInformation> ConnectAndGetInfoAsync(string pluginPath, CancellationToken cancellationToken)
         {
-            await _distributionClient.ConnectAsync(pluginPath, cancellationToken);
             try
             {
-                DistributionServiceInformation serviceInfo = await _distributionClient.GetServiceInformationAsync(cancellationToken);
-                return serviceInfo;
+                return await _distributionClient.ConnectAsync(pluginPath, cancellationToken);
             }
             finally
             {

@@ -28,5 +28,6 @@
   <ItemGroup>
     <EmbeddedResource Include="Templates\service.template" />
     <EmbeddedResource Include="Templates\launchd.plist.template" />
+    <EmbeddedResource Include="PluginAssets.json" LogicalName="PluginAssets.json" />
   </ItemGroup>
 </Project>

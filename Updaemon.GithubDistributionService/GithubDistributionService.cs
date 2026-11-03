@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Updaemon.Common;
 using Updaemon.Common.Models;
 using Updaemon.Common.Utilities;
@@ -70,6 +71,7 @@ namespace Updaemon.GithubDistributionService
         public async Task DownloadVersionAsync(
             string serviceName,
             Version version,
+            string runtimeIdentifier,
             string targetPath,
             CancellationToken cancellationToken = default)
         {
@@ -82,8 +84,7 @@ namespace Updaemon.GithubDistributionService
                 throw new InvalidOperationException($"Release not found for {owner}/{repo}");
             }
 
-            // Find the asset to download based on pattern
-            GithubAsset? asset = FindMatchingAsset(release.Assets, filenamePattern, owner, repo, release.TagName);
+            GithubAsset asset = SelectAsset(release.Assets, filenamePattern, runtimeIdentifier, owner, repo, release.TagName);
 
             // Ensure target directory exists
             if (!Directory.Exists(targetPath))
@@ -114,7 +115,7 @@ namespace Updaemon.GithubDistributionService
 
             if (parts.Length < 2)
             {
-                throw new ArgumentException($"Invalid service name format: '{serviceName}'. Expected 'owner/repo' or 'owner/repo/pattern'");
+                throw new ArgumentException($"Invalid GitHub remote '{serviceName}': expected owner/repo or owner/repo/<pattern>.");
             }
 
             string owner = parts[0];
@@ -125,63 +126,62 @@ namespace Updaemon.GithubDistributionService
         }
 
         /// <summary>
-        /// Finds a matching asset from a list based on a filename pattern.
-        /// Supports wildcards like *.zip, linux-*.zip, etc.
+        /// Picks the one asset to download. With a pattern, that is the asset matching it
+        /// (wildcards like *.zip); without one, the build for this machine, named
+        /// *-&lt;rid&gt;.zip or *-&lt;rid&gt;. Anything but exactly one match fails with the release's
+        /// asset names, one per line, and how to pick one.
         /// </summary>
-        /// <param name="assets">Array of available assets</param>
-        /// <param name="pattern">Filename pattern (null means single asset required)</param>
-        /// <param name="owner">Repository owner (for error messages)</param>
-        /// <param name="repo">Repository name (for error messages)</param>
-        /// <param name="tagName">Release tag name (for error messages)</param>
-        /// <returns>The matching asset</returns>
-        private GithubAsset FindMatchingAsset(GithubAsset[] assets, string? pattern, string owner, string repo, string tagName)
+        private static GithubAsset SelectAsset(
+            GithubAsset[] assets,
+            string? pattern,
+            string runtimeIdentifier,
+            string owner,
+            string repo,
+            string tagName)
         {
-            if (pattern == null)
+            string releaseLabel = $"release {tagName} of {owner}/{repo}";
+            if (assets.Length == 0)
             {
-                // No pattern specified - require exactly one asset
-                if (assets.Length == 0)
-                {
-                    throw new InvalidOperationException($"No assets found in release {tagName} for {owner}/{repo}");
-                }
-
-                if (assets.Length > 1)
-                {
-                    string assetNames = string.Join(", ", assets.Select(a => a.Name));
-                    throw new InvalidOperationException(
-                        $"Multiple assets found in release {tagName} for {owner}/{repo}: {assetNames}. " +
-                        $"Please specify a pattern like '{owner}/{repo}/*.zip'");
-                }
-
-                return assets[0];
+                throw new InvalidOperationException($"The {releaseLabel} has no assets.");
             }
 
-            // Convert wildcard pattern to regex
-            string regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
+            Func<GithubAsset, bool> matches = pattern == null
+                ? asset => IsBuildFor(asset.Name, runtimeIdentifier)
+                : WildcardMatcher(pattern);
+            GithubAsset[] matchingAssets = assets.Where(matches).ToArray();
+            if (matchingAssets.Length == 1)
+            {
+                return matchingAssets[0];
+            }
+
+            string buildName = $"*-{runtimeIdentifier}.zip or *-{runtimeIdentifier}";
+            string problem = (pattern, matchingAssets.Length) switch
+            {
+                (null, 0) => $"No asset in the {releaseLabel} is named {buildName}, the build for this machine.",
+                (null, _) => $"Several assets in the {releaseLabel} are named {buildName}, the build for this machine.",
+                (_, 0) => $"No asset in the {releaseLabel} matches '{pattern}'.",
+                _ => $"Several assets in the {releaseLabel} match '{pattern}'.",
+            };
+
+            throw new InvalidOperationException(
+                $"{problem} Its assets:\n" +
+                string.Join("\n", assets.Select(asset => $"  {asset.Name}")) + "\n" +
+                $"Pick one with the remote {owner}/{repo}/<pattern>, where <pattern> is an asset name and * matches any text.");
+        }
+
+        private static bool IsBuildFor(string assetName, string runtimeIdentifier)
+        {
+            return assetName.EndsWith($"-{runtimeIdentifier}.zip", StringComparison.OrdinalIgnoreCase)
+                || assetName.EndsWith($"-{runtimeIdentifier}", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Func<GithubAsset, bool> WildcardMatcher(string pattern)
+        {
+            string regexPattern = "^" + Regex.Escape(pattern)
                 .Replace("\\*", ".*")
                 .Replace("\\?", ".") + "$";
-            System.Text.RegularExpressions.Regex regex = new System.Text.RegularExpressions.Regex(
-                regexPattern,
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-            GithubAsset[] matchingAssets = assets.Where(a => regex.IsMatch(a.Name)).ToArray();
-
-            if (matchingAssets.Length == 0)
-            {
-                string assetNames = string.Join(", ", assets.Select(a => a.Name));
-                throw new InvalidOperationException(
-                    $"No assets matching pattern '{pattern}' found in release {tagName} for {owner}/{repo}. " +
-                    $"Available assets: {assetNames}");
-            }
-
-            if (matchingAssets.Length > 1)
-            {
-                string matchingNames = string.Join(", ", matchingAssets.Select(a => a.Name));
-                throw new InvalidOperationException(
-                    $"Multiple assets match pattern '{pattern}' in release {tagName} for {owner}/{repo}: {matchingNames}. " +
-                    $"Please use a more specific pattern.");
-            }
-
-            return matchingAssets[0];
+            Regex regex = new Regex(regexPattern, RegexOptions.IgnoreCase);
+            return asset => regex.IsMatch(asset.Name);
         }
     }
 }

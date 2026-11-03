@@ -33,7 +33,7 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_SpecificServiceNotRegistered_DoesNotProceed()
         {
             MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", "/path/to/plugin");
             await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
@@ -58,7 +58,7 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_NoServicesRegistered_DoesNotProceed()
         {
             MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" };
+            InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", "/path/to/plugin");
             await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
             MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
@@ -86,7 +86,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -122,7 +122,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("service1", "Service1", "github");
                 await configManager.RegisterServiceAsync("service2", "Service2", "github");
@@ -168,7 +168,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -215,7 +215,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -253,7 +253,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -295,7 +295,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -356,7 +356,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -399,7 +399,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -443,7 +443,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
@@ -485,8 +485,8 @@ namespace Updaemon.Tests.Commands
                 MockConfigManager configManager = new MockConfigManager();
                 string githubPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
                 string byteshelfPath = tempHelper.CreateTempFile("plugins/byteshelf/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = githubPath });
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = byteshelfPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", githubPath));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("byteshelf", byteshelfPath));
                 await configManager.RegisterServiceAsync("svc1", "Svc1", "github");
                 await configManager.RegisterServiceAsync("svc2", "Svc2", "byteshelf");
 
@@ -534,7 +534,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("old-service", "OldService", "github");
                 UpdaemonConfig config = await configManager.LoadConfigAsync();
                 RegisteredService serviceWithoutAlias = config.Services.First();
@@ -595,7 +595,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 MockOutputWriter outputWriter = new MockOutputWriter();
@@ -630,7 +630,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo { Alias = "github", Path = pluginPath };
+                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
                 await configManager.RegisterServiceAsync("my-tool", "MyTool", "github", ServiceType.Cli);
 
@@ -679,7 +679,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("my-tool", "MyTool", "github", ServiceType.Cli);
 
                 MockOutputWriter outputWriter = new MockOutputWriter();
@@ -717,7 +717,7 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_PluginExecutableNotFound_SkipsWithError()
         {
             MockConfigManager configManager = new MockConfigManager();
-            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/nonexistent/plugin/path" });
+            await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/nonexistent/plugin/path"));
             await configManager.RegisterServiceAsync("my-service", "MyService", "github");
 
             MockOutputWriter outputWriter = new MockOutputWriter();
@@ -747,7 +747,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 MockServiceDeployer serviceDeployer = new MockServiceDeployer();
@@ -785,7 +785,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 MockServiceDeployer serviceDeployer = new MockServiceDeployer();
@@ -821,7 +821,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 MockServiceDeployer serviceDeployer = new MockServiceDeployer();
@@ -861,7 +861,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 MockServiceDeployer serviceDeployer = new MockServiceDeployer();
@@ -913,7 +913,7 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
                 await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
 
                 // Set custom retention count
@@ -956,8 +956,8 @@ namespace Updaemon.Tests.Commands
                 MockConfigManager configManager = new MockConfigManager();
                 string failingPath = tempHelper.CreateTempFile("plugins/failing/bin", "fake-plugin");
                 string workingPath = tempHelper.CreateTempFile("plugins/working/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "failing", Path = failingPath });
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "working", Path = workingPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("failing", failingPath));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("working", workingPath));
                 await configManager.RegisterServiceAsync("svc-failing", "SvcFailing", "failing");
                 await configManager.RegisterServiceAsync("svc-working", "SvcWorking", "working");
 
@@ -1005,8 +1005,8 @@ namespace Updaemon.Tests.Commands
                 MockConfigManager configManager = new MockConfigManager();
                 string failingPath = tempHelper.CreateTempFile("plugins/failing/bin", "fake-plugin");
                 string workingPath = tempHelper.CreateTempFile("plugins/working/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "failing", Path = failingPath });
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "working", Path = workingPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("failing", failingPath));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("working", workingPath));
                 await configManager.RegisterServiceAsync("svc-failing", "SvcFailing", "failing");
                 await configManager.RegisterServiceAsync("svc-working", "SvcWorking", "working");
 

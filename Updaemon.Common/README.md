@@ -64,9 +64,9 @@ public class MyDistributionService : IDistributionService
         // Return null if service doesn't exist
     }
 
-    public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+    public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
     {
-        // Download the specified version to targetPath
+        // Download the build of the specified version for runtimeIdentifier to targetPath
         // Extract/copy all necessary files
     }
 }
@@ -95,13 +95,19 @@ class Program
 - Creates and manages the named pipe server
 - Handles the RPC request/response loop
 - Routes calls to your `IDistributionService` implementation
-- Converts exceptions to proper RPC error responses
+- Converts exceptions to RPC error responses carrying the exception's message only
+
+Updaemon shows that message to the user as is, with no stack trace, so make it say what went wrong and what to change (e.g. `Invalid GitHub remote 'myapp': expected owner/repo or owner/repo/<pattern>.`).
+
+## Plugin Protocol Version
+
+The service information a plugin returns carries `ProtocolVersion`, the `PluginProtocol.Version` of the Updaemon.Common it was built against; plugins do not set it. Updaemon refuses a plugin whose protocol version differs from its own and tells the user to reinstall it. Rebuild your plugin against the matching Updaemon.Common when the protocol changes.
 
 ## IDistributionService Interface
 
 ### GetServiceInformation()
 
-Returns static metadata about the plugin (full name, default alias, version, description, and required/optional secrets). This should not perform network operations.
+Returns static metadata about the plugin (full name, default alias, version, description, and required/optional secrets). This should not perform network operations. Updaemon calls it each time it starts the plugin, to check the protocol version.
 
 ### InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
 
@@ -134,13 +140,14 @@ Query your distribution server for the latest available version.
 **Returns:**
 - `Version?` - The latest version available, or `null` if the service doesn't exist
 
-### DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+### DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
 
 Download a specific version to the target directory.
 
 **Parameters:**
 - `serviceName` - The remote service name
 - `version` - The specific version to download (e.g., `new Version(1, 2, 3)`)
+- `runtimeIdentifier` - The runtime identifier of the machine updaemon runs on (e.g., `linux-arm64`, `osx-arm64`), for picking the build that runs there. A source that holds one build per version can ignore it.
 - `targetPath` - The directory path where files should be downloaded (e.g., `/opt/my-app/1.2.3/`)
 - `cancellationToken` - Cancellation token to cancel the operation.
 
@@ -173,7 +180,7 @@ public class MyDistributionService : IDistributionService
 {
     private readonly IDownloadPostProcessor _postProcessor = new DownloadPostProcessor();
 
-    public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+    public async Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
     {
         // Download the zip file from your distribution server
         string zipPath = Path.Combine(targetPath, $"{serviceName}-{version}.zip");
@@ -199,7 +206,7 @@ public class MyDistributionService : IDistributionService
 
 ## RPC Protocol
 
-Communication between updaemon and your plugin uses JSON-RPC over named pipes. Updaemon may also invoke the plugin with a special `--get-info` mode during installation to retrieve `DistributionServiceInformation` before regular operation.
+Communication between updaemon and your plugin uses JSON-RPC over named pipes. Right after connecting, updaemon calls `GetServiceInformation` and checks the protocol version before any other call. `DistributionServiceHost` handles all of this; the format below is for reference.
 
 ### Request Format
 
@@ -207,8 +214,14 @@ Communication between updaemon and your plugin uses JSON-RPC over named pipes. U
 {
   "id": "unique-request-id",
   "method": "GetLatestVersionAsync",
-  "parameters": "{\"serviceName\":\"MyApp\"}"
+  "parameters": "\"MyApp\""
 }
+```
+
+`parameters` is itself JSON: a string for `GetLatestVersionAsync`, a key-value object of secrets for `InitializeAsync`, and for `DownloadVersionAsync` a `DownloadVersionParameters` object:
+
+```json
+"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"
 ```
 
 ### Response Format
@@ -252,7 +265,7 @@ MyPlugin/
 
 ## Versioning
 
-This package follows semantic versioning. Breaking changes to the contract will result in a major version bump. Plugin authors should declare which contract version they support.
+A breaking change to the contract between updaemon and its plugins raises `PluginProtocol.Version`, so updaemon refuses plugins built against the old contract instead of misreading them.
 
 ## License
 

@@ -55,8 +55,8 @@ namespace Updaemon.GithubDistributionService.Tests
 
                 if (version != null)
                 {
-                    // Download using wildcard pattern (use more specific pattern to match only one)
-                    await service.DownloadVersionAsync("adamtovatt/netlifydnsmanager/linux-arm.zip", version, targetPath);
+                    // No pattern: the release's assets follow the *-<rid>.zip convention
+                    await service.DownloadVersionAsync("adamtovatt/netlifydnsmanager", version, "linux-arm64", targetPath);
 
                     // Verify files were downloaded and extracted
                     Assert.True(Directory.Exists(targetPath));
@@ -104,7 +104,7 @@ namespace Updaemon.GithubDistributionService.Tests
                 if (latestVersion != null)
                 {
                     // Download using wildcard pattern to get the .zip file
-                    await service.DownloadVersionAsync("curl/curl/*.zip", latestVersion, targetPath);
+                    await service.DownloadVersionAsync("curl/curl/*.zip", latestVersion, "linux-arm64", targetPath);
 
                     Assert.True(Directory.Exists(targetPath));
 

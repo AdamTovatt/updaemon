@@ -11,19 +11,24 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
-        private readonly IPluginUrlResolver _pluginUrlResolver;
+        private readonly IPluginInstaller _pluginInstaller;
         private readonly IPluginDownloader _pluginDownloader;
+        private readonly Version _updaemonVersion;
 
+        /// <param name="pluginDownloader">Reads the installed plugin's version.</param>
+        /// <param name="updaemonVersion">The running updaemon's version: registry plugins come from its release.</param>
         public DistUpdateCommand(
             IConfigManager configManager,
             IOutputWriter outputWriter,
-            IPluginUrlResolver pluginUrlResolver,
-            IPluginDownloader pluginDownloader)
+            IPluginInstaller pluginInstaller,
+            IPluginDownloader pluginDownloader,
+            Version updaemonVersion)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
-            _pluginUrlResolver = pluginUrlResolver;
+            _pluginInstaller = pluginInstaller;
             _pluginDownloader = pluginDownloader;
+            _updaemonVersion = updaemonVersion;
         }
 
         public string Name => "dist-update";
@@ -94,82 +99,50 @@ namespace Updaemon.Commands
         {
             _outputWriter.WriteLine($"\nChecking plugin '{plugin.Alias}' for updates...");
 
-            // Resolve download URL from registry
-            string downloadUrl;
-            try
+            if (plugin.Source is not PluginSource.Registry)
             {
-                downloadUrl = await _pluginUrlResolver.ResolveAsync(plugin.Alias, cancellationToken);
-            }
-            catch (InvalidOperationException)
-            {
-                _outputWriter.WriteLine($"Skipping '{plugin.Alias}': not found in plugin registry. Update manually using a direct URL.");
+                _outputWriter.WriteLine($"Skipping '{plugin.Alias}': it was installed from a URL. Reinstall it with 'updaemon dist-install --as {plugin.Alias} <url>'.");
                 return false;
             }
 
-            // Get current version from installed plugin
-            string? currentVersionString = null;
-            Version? currentVersion = null;
-            if (File.Exists(plugin.Path))
-            {
-                try
-                {
-                    DistributionServiceInformation currentInfo = await _pluginDownloader.InspectLocalAsync(plugin.Path, cancellationToken);
+            string? installedVersion = await ReadInstalledVersionAsync(plugin, cancellationToken);
 
-                    currentVersionString = currentInfo.Version;
-                    Version.TryParse(currentInfo.Version, out currentVersion);
-                    _outputWriter.WriteLine($"Installed version: {currentInfo.Version}");
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch
-                {
-                    _outputWriter.WriteLine("Warning: Could not read installed plugin version. Will download latest.");
-                }
+            // A registry plugin follows the running updaemon's release, so the install replaces
+            // it with that release's build whatever its version.
+            PluginInstallResult result = await _pluginInstaller.InstallAsync(plugin.Source, plugin.Alias, _updaemonVersion, cancellationToken);
+            string availableVersion = result.ServiceInformation.Version;
+            if (availableVersion == installedVersion)
+            {
+                _outputWriter.WriteLine($"Plugin '{plugin.Alias}' is already up to date.");
+                return false;
             }
-            else
+
+            _outputWriter.WriteLine($"Updated '{plugin.Alias}' to version {availableVersion}");
+            return true;
+        }
+
+        private async Task<string?> ReadInstalledVersionAsync(InstalledPluginInfo plugin, CancellationToken cancellationToken)
+        {
+            if (!File.Exists(plugin.Path))
             {
                 _outputWriter.WriteLine($"Plugin binary not found at '{plugin.Path}'. Will download latest.");
+                return null;
             }
 
-            // Download and inspect new plugin
-            string pluginDirectory = Path.GetDirectoryName(plugin.Path)!;
-            _outputWriter.WriteLine($"Downloading from: {downloadUrl}");
-            PluginDownloadResult downloadResult = await _pluginDownloader.DownloadAndInspectAsync(downloadUrl, pluginDirectory, cancellationToken);
             try
             {
-                DistributionServiceInformation newInfo = downloadResult.ServiceInformation;
-                Version.TryParse(newInfo.Version, out Version? newVersion);
-                _outputWriter.WriteLine($"Available version: {newInfo.Version}");
-
-                // Compare versions
-                if (currentVersion != null && newVersion != null && newVersion <= currentVersion)
-                {
-                    _outputWriter.WriteLine($"Plugin '{plugin.Alias}' is already up to date.");
-                    return false;
-                }
-
-                // Fallback: compare raw version strings when parsing fails
-                if (currentVersionString != null && currentVersionString == newInfo.Version)
-                {
-                    _outputWriter.WriteLine($"Plugin '{plugin.Alias}' is already up to date.");
-                    return false;
-                }
-
-                // Replace binary
-                File.Move(downloadResult.TempFilePath, plugin.Path, overwrite: true);
-                _outputWriter.WriteLine($"Updated '{plugin.Alias}' to version {newInfo.Version}");
-                return true;
+                DistributionServiceInformation installedInfo = await _pluginDownloader.InspectLocalAsync(plugin.Path, cancellationToken);
+                _outputWriter.WriteLine($"Installed version: {installedInfo.Version}");
+                return installedInfo.Version;
             }
-            finally
+            catch (OperationCanceledException)
             {
-                try
-                {
-                    if (File.Exists(downloadResult.TempFilePath))
-                        File.Delete(downloadResult.TempFilePath);
-                }
-                catch { }
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _outputWriter.WriteLine($"Warning: Could not read installed plugin version ({ex.Message}). Will download latest.");
+                return null;
             }
         }
 
@@ -182,12 +155,12 @@ namespace Updaemon.Commands
                   updaemon dist-update [alias]
 
                 Description:
-                  Updates installed distribution plugins to the latest version from the
-                  plugin registry. If an alias is provided, only that plugin is updated.
+                  Updates installed registry plugins to the build in the running updaemon's
+                  release. If an alias is provided, only that plugin is updated.
                   Otherwise, all installed plugins are checked.
 
-                  Plugins that were installed via direct URL and are not in the registry
-                  will be skipped with a message.
+                  Plugins installed from a URL are skipped with a message; reinstall them
+                  with dist-install.
 
                 Examples:
                   updaemon dist-update           # Update all plugins

@@ -247,9 +247,9 @@ sudo updaemon set-restart my-api auto
 updaemon dist-install [--as <alias>] <plugin-name|url>
 ```
 
-Downloads and installs a distribution service plugin. You can specify either a plugin name (which will be resolved from the registry) or a full URL. If `--as` is omitted, the plugin's default alias will be used. The registry can be found [here](./PluginRegistry.json).
+Downloads and installs a distribution service plugin. You can specify either a plugin name from the [registry](./Updaemon/PluginAssets.json) or a full URL. A registry plugin comes from the release of the updaemon you run, built for your machine (`releases/download/v<version>/<Plugin>-<rid>`). Releases carry builds for `linux-arm64` and `osx-arm64`; on another platform, build the plugin yourself and install it from its URL. If `--as` is omitted, a registry plugin is installed under its name and a URL plugin under its default alias.
 
-When resolving by plugin name, the registry maps each plugin to a per-RID URL map (e.g. `linux-arm64`, `osx-arm64`). The current process's runtime identifier is detected automatically and used to pick the matching URL. If the plugin has no build for your platform, the command fails with a clear error listing the available RIDs — in that case you can either install via full URL or wait for a release that includes your platform.
+A plugin already installed under the alias is replaced. The new one is started and asked for its information first; if that fails, the installed one is kept. Updaemon refuses a plugin built for another plugin protocol version and says to reinstall it, which this command does.
 
 **Examples:**
 ```bash
@@ -266,17 +266,14 @@ sudo updaemon dist-install https://github.com/AdamTovatt/updaemon/releases/downl
 sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/vX.Y.Z/Updaemon.GithubDistributionService-osx-arm64
 ```
 
-> [!NOTE]
-> Plugin names are resolved from the registry file at https://github.com/AdamTovatt/updaemon/blob/master/PluginRegistry.json. If a plugin name is not found in the registry, or has no build for the running platform, you can still install it using the full URL.
-
 ### Dist-Update Command
 ```bash
 updaemon dist-update [alias]
 ```
 
-Updates installed distribution plugins to the latest version from the plugin registry. If an alias is provided, only that plugin is updated. Otherwise, all installed plugins are checked.
+Updates installed registry plugins to the build in the running updaemon's release. If an alias is provided, only that plugin is updated. Otherwise, all installed plugins are checked.
 
-Plugins that were installed via a direct URL and are not in the registry will be skipped with a message.
+Plugins installed from a URL are skipped with a message; reinstall them with `dist-install`.
 
 **Examples:**
 ```bash
@@ -531,9 +528,10 @@ Distribution plugins are separate AOT-compiled executables that communicate with
    
    public class MyDistributionService : IDistributionService
    {
+       public DistributionServiceInformation GetServiceInformation() { /* ... */ }
        public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default) { /* ... */ }
        public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default) { /* ... */ }
-       public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default) { /* ... */ }
+       public Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default) { /* ... */ }
    }
    ```
 
@@ -572,9 +570,11 @@ The RPC types (`RpcRequest` and `RpcResponse`) are defined in `Updaemon.Common.R
 {
   "id": "unique-request-id",
   "method": "GetLatestVersionAsync",
-  "parameters": "{\"serviceName\":\"MyApp\"}"
+  "parameters": "\"MyApp\""
 }
 ```
+
+`DownloadVersionAsync` takes an object: `"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"`.
 
 **Response:**
 ```json

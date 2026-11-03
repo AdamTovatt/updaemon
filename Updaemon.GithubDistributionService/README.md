@@ -17,11 +17,11 @@ This plugin enables Updaemon to download and manage applications distributed via
 
 ## Installation
 
-> [!NOTE] If the pre built version is not the correct one for the system you're using you might have to build it from source.
-
 ```bash
-sudo updaemon dist-install --as github https://github.com/AdamTovatt/updaemon/releases/download/v0.5.1/Updaemon.GithubDistributionService
+sudo updaemon dist-install github
 ```
+
+This installs the plugin from the release of the updaemon you run, built for your machine.
 
 ## Configuration
 
@@ -48,10 +48,9 @@ sudo updaemon secret-set github githubToken ghp_your_token_here
 
 The service name determines which GitHub repository and asset to download:
 
-**Format: `owner/repo/pattern`**
-- Pattern supports wildcards: `*` (matches anything) and `?` (matches one character)
-- Example: `microsoft/winget-cli/*.zip`
-- If the release has exactly one asset, you can omit the pattern and use just `owner/repo`
+**Format: `owner/repo` or `owner/repo/<pattern>`**
+- With just `owner/repo`, the plugin picks the build for the machine updaemon runs on: the one asset named `*-<rid>.zip` or `*-<rid>` (a bare binary), where `<rid>` is the machine's runtime identifier such as `linux-arm64`, `linux-x64` or `osx-arm64`. Name your release assets this way, e.g. `myapp-linux-arm64.zip`.
+- A pattern picks the asset instead. It supports wildcards: `*` (matches anything) and `?` (matches one character). Example: `microsoft/winget-cli/*.zip`
 
 ## Usage
 
@@ -77,7 +76,7 @@ sudo updaemon update myapp
 
 | Pattern | Matches | Use Case |
 |---------|---------|----------|
-| `owner/repo` | Single asset only | Simple releases with one file |
+| `owner/repo` | `*-<rid>.zip` or `*-<rid>` for this machine | Releases that follow the naming convention |
 | `owner/repo/*.zip` | Any `.zip` file | Releases with mixed file types |
 | `owner/repo/app-linux-*.zip` | Files starting with `app-linux-` and ending with `.zip` | Platform-specific binaries |
 | `owner/repo/*-x64.zip` | Files ending with `-x64.zip` | Architecture-specific archives |
@@ -85,9 +84,8 @@ sudo updaemon update myapp
 
 ### Pattern Matching Behavior
 
-- Patterns are **case-insensitive**
-- If no pattern matches, you'll get a clear error listing all available assets
-- If multiple assets match, you'll be prompted to use a more specific pattern
+- Patterns and the runtime suffix are **case-insensitive**
+- If no asset matches, or several do, the download fails with the release's asset names, one per line, and the `owner/repo/<pattern>` form to pick one
 - Leading and trailing slashes in service names are automatically stripped
 
 ## Version Parsing
@@ -118,9 +116,10 @@ This plugin implements the `IDistributionService` interface from **Updaemon.Comm
 ```csharp
 public interface IDistributionService
 {
+    DistributionServiceInformation GetServiceInformation();
     Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default);
     Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default);
-    Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default);
+    Task DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -140,14 +139,11 @@ For more details on creating distribution plugins, see [Updaemon.Common/README.m
 
 **Solution:** Set up a GitHub token as described in [Configuration](#configuration).
 
-### No Matching Assets
+### No Matching Asset, or Several
 
-**Problem:** `No assets matching pattern 'xyz' found`
+**Problem:** `No asset in the release ... is named *-linux-arm64.zip or *-linux-arm64` or `Several assets in the release ... match '*.zip'`
 
-**Solution:** 
-1. Visit the GitHub release page manually
-2. Check what assets are available
-3. Adjust your pattern to match the actual filenames
+**Solution:** The error lists the release's assets. Set the remote to `owner/repo/<pattern>` with a pattern that matches exactly one of them, for example `owner/repo/*-linux-arm64-self-contained.zip`.
 
 ### Version Not Detected
 
@@ -155,19 +151,13 @@ For more details on creating distribution plugins, see [Updaemon.Common/README.m
 
 **Solution:** Check that the repository has at least one release. GitHub tags without releases are not detected.
 
-### Multiple Assets Match
-
-**Problem:** `Multiple assets match pattern`
-
-**Solution:** Use a more specific pattern. For example, if `*.zip` matches both `app-windows.zip` and `app-linux.zip`, use `*-linux.zip` instead.
-
 ## Example: Real-World Usage
 
 Here's a complete example deploying an application via GitHub releases:
 
 ```bash
 # 1. Install and configure the plugin (one-time setup)
-sudo updaemon dist-install --as github https://example.com/updaemon-github-plugin
+sudo updaemon dist-install github
 sudo updaemon secret-set github githubToken ghp_your_token_here
 
 # 2. Create a service for your application

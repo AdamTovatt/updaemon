@@ -54,8 +54,7 @@ namespace Updaemon.Commands
                     }
 
                     // Get metadata from plugin
-                    await _distributionClient.ConnectAsync(plugin.Value.Path, cancellationToken);
-                    DistributionServiceInformation serviceInfo = await _distributionClient.GetServiceInformationAsync(cancellationToken);
+                    DistributionServiceInformation serviceInfo = await _distributionClient.ConnectAsync(plugin.Value.Path, cancellationToken);
                     await _distributionClient.DisposeAsync();
 
                     _outputWriter.WriteLine($"  Alias: {plugin.Value.Alias}");

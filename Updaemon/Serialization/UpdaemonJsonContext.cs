@@ -12,7 +12,6 @@ namespace Updaemon.Serialization
     [JsonSerializable(typeof(InstalledPluginInfo))]
     [JsonSerializable(typeof(Dictionary<string, InstalledPluginInfo>))]
     [JsonSerializable(typeof(Dictionary<string, string>))]
-    [JsonSerializable(typeof(Dictionary<string, Dictionary<string, string>>))]
     [JsonSerializable(typeof(AppConfig))]
     [JsonSerializable(typeof(ServiceType))]
     [JsonSourceGenerationOptions(

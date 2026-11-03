@@ -32,7 +32,7 @@ namespace Updaemon.Tests.Configuration
                 {
                     InstalledPlugins = new Dictionary<string, InstalledPluginInfo>
                     {
-                        { "github", new InstalledPluginInfo { Alias = "github", Path = "/path/to/plugin" } }
+                        { "github", PluginRecords.Installed("github", "/path/to/plugin") }
                     },
                     Services = new List<RegisteredService>
                     {
@@ -50,6 +50,7 @@ namespace Updaemon.Tests.Configuration
                 Assert.NotNull(loadedConfig);
                 Assert.Single(loadedConfig.InstalledPlugins);
                 Assert.Equal("/path/to/plugin", loadedConfig.InstalledPlugins["github"].Path);
+                Assert.Equal(new PluginSource.Registry("github"), loadedConfig.InstalledPlugins["github"].Source);
                 Assert.Single(loadedConfig.Services);
                 Assert.Equal("test-service", loadedConfig.Services[0].LocalName);
                 Assert.Equal("TestService", loadedConfig.Services[0].RemoteName);
@@ -163,13 +164,15 @@ namespace Updaemon.Tests.Configuration
                 InstalledPluginInfo pluginInfo = new InstalledPluginInfo
                 {
                     Alias = "github",
-                    Path = "/path/to/my/plugin"
+                    Path = "/path/to/my/plugin",
+                    Source = new PluginSource.Url("https://example.com/plugin"),
                 };
                 await configManager.AddOrUpdatePluginAsync(pluginInfo);
 
                 InstalledPluginInfo? retrieved = await configManager.GetPluginAsync("github");
                 Assert.NotNull(retrieved);
                 Assert.Equal("/path/to/my/plugin", retrieved.Path);
+                Assert.Equal(new PluginSource.Url("https://example.com/plugin"), retrieved.Source);
             }
         }
 
@@ -193,8 +196,8 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/path/to/github" });
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = "/path/to/byteshelf" });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/path/to/github"));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("byteshelf", "/path/to/byteshelf"));
 
                 IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await configManager.GetAllPluginsAsync();
 
@@ -213,8 +216,8 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/old/path" });
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/new/path" });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/old/path"));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/new/path"));
 
                 InstalledPluginInfo? plugin = await configManager.GetPluginAsync("github");
                 Assert.NotNull(plugin);
@@ -229,7 +232,7 @@ namespace Updaemon.Tests.Configuration
             {
                 ConfigManager configManager = new ConfigManager(tempHelper.TempDirectory);
 
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/path/to/github" });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/path/to/github"));
                 await configManager.RemovePluginAsync("github");
 
                 InstalledPluginInfo? plugin = await configManager.GetPluginAsync("github");

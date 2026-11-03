@@ -16,8 +16,8 @@ namespace Updaemon.Tests.Commands
                 // Add two plugins with actual files
                 string githubPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
                 string byteshelfPath = tempHelper.CreateTempFile("plugins/byteshelf/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = githubPath });
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "byteshelf", Path = byteshelfPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", githubPath));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("byteshelf", byteshelfPath));
 
                 MockOutputWriter output = new MockOutputWriter();
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
@@ -26,12 +26,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await command.ExecuteAsync(Array.Empty<string>());
                 Assert.Equal(0, exitCode);
 
-                // Should connect and request metadata twice
-                Assert.Contains(client.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
-                Assert.Contains(client.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("byteshelf"));
-                Assert.Equal(2, client.MethodCalls.Count(c => c == nameof(client.GetServiceInformationAsync)));
-
-                // Output should include aliases
+                // An alias is printed only after connecting to its plugin succeeds
                 Assert.Contains(output.Messages, line => line.Contains("Alias: github"));
                 Assert.Contains(output.Messages, line => line.Contains("Alias: byteshelf"));
             }
@@ -42,7 +37,7 @@ namespace Updaemon.Tests.Commands
         {
             MockConfigManager configManager = new MockConfigManager();
             // Register plugin with non-existent path
-            await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "missing", Path = "/nonexistent/path/bin" });
+            await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("missing", "/nonexistent/path/bin"));
 
             MockOutputWriter output = new MockOutputWriter();
             MockDistributionServiceClient client = new MockDistributionServiceClient();
@@ -66,12 +61,11 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 string pluginPath = tempHelper.CreateTempFile("plugins/error/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "error-plugin", Path = pluginPath });
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("error-plugin", pluginPath));
 
                 MockOutputWriter output = new MockOutputWriter();
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
-                // Make GetServiceInformationAsync throw
-                client.GetServiceInformationAsyncThrows = true;
+                client.ConnectAsyncThrowsForPluginPaths.Add(pluginPath);
 
                 DistListCommand command = new DistListCommand(configManager, output, client);
                 int exitCode = await command.ExecuteAsync(Array.Empty<string>());
