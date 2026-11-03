@@ -45,15 +45,20 @@ namespace Updaemon
 
         private static void ConfigureServices(ServiceCollection services)
         {
+            UpdaemonScope scope = UpdaemonScope.Detect();
+            services.AddSingleton(scope);
+            services.AddSingleton(scope.Platform);
+
             // Output writer
             services.AddSingleton<IOutputWriter, ConsoleOutputWriter>();
+            services.AddSingleton<IRunLock, ScopeLock>();
 
-            // Configuration and Secrets — parameterless constructors read from PlatformPaths.
+            // Configuration and Secrets
             services.AddSingleton<IConfigManager, ConfigManager>();
             services.AddSingleton<ISecretsManager, SecretsManager>();
 
             // Service manager / timer manager: pick the OS-appropriate implementation.
-            if (PlatformPaths.IsMacOS)
+            if (scope.Platform.IsMacOS)
             {
                 services.AddSingleton<IServiceManager, MacServiceManager>();
                 services.AddSingleton<ITimerManager, MacTimerManager>();
@@ -64,12 +69,14 @@ namespace Updaemon
                 services.AddSingleton<ITimerManager, LinuxTimerManager>();
             }
 
-            // Other services — parameterless constructors are platform-aware.
+            // Other services
             services.AddSingleton<ISymlinkManager, SymlinkManager>();
             services.AddSingleton<IExecutableDetector, ExecutableDetector>();
-            services.AddSingleton<IVersionExtractor, VersionExtractor>();
+            services.AddSingleton<IPrompter, ConsolePrompter>();
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
+            services.AddSingleton<AppFileWriter>();
+            services.AddSingleton<AppSettingsStore>();
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
 
             // Distribution service client
@@ -83,13 +90,13 @@ namespace Updaemon
             services.AddTransient<IPluginDownloader, PluginDownloader>();
 
             // Commands - transient (created per invocation)
-            services.AddTransient<NewCommand>();
-            services.AddTransient<InitCommand>();
-            services.AddTransient<ListCommand>();
+            services.AddTransient<InstallCommand>();
             services.AddTransient<UpdateCommand>();
-            services.AddTransient<SetRemoteCommand>();
-            services.AddTransient<SetExecNameCommand>();
+            services.AddTransient<SetCommand>();
+            services.AddTransient<UnsetCommand>();
+            services.AddTransient<SetArgsCommand>();
             services.AddTransient<SetRestartCommand>();
+            services.AddTransient<RemoveCommand>();
             services.AddTransient<DistInstallCommand>();
             services.AddTransient<DistUpdateCommand>();
             services.AddTransient<DistListCommand>();

@@ -1,0 +1,302 @@
+using Updaemon.Interfaces;
+using Updaemon.Models;
+using Updaemon.Tests.Helpers;
+using Updaemon.Tests.Mocks;
+
+namespace Updaemon.Tests.Commands
+{
+    public class InstallCommandTests
+    {
+        [Fact]
+        public async Task Install_FromManifest_SetsUpCommandAndServiceWithSettingsAndSecrets()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                int exitCode = await h.InstallByteShelfAsync();
+
+                Assert.Equal(0, exitCode);
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+                Assert.Null(app.Manifest);
+                Assert.Equal(new Dictionary<string, string> { ["BYTESHELF_URL"] = "https://shelf" }, app.Settings);
+                Assert.Equal("key1", (await h.Secrets.GetAppSecretsAsync("byteshelf"))["BYTESHELF_API_KEY"]);
+
+                string output = await Shell.RunAsync(h.Scope.GetCommandPath("byteshelf"), "status");
+                string dataDirectory = h.Scope.GetDataDirectory("byteshelf");
+                Assert.Equal($"BYTESHELF_URL=https://shelf\nBYTESHELF_API_KEY=key1\nBYTESHELF_LOG_LEVEL=info\nUPDAEMON_DATA_DIR={dataDirectory}\narg=status\n", output);
+                Assert.True(Directory.Exists(dataDirectory));
+
+                string unit = await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf"));
+                Assert.Contains($"ExecStart=\"{h.Scope.GetCurrentLinkPath("byteshelf")}/bin/byteshelf\" \"sync\" \"run\"", unit);
+                Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.EnableServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+                Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+                Assert.Contains("Installed byteshelf 1.0.0 (command + service).", h.Output.Messages);
+            }
+        }
+
+        [Fact]
+        public async Task Install_MissingRequiredSettings_AsksForEach_SecretsWithoutEcho()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
+                h.Prompter.Answers.Enqueue("typed-key");
+                h.Prompter.Answers.Enqueue("https://typed");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Equal(new[] { ("BYTESHELF_API_KEY (API key): ", true), ("BYTESHELF_URL (Server URL): ", false) }, h.Prompter.Asked);
+                Assert.Equal("https://typed", (await h.Config.GetAppAsync("byteshelf"))!.Settings["BYTESHELF_URL"]);
+                Assert.Equal("typed-key", (await h.Secrets.GetAppSecretsAsync("byteshelf"))["BYTESHELF_API_KEY"]);
+            }
+        }
+
+        [Fact]
+        public async Task Install_EmptyAnswer_AsksAgain()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
+                h.Prompter.Answers.Enqueue("");
+                h.Prompter.Answers.Enqueue("typed-key");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf", "--set", "BYTESHELF_URL=u" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Equal(2, h.Prompter.Asked.Count);
+                Assert.Contains("BYTESHELF_API_KEY is required.", h.Output.Messages);
+            }
+        }
+
+        [Fact]
+        public async Task Install_MissingRequiredSettingWithoutTerminal_FailsNamingIt_AndLeavesNothing()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
+                h.Prompter.IsInteractive = false;
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf", "--set", "BYTESHELF_URL=u" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains("BYTESHELF_API_KEY") && e.Contains("--set"));
+                Assert.Null(await h.Config.GetAppAsync("byteshelf"));
+                Assert.Empty(Directory.GetDirectories(h.Scope.GetAppDirectory("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task Install_CancelledAtThePrompt_LeavesNothing()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
+                h.Prompter.CancelWhenAsked = true;
+
+                await Assert.ThrowsAsync<OperationCanceledException>(() => h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" }));
+
+                Assert.Null(await h.Config.GetAppAsync("byteshelf"));
+                Assert.Empty(Directory.GetDirectories(h.Scope.GetAppDirectory("byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task Install_CancelledWhileStarting_RemovesWhatItCreated()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.ServiceManager.StartFailure = new OperationCanceledException();
+
+                await Assert.ThrowsAsync<OperationCanceledException>(() => h.InstallByteShelfAsync());
+
+                Assert.Null(await h.Config.GetAppAsync("byteshelf"));
+                Assert.False(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+                Assert.False(Directory.Exists(h.Scope.GetAppDirectory("byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task Install_ServiceFailsToStart_RemovesWhatItCreated()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.ServiceManager.StartFailure = new InvalidOperationException("Simulated start failure");
+
+                int exitCode = await h.InstallByteShelfAsync();
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains("Simulated start failure"));
+                Assert.Null(await h.Config.GetAppAsync("byteshelf"));
+                Assert.False(File.Exists(h.Scope.GetCommandPath("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetSecretsFilePath("byteshelf")));
+                Assert.False(Directory.Exists(h.Scope.GetAppDirectory("byteshelf")));
+                Assert.False(Directory.Exists(h.Scope.GetDataDirectory("byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task Install_ReleaseWithoutManifestOrFlags_FailsNamingTheFlags()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/tool", "2.0.0", manifest: null, executable: "tool-linux/tool");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains("has no updaemon.json") && e.Contains("--command"));
+                Assert.Null(await h.Config.GetAppAsync("tool"));
+            }
+        }
+
+        [Fact]
+        public async Task Install_ReleaseWithoutManifest_StoresTheFlagsAsTheManifest()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/tool", "2.0.0", manifest: null, executable: "tool-linux/tool");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool", "--command", "tool" });
+
+                Assert.Equal(0, exitCode);
+                AppManifest stored = (await h.Config.GetAppAsync("tool"))!.Manifest!;
+                Assert.Equal("tool", stored.Command);
+                Assert.Null(stored.Service);
+                AppManifest written = (await AppManifest.ReadAsync(h.Scope.GetCurrentLinkPath("tool")))!;
+                Assert.Equal("tool-linux/tool", written.Executable);
+                Assert.True(File.Exists(h.Scope.GetCommandPath("tool")));
+                Assert.False(File.Exists(h.Scope.GetUnitFilePath("tool")));
+            }
+        }
+
+        [Fact]
+        public async Task Install_FlagsForAReleaseWithAManifest_AreIgnoredWithANote()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
+
+                int exitCode = await h.Install().ExecuteAsync(new[]
+                {
+                    "byteshelf", "--from", "github:owner/byteshelf", "--service",
+                    "--set", "BYTESHELF_URL=u", "--set", "BYTESHELF_API_KEY=k",
+                });
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains("The release has its own updaemon.json; --command and --service are ignored.", h.Output.Messages);
+                Assert.Null((await h.Config.GetAppAsync("byteshelf"))!.Manifest);
+            }
+        }
+
+        [Fact]
+        public async Task Install_NoReleasedVersion_Fails()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "app", "--from", "github:owner/app" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains("Error: github:owner/app has no released version.", h.Output.Errors);
+                Assert.Null(await h.Config.GetAppAsync("app"));
+            }
+        }
+
+        [Fact]
+        public async Task Install_RunAsInTheSystemScope_RunsTheServiceAsThatUser()
+        {
+            using (AppHarness h = new AppHarness(isSystem: true))
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/api", "1.0.0", """{ "executable": "bin/byteshelf", "service": {} }""");
+                h.Permissions.ExistingUsers.Add("api");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "api", "--from", "github:owner/api", "--run-as", "api" });
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains("User=api\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("api")));
+                Assert.Contains($"SetOwnerAsync:{h.Scope.GetDataDirectory("api")}:api", h.Permissions.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task Install_RunAsInTheUserScope_IsRefused()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.Permissions.ExistingUsers.Add("api");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "api", "--from", "github:owner/api", "--run-as", "api" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains("--run-as"));
+                Assert.Empty(h.Client.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task Install_ServiceOfThatNameExistsOutsideUpdaemon_IsRefused()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.ServiceManager.ExistingServices.Add("ssh");
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "ssh", "--from", "github:owner/ssh" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains("A service named 'ssh' already exists") && e.Contains("updaemon 0.x"));
+                Assert.Empty(h.Client.MethodCalls);
+            }
+        }
+
+        [Theory]
+        [InlineData("<plugin>:<remote>", "app", "--from", "github")]
+        [InlineData("<plugin>:<remote>", "app", "--from", "github:")]
+        [InlineData("dist-install gitlab", "app", "--from", "gitlab:owner/repo")]
+        [InlineData("not a valid environment variable", "app", "--from", "github:owner/app", "--set", "NOT VALID=1")]
+        [InlineData("'updaemon' is reserved", "updaemon", "--from", "github:owner/app")]
+        [InlineData("not a valid app name", "-app", "--from", "github:owner/app")]
+        [InlineData("not a valid command name", "app", "--from", "github:owner/app", "--command", "a/b")]
+        [InlineData("Unknown option '--bogus'", "app", "--from", "github:owner/app", "--bogus", "x")]
+        [InlineData("Usage: updaemon install", "app")]
+        public async Task Install_InvalidArguments_FailBeforeDownloading(string expectedError, params string[] args)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+
+                int exitCode = await h.Install().ExecuteAsync(args);
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains(expectedError));
+                Assert.Empty(h.Client.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task Install_AlreadyInstalled_PointsToUpdate()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+
+                int exitCode = await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains("updaemon update byteshelf"));
+            }
+        }
+    }
+}

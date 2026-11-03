@@ -23,6 +23,20 @@ namespace Updaemon.Tests.Mocks
             DirectoryPermissionsCalls.Add(directoryPath);
             return Task.CompletedTask;
         }
+
+        /// <summary>Users <see cref="UserExistsAsync"/> reports as existing.</summary>
+        public HashSet<string> ExistingUsers { get; } = new HashSet<string>();
+
+        public Task SetOwnerAsync(string path, string user, CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add($"SetOwnerAsync:{path}:{user}");
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> UserExistsAsync(string user, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ExistingUsers.Contains(user));
+        }
     }
 }
 

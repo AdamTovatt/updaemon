@@ -61,6 +61,17 @@ namespace Updaemon.Services
             return Task.CompletedTask;
         }
 
+        public async Task SetOwnerAsync(string path, string user, CancellationToken cancellationToken = default)
+        {
+            await ProcessRunner.RunAndCheckAsync("chown", new[] { user, path }, cancellationToken);
+        }
+
+        public async Task<bool> UserExistsAsync(string user, CancellationToken cancellationToken = default)
+        {
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("id", new[] { "-u", user }, cancellationToken);
+            return result.Success;
+        }
+
         /// <summary>
         /// Iterative `chmod -R a+rX` equivalent. For directories: adds a+rx (so they're traversable).
         /// For files: adds a+r, and additionally a+x only if some execute bit is already set.

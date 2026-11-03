@@ -25,8 +25,4 @@
     <ProjectReference Include="..\Updaemon.Common\Updaemon.Common.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="Templates\service.template" />
-    <EmbeddedResource Include="Templates\launchd.plist.template" />
-  </ItemGroup>
 </Project>

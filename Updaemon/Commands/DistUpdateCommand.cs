@@ -32,6 +32,8 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon dist-update [alias]";
 
+        public bool ChangesState => true;
+
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
             string? specificAlias = args.Length > 0 ? args[0] : null;

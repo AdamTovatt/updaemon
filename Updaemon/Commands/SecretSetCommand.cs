@@ -22,18 +22,15 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon secret-set <plugin-alias> <key> <value>";
 
+        public bool ChangesState => true;
+
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
-            ArgumentParser parser = new ArgumentParser(args, _outputWriter);
-
-            if (!parser.ValidateMinimumArgs(3, Usage, out int errorCode))
+            ArgumentParser parser = new ArgumentParser(args);
+            if (parser.Positionals is not [string pluginAlias, string key, string value])
             {
-                return errorCode;
+                return _outputWriter.FailUsage(this);
             }
-
-            string pluginAlias = parser.GetPositional(0)!;
-            string key = parser.GetPositional(1)!;
-            string value = parser.GetPositional(2)!;
 
             _outputWriter.WriteLine($"Setting secret for plugin '{pluginAlias}': {key}");
 

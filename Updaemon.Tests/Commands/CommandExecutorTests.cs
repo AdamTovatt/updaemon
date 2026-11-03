@@ -10,7 +10,7 @@ namespace Updaemon.Tests.Commands
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(Array.Empty<string>());
 
@@ -22,7 +22,7 @@ namespace Updaemon.Tests.Commands
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(new[] { "unknown" });
 
@@ -37,12 +37,31 @@ namespace Updaemon.Tests.Commands
             MockCommand updateCommand = new MockCommand { Name = "update" };
             factory.RegisterCommand("update", updateCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(new[] { "update", "my-app" });
 
             Assert.Equal(0, exitCode);
             Assert.Equal(new[] { "my-app" }, updateCommand.ReceivedArgs);
+        }
+
+        [Theory]
+        [InlineData(true, 1)]
+        [InlineData(false, 0)]
+        public async Task ExecuteAsync_HoldsTheLockOnlyForCommandsThatChangeState(bool changesState, int expectedAcquisitions)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockRunLock runLock = new MockRunLock();
+            bool heldDuringRun = false;
+            MockCommand command = new MockCommand { Name = "cmd", ChangesState = changesState, OnExecute = () => heldDuringRun = runLock.IsHeld };
+            factory.RegisterCommand("cmd", command);
+            CommandExecutor executor = new CommandExecutor(factory, new MockOutputWriter(), runLock);
+
+            await executor.ExecuteAsync(new[] { "cmd" });
+
+            Assert.Equal(expectedAcquisitions, runLock.Acquisitions);
+            Assert.Equal(changesState, heldDuringRun);
+            Assert.False(runLock.IsHeld);
         }
 
         [Fact]
@@ -56,7 +75,7 @@ namespace Updaemon.Tests.Commands
             };
             factory.RegisterCommand("test", failingCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(new[] { "test" });
 
@@ -73,7 +92,7 @@ namespace Updaemon.Tests.Commands
             factory.RegisterCommand("update", cmd1);
             factory.RegisterCommand("new", cmd2);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(new[] { "help" });
 
@@ -94,7 +113,7 @@ namespace Updaemon.Tests.Commands
             };
             factory.RegisterCommand("update", updateCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(new[] { "help", "update" });
 
@@ -107,7 +126,7 @@ namespace Updaemon.Tests.Commands
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(new[] { "help", "unknown" });
 
@@ -122,7 +141,7 @@ namespace Updaemon.Tests.Commands
             MockCommand secretSetCommand = new MockCommand { Name = "secret-set" };
             factory.RegisterCommand("secret-set", secretSetCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
 
             int exitCode = await executor.ExecuteAsync(new[] { "SECRET-SET", "github", "key", "value" });
 

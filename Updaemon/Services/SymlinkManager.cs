@@ -51,24 +51,6 @@ namespace Updaemon.Services
                 return Task.FromResult<string?>(null);
             }
         }
-
-        public Task<bool> IsSymlinkAsync(string path, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                if (!File.Exists(path) && !Directory.Exists(path))
-                {
-                    return Task.FromResult(false);
-                }
-
-                FileAttributes attributes = File.GetAttributes(path);
-                return Task.FromResult((attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint);
-            }
-            catch
-            {
-                return Task.FromResult(false);
-            }
-        }
     }
 }
 

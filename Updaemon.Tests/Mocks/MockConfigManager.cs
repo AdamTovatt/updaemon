@@ -24,116 +24,53 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
-        public async Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, ServiceType serviceType = ServiceType.Service, CancellationToken cancellationToken = default)
+        public Task<InstalledApp?> GetAppAsync(string name, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(RegisterServiceAsync)}:{localName}:{remoteName}:{distributionPluginAlias}:{serviceType}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-
-            RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (existing != null)
-            {
-                throw new InvalidOperationException($"Service '{localName}' is already registered.");
-            }
-
-            config.Services.Add(new RegisteredService
-            {
-                LocalName = localName,
-                RemoteName = remoteName,
-                DistributionPluginAlias = distributionPluginAlias,
-                ServiceType = serviceType,
-            });
-
-            await SaveConfigAsync(config, cancellationToken);
+            return Task.FromResult(_config.Apps.FirstOrDefault(app => app.Name == name));
         }
 
-        public async Task SetRemoteNameAsync(string localName, string remoteName, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<InstalledApp>> GetAllAppsAsync(CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(SetRemoteNameAsync)}:{localName}:{remoteName}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-
-            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (service == null)
-            {
-                throw new InvalidOperationException($"Service '{localName}' is not registered.");
-            }
-
-            service.RemoteName = remoteName;
-            await SaveConfigAsync(config, cancellationToken);
+            return Task.FromResult<IReadOnlyList<InstalledApp>>(_config.Apps.ToList());
         }
 
-        public async Task SetExecutableNameAsync(string localName, string? executableName, CancellationToken cancellationToken = default)
+        public Task SaveAppAsync(InstalledApp app, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(SetExecutableNameAsync)}:{localName}:{executableName ?? "null"}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-
-            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (service == null)
-            {
-                throw new InvalidOperationException($"Service '{localName}' is not registered.");
-            }
-
-            service.ExecutableName = executableName;
-            await SaveConfigAsync(config, cancellationToken);
+            MethodCalls.Add($"{nameof(SaveAppAsync)}:{app.Name}");
+            _config.Apps.RemoveAll(existing => existing.Name == app.Name);
+            _config.Apps.Add(app);
+            return Task.CompletedTask;
         }
 
-        public async Task SetAutoRestartAsync(string localName, bool autoRestart, CancellationToken cancellationToken = default)
+        public Task RemoveAppAsync(string name, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(SetAutoRestartAsync)}:{localName}:{autoRestart}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-
-            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (service == null)
-            {
-                throw new InvalidOperationException($"Service '{localName}' is not registered.");
-            }
-
-            service.AutoRestart = autoRestart;
-            await SaveConfigAsync(config, cancellationToken);
+            MethodCalls.Add($"{nameof(RemoveAppAsync)}:{name}");
+            _config.Apps.RemoveAll(app => app.Name == name);
+            return Task.CompletedTask;
         }
 
-        public async Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default)
+        public Task AddOrUpdatePluginAsync(InstalledPluginInfo pluginInfo, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(GetServiceAsync)}:{localName}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            return config.Services.FirstOrDefault(s => s.LocalName == localName);
+            MethodCalls.Add($"{nameof(AddOrUpdatePluginAsync)}:{pluginInfo.Alias}:{pluginInfo.Path}");
+            _config.InstalledPlugins[pluginInfo.Alias] = pluginInfo;
+            return Task.CompletedTask;
         }
 
-        public async Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync(CancellationToken cancellationToken = default)
+        public Task<InstalledPluginInfo?> GetPluginAsync(string alias, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add(nameof(GetAllServicesAsync));
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            return config.Services.AsReadOnly();
+            return Task.FromResult(_config.InstalledPlugins.GetValueOrDefault(alias));
         }
 
-        public async Task AddOrUpdatePluginAsync(InstalledPluginInfo pluginInfo, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyDictionary<string, InstalledPluginInfo>> GetAllPluginsAsync(CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"{nameof(AddOrUpdatePluginAsync)}:{pluginInfo.Alias}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            config.InstalledPlugins[pluginInfo.Alias] = pluginInfo;
-            await SaveConfigAsync(config, cancellationToken);
+            return Task.FromResult<IReadOnlyDictionary<string, InstalledPluginInfo>>(_config.InstalledPlugins);
         }
 
-        public async Task<InstalledPluginInfo?> GetPluginAsync(string alias, CancellationToken cancellationToken = default)
-        {
-            MethodCalls.Add($"{nameof(GetPluginAsync)}:{alias}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            return config.InstalledPlugins.TryGetValue(alias, out InstalledPluginInfo? plugin) ? plugin : null;
-        }
-
-        public async Task<IReadOnlyDictionary<string, InstalledPluginInfo>> GetAllPluginsAsync(CancellationToken cancellationToken = default)
-        {
-            MethodCalls.Add(nameof(GetAllPluginsAsync));
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            return config.InstalledPlugins;
-        }
-
-        public async Task RemovePluginAsync(string alias, CancellationToken cancellationToken = default)
+        public Task RemovePluginAsync(string alias, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(RemovePluginAsync)}:{alias}");
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            config.InstalledPlugins.Remove(alias);
-            await SaveConfigAsync(config, cancellationToken);
+            _config.InstalledPlugins.Remove(alias);
+            return Task.CompletedTask;
         }
     }
 }
-

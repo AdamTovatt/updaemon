@@ -1,5 +1,6 @@
 using Updaemon.Commands;
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
@@ -15,9 +16,9 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 int exitCode = await command.ExecuteAsync(new[] { "https://example.com/plugins/my-plugin" });
                 Assert.Equal(0, exitCode);
@@ -36,9 +37,9 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(0, exitCode);
@@ -56,9 +57,9 @@ namespace Updaemon.Tests.Commands
                 MockConfigManager configManager = new MockConfigManager();
                 // MockPluginDownloader returns DefaultAlias = "mock" by default
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(0, exitCode);
@@ -78,9 +79,9 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "dup", Path = "/existing/path" });
 
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 int exitCode = await command.ExecuteAsync(new[] { "--as", "dup", "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(1, exitCode);
@@ -98,9 +99,9 @@ namespace Updaemon.Tests.Commands
 
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
-                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 int exitCode = await command.ExecuteAsync(new[] { "--as", "github", "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(1, exitCode);
@@ -119,9 +120,9 @@ namespace Updaemon.Tests.Commands
                 MockConfigManager configManager = new MockConfigManager();
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
                 pluginDownloader.ExceptionToThrow = new HttpRequestException("Network error");
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 await Assert.ThrowsAsync<HttpRequestException>(
                     async () => await command.ExecuteAsync(new[] { "https://example.com/invalid-plugin" })
@@ -136,9 +137,9 @@ namespace Updaemon.Tests.Commands
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockPluginDownloader pluginDownloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
-                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, new MockOutputWriter(), new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/byteshelf-dist" });
                 Assert.Equal(0, exitCode);
@@ -164,10 +165,10 @@ namespace Updaemon.Tests.Commands
                     Version = "1.0.0",
                     Secrets = new List<DistributionSecretInfo>()
                 };
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
 
                 MockOutputWriter outputWriter = new MockOutputWriter();
-                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, pluginsDirectory);
+                DistInstallCommand command = new DistInstallCommand(configManager, outputWriter, new MockPluginUrlResolver(), pluginDownloader, scope);
 
                 int exitCode = await command.ExecuteAsync(new[] { "https://example.com/path/to/plugin-bin" });
                 Assert.Equal(1, exitCode);

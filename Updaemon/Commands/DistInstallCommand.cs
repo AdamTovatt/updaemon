@@ -20,24 +20,14 @@ namespace Updaemon.Commands
             IConfigManager configManager,
             IOutputWriter outputWriter,
             IPluginUrlResolver pluginUrlResolver,
-            IPluginDownloader pluginDownloader)
-            : this(configManager, outputWriter, pluginUrlResolver, pluginDownloader,
-                   Path.Combine(PlatformPaths.ConfigDirectory, "plugins"))
-        {
-        }
-
-        public DistInstallCommand(
-            IConfigManager configManager,
-            IOutputWriter outputWriter,
-            IPluginUrlResolver pluginUrlResolver,
             IPluginDownloader pluginDownloader,
-            string pluginsDirectory)
+            UpdaemonScope scope)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
             _pluginUrlResolver = pluginUrlResolver;
             _pluginDownloader = pluginDownloader;
-            _pluginsDirectory = pluginsDirectory;
+            _pluginsDirectory = scope.PluginsDirectory;
         }
 
         public string Name => "dist-install";
@@ -46,9 +36,11 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon dist-install [--as <alias>] <plugin-name|url>";
 
+        public bool ChangesState => true;
+
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
-            ArgumentParser parser = new ArgumentParser(args, _outputWriter);
+            ArgumentParser parser = new ArgumentParser(args);
 
             // Parse --as flag
             string? alias = parser.GetFlag("--as");

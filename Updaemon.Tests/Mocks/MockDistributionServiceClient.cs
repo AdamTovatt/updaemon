@@ -47,7 +47,22 @@ namespace Updaemon.Tests.Mocks
         {
             MethodCalls.Add($"{nameof(DownloadVersionAsync)}:{serviceName}:{version}:{targetPath}");
             Downloads.Add((serviceName, version, targetPath));
+            if (ReleaseWriters.TryGetValue($"{serviceName}:{version}", out Action<string>? writeRelease))
+            {
+                writeRelease(targetPath);
+            }
+
             return Task.CompletedTask;
+        }
+
+        /// <summary>Writes a release's files into the download directory, by "remote:version".</summary>
+        public Dictionary<string, Action<string>> ReleaseWriters { get; } = new Dictionary<string, Action<string>>();
+
+        /// <summary>Publishes a release whose files <paramref name="writeRelease"/> creates; it becomes the latest version.</summary>
+        public void AddRelease(string serviceName, Version version, Action<string> writeRelease)
+        {
+            ReleaseWriters[$"{serviceName}:{version}"] = writeRelease;
+            LatestVersions[serviceName] = version;
         }
 
         public Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)

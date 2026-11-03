@@ -8,6 +8,7 @@ namespace Updaemon.Tests.Mocks
     public class MockSecretsManager : ISecretsManager
     {
         private readonly Dictionary<string, Dictionary<string, string>> _pluginSecrets = new Dictionary<string, Dictionary<string, string>>();
+        private readonly Dictionary<string, Dictionary<string, string>> _appSecrets = new Dictionary<string, Dictionary<string, string>>();
         public List<string> MethodCalls { get; } = new List<string>();
 
         public string GetPluginSecretsPath(string pluginAlias)
@@ -57,6 +58,22 @@ namespace Updaemon.Tests.Mocks
                 secrets.Remove(key);
             }
             return Task.CompletedTask;
+        }
+
+        public Task<Dictionary<string, string>> GetAppSecretsAsync(string appName, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new Dictionary<string, string>(_appSecrets.GetValueOrDefault(appName) ?? new Dictionary<string, string>()));
+        }
+
+        public Task SaveAppSecretsAsync(string appName, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default)
+        {
+            _appSecrets[appName] = new Dictionary<string, string>(secrets);
+            return Task.CompletedTask;
+        }
+
+        public void DeleteAppSecrets(string appName)
+        {
+            _appSecrets.Remove(appName);
         }
     }
 }

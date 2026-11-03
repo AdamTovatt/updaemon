@@ -4,132 +4,86 @@ using Updaemon.Interfaces;
 namespace Updaemon.Services
 {
     /// <summary>
-    /// macOS implementation of <see cref="IServiceManager"/> backed by launchd / launchctl.
-    /// Manages LaunchDaemons under <see cref="PlatformPaths.UnitFileDirectory"/>.
-    /// Service labels follow reverse-DNS convention: com.updaemon.&lt;name&gt;.
-    /// Constructed only on macOS by Program.cs; calling launchctl on other platforms will fail at runtime.
+    /// macOS implementation of <see cref="IServiceManager"/> backed by launchctl: LaunchDaemons in
+    /// the <c>system</c> domain for the system scope, LaunchAgents in the user's <c>gui/&lt;uid&gt;</c>
+    /// domain otherwise. launchd reads a plist only when it loads the job, so starting and
+    /// restarting always reload it: that is how changed settings and arguments take effect.
     /// </summary>
     public class MacServiceManager : IServiceManager
     {
         // launchctl print emits a multi-line block; "state = running" is the contract for an alive job.
         private const string StateRunningMarker = "state = running";
 
-        private readonly IUnitFileManager _unitFileManager;
+        private readonly UpdaemonScope _scope;
         private readonly IOutputWriter _outputWriter;
 
-        public MacServiceManager(IUnitFileManager unitFileManager, IOutputWriter outputWriter)
+        public MacServiceManager(UpdaemonScope scope, IOutputWriter outputWriter)
         {
-            _unitFileManager = unitFileManager;
+            _scope = scope;
             _outputWriter = outputWriter;
         }
 
+        /// <summary>Loads the plist; <c>RunAtLoad</c> starts the job.</summary>
         public Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => KickstartOrBootstrapAsync(serviceName, killExisting: false, cancellationToken);
+            => LoadAsync(serviceName, cancellationToken);
 
-        /// <summary>
-        /// Stops a managed service. On launchd this is implemented as <c>bootout</c>, which
-        /// also unloads the plist (because services with <c>KeepAlive=true</c> would otherwise
-        /// be relaunched immediately by launchd). To re-start the service afterwards, call
-        /// <see cref="StartServiceAsync"/> — it will re-bootstrap automatically.
-        /// </summary>
-        public async Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            string label = PlatformPaths.GetUnitLabel(serviceName);
-            // bootout is best-effort: if the service isn't loaded, the call returns non-zero
-            // and we treat that as "already stopped". No warning needed for that case.
-            await ProcessRunner.RunAsync("launchctl", new[] { "bootout", $"system/{label}" }, cancellationToken);
-        }
+        /// <summary>Unloads the job: with <c>KeepAlive</c>, launchd would relaunch a merely killed process.</summary>
+        public Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Launchd.UnloadAsync(_scope, Label(serviceName), cancellationToken);
 
         public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => KickstartOrBootstrapAsync(serviceName, killExisting: true, cancellationToken);
+            => LoadAsync(serviceName, cancellationToken);
 
-        public async Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            await BootstrapAsync(serviceName, cancellationToken);
-        }
+        /// <summary>Nothing to do: launchd loads every plist in the scope's directory at boot or login.</summary>
+        public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
 
-        public async Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            string label = PlatformPaths.GetUnitLabel(serviceName);
-            await ProcessRunner.RunAsync("launchctl", new[] { "bootout", $"system/{label}" }, cancellationToken);
-        }
+        public Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Launchd.UnloadAsync(_scope, Label(serviceName), cancellationToken);
 
         public async Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            string label = PlatformPaths.GetUnitLabel(serviceName);
-            ProcessRunner.Result result = await ProcessRunner.RunAsync(
-                "launchctl",
-                new[] { "print", $"system/{label}" },
-                cancellationToken);
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("launchctl", new[] { "print", Launchd.Target(_scope, Label(serviceName)) }, cancellationToken);
+            return result.Success && result.StdOut.Contains(StateRunningMarker, StringComparison.Ordinal);
+        }
 
-            if (!result.Success)
+        public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
+        {
+            if (File.Exists(_scope.GetUnitFilePath(serviceName)))
             {
-                return false;
+                return true;
             }
 
-            return result.StdOut.Contains(StateRunningMarker, StringComparison.Ordinal);
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("launchctl", new[] { "print", Launchd.Target(_scope, Label(serviceName)) }, cancellationToken);
+            return result.Success;
         }
 
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            string plistPath = _unitFileManager.GetUnitFilePath(serviceName);
-            return Task.FromResult(File.Exists(plistPath));
-        }
-
+        /// <summary>Nothing to do: every start and restart reloads the plist.</summary>
         public Task DaemonReloadAsync(CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        private string Label(string serviceName) => _scope.GetServiceLabel(serviceName);
+
+        private async Task LoadAsync(string serviceName, CancellationToken cancellationToken)
         {
-            // launchd reloads on each bootstrap; nothing to do here.
-            return Task.CompletedTask;
-        }
-
-        private async Task KickstartOrBootstrapAsync(string serviceName, bool killExisting, CancellationToken cancellationToken)
-        {
-            string label = PlatformPaths.GetUnitLabel(serviceName);
-            string[] args = killExisting
-                ? new[] { "kickstart", "-k", $"system/{label}" }
-                : new[] { "kickstart", $"system/{label}" };
-
-            ProcessRunner.Result result = await ProcessRunner.RunAsync("launchctl", args, cancellationToken);
-            if (!result.Success)
-            {
-                // Service might not be bootstrapped yet — fall through to bootstrap.
-                await BootstrapAsync(serviceName, cancellationToken);
-            }
-        }
-
-        private async Task BootstrapAsync(string serviceName, CancellationToken cancellationToken)
-        {
-            string label = PlatformPaths.GetUnitLabel(serviceName);
-            string plistPath = _unitFileManager.GetUnitFilePath(serviceName);
-
+            string plistPath = _scope.GetUnitFilePath(serviceName);
             if (!File.Exists(plistPath))
             {
-                throw new InvalidOperationException($"Plist not found at '{plistPath}'. Cannot bootstrap '{serviceName}'.");
+                throw new InvalidOperationException($"Plist not found at '{plistPath}'. Cannot load '{serviceName}'.");
             }
 
-            // The plist's StandardOutPath / StandardErrorPath point under PlatformPaths.MacLogDirectory.
+            // The plist's StandardOutPath / StandardErrorPath point under the scope's log directory.
             // If the directory doesn't exist, launchd silently drops logs — make sure it's there.
             try
             {
-                Directory.CreateDirectory(PlatformPaths.MacLogDirectory);
+                Directory.CreateDirectory(_scope.LogDirectory);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                _outputWriter.WriteLine($"Warning: could not create log directory {PlatformPaths.MacLogDirectory}: {ex.Message}");
+                _outputWriter.WriteError($"Warning: could not create log directory {_scope.LogDirectory}: {ex.Message}");
             }
 
-            // Enforce root:wheel ownership on the plist. launchd inherits the file's owner;
-            // this is normally already correct (root creates files as root:wheel) but be explicit.
-            ProcessRunner.Result chown = await ProcessRunner.RunAsync("chown", new[] { "root:wheel", plistPath }, cancellationToken);
-            if (!chown.Success)
-            {
-                _outputWriter.WriteLine($"Warning: chown root:wheel on {plistPath} failed (exit {chown.ExitCode}): {chown.StdErr.Trim()}");
-            }
-
-            // If already bootstrapped, bootstrap fails — bootout first (best effort).
-            await ProcessRunner.RunAsync("launchctl", new[] { "bootout", $"system/{label}" }, cancellationToken);
-
-            await ProcessRunner.RunAndCheckAsync("launchctl", new[] { "bootstrap", "system", plistPath }, cancellationToken);
+            await Launchd.LoadAsync(_scope, Label(serviceName), plistPath, _outputWriter, cancellationToken);
         }
     }
 }

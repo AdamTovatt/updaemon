@@ -156,7 +156,7 @@ If a plugin isn't being republished this release, drop its rows from the `gh rel
 
 - `install.sh` auto-detects Apple Silicon (`Darwin-arm64`) and downloads the `osx-arm64` asset.
 - `curl`-downloaded binaries are not flagged with the macOS quarantine attribute, so Gatekeeper does not block them. (If a user installs by drag-from-Finder or Safari download, they would need `xattr -d com.apple.quarantine /usr/local/bin/updaemon`.)
-- macOS services use launchd LaunchDaemons under `/Library/LaunchDaemons/` with reverse-DNS labels (`com.updaemon.<service>`). The unit-file template is selected automatically at runtime via `PlatformPaths`.
+- macOS services use launchd plists with reverse-DNS labels (`com.updaemon.<app>`): LaunchDaemons under `/Library/LaunchDaemons/` system-wide, LaunchAgents under `~/Library/LaunchAgents/` for a user. Updaemon generates them in code.
 - Code-signing / notarization is not currently part of the release process. Unsigned binaries run on Apple Silicon without prompts when installed via `curl`/`install.sh`.
 
 ## Updating installed plugins

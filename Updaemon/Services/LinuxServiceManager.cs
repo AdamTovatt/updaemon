@@ -1,43 +1,41 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 
 namespace Updaemon.Services
 {
     /// <summary>
-    /// Linux implementation of <see cref="IServiceManager"/> backed by systemd / systemctl.
-    /// Constructed only on Linux by Program.cs.
+    /// Linux implementation of <see cref="IServiceManager"/> backed by systemctl: the system
+    /// manager in the system scope, the user's own manager (<c>systemctl --user</c>) otherwise.
     /// </summary>
     public class LinuxServiceManager : IServiceManager
     {
-        public async Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+        private readonly UpdaemonScope _scope;
+
+        public LinuxServiceManager(UpdaemonScope scope)
         {
-            await ProcessRunner.RunAndCheckAsync("systemctl", new[] { "start", serviceName }, cancellationToken);
+            _scope = scope;
         }
 
-        public async Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            await ProcessRunner.RunAndCheckAsync("systemctl", new[] { "stop", serviceName }, cancellationToken);
-        }
+        public Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => SystemctlAsync(cancellationToken, "start", serviceName);
 
-        public async Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            await ProcessRunner.RunAndCheckAsync("systemctl", new[] { "restart", serviceName }, cancellationToken);
-        }
+        public Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => SystemctlAsync(cancellationToken, "stop", serviceName);
 
-        public async Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            await ProcessRunner.RunAndCheckAsync("systemctl", new[] { "enable", serviceName }, cancellationToken);
-        }
+        public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => SystemctlAsync(cancellationToken, "restart", serviceName);
 
-        public async Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        {
-            await ProcessRunner.RunAndCheckAsync("systemctl", new[] { "disable", serviceName }, cancellationToken);
-        }
+        public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => SystemctlAsync(cancellationToken, "enable", serviceName);
+
+        public Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => SystemctlAsync(cancellationToken, "disable", serviceName);
 
         public async Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             try
             {
-                ProcessRunner.Result result = await ProcessRunner.RunAsync("systemctl", new[] { "is-active", serviceName }, cancellationToken);
+                ProcessRunner.Result result = await ProcessRunner.RunAsync("systemctl", Arguments("is-active", serviceName), cancellationToken);
                 return result.StdOut.Trim() == "active";
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -46,15 +44,26 @@ namespace Updaemon.Services
             }
         }
 
-        public async Task DaemonReloadAsync(CancellationToken cancellationToken = default)
+        public Task DaemonReloadAsync(CancellationToken cancellationToken = default)
+            => SystemctlAsync(cancellationToken, "daemon-reload");
+
+        public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            await ProcessRunner.RunAndCheckAsync("systemctl", new[] { "daemon-reload" }, cancellationToken);
+            if (File.Exists(_scope.GetUnitFilePath(serviceName)))
+            {
+                return true;
+            }
+
+            // 'systemctl cat' finds a unit in every directory systemd loads from (/etc, /run, /usr/lib, ...).
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("systemctl", Arguments("cat", serviceName + ".service"), cancellationToken);
+            return result.Success;
         }
 
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
+        private async Task SystemctlAsync(CancellationToken cancellationToken, params string[] verb)
         {
-            string unitFilePath = $"/etc/systemd/system/{serviceName}.service";
-            return Task.FromResult(File.Exists(unitFilePath));
+            await ProcessRunner.RunAndCheckAsync("systemctl", Arguments(verb), cancellationToken);
         }
+
+        private string[] Arguments(params string[] verb) => [.. _scope.SystemdScopeArguments, .. verb];
     }
 }

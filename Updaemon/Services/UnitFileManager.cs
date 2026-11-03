@@ -1,125 +1,87 @@
-using System.Reflection;
-using System.Security;
+using System.Text;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
+using Updaemon.IO;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
     /// <summary>
-    /// Manages service unit-file templates and generation. Produces a systemd .service
-    /// file on Linux or a launchd .plist on macOS, depending on which <see cref="UnitFilePlatform"/>
-    /// is selected.
+    /// Generates an app's service definition in code: a systemd unit on Linux, a launchd plist on
+    /// macOS, for the system or the user scope.
     /// </summary>
     public class UnitFileManager : IUnitFileManager
     {
-        private readonly string _configDirectory;
-        private readonly string _templateFilePath;
-        private readonly UnitFilePlatform _platform;
+        private readonly UpdaemonScope _scope;
 
-        /// <summary>
-        /// Creates a UnitFileManager using OS-aware defaults from <see cref="PlatformPaths"/>.
-        /// </summary>
-        public UnitFileManager()
-            : this(PlatformPaths.ConfigDirectory, UnitFilePlatform.ForCurrentOS())
+        public UnitFileManager(UpdaemonScope scope)
         {
+            _scope = scope;
         }
 
-        /// <summary>
-        /// Constructs a UnitFileManager with explicit paths and template selection.
-        /// </summary>
-        public UnitFileManager(string configDirectory, UnitFilePlatform platform)
+        public async Task WriteUnitFileAsync(ServiceUnit unit, CancellationToken cancellationToken = default)
         {
-            _configDirectory = configDirectory;
-            _platform = platform;
-            _templateFilePath = Path.Combine(_configDirectory, platform.TemplateFileName);
+            // A plist carries the secrets, so only its owner may read it. A systemd unit only names
+            // the secrets file; 0644 is what systemd expects.
+            UnixFileMode mode = _scope.Platform.IsMacOS ? AtomicFile.OwnerOnly : AtomicFile.Readable;
+            await AtomicFile.WriteAsync(_scope.GetUnitFilePath(unit.AppName), Render(unit), mode, cancellationToken);
         }
 
-        public async Task<string> ReadTemplateAsync(CancellationToken cancellationToken = default)
+        public string Render(ServiceUnit unit) =>
+            _scope.Platform.IsMacOS ? RenderPlist(unit) : RenderSystemdUnit(unit);
+
+        private string RenderSystemdUnit(ServiceUnit unit)
         {
-            await EnsureTemplateExistsAsync(cancellationToken);
-            return await File.ReadAllTextAsync(_templateFilePath, cancellationToken);
-        }
-
-        public async Task<string> ReadTemplateWithSubstitutionsAsync(string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default)
-        {
-            string template = await ReadTemplateAsync(cancellationToken);
-
-            // Templates can be either INI-style (systemd) or XML (launchd plist). Escape values
-            // appropriately for the format we're emitting so service names containing &, <, >, etc.
-            // don't produce invalid output. SecurityElement.Escape escapes & < > " ' for XML.
-            bool isXmlTemplate = template.TrimStart().StartsWith("<?xml", StringComparison.OrdinalIgnoreCase);
-            string Escape(string value) => isXmlTemplate ? (SecurityElement.Escape(value) ?? string.Empty) : value;
-
-            string result = template
-                .Replace("{SERVICE_NAME}", Escape(serviceName))
-                .Replace("{DESCRIPTION}", Escape($"{serviceName} service managed by updaemon"))
-                .Replace("{WORKING_DIRECTORY}", Escape(symlinkPath))
-                .Replace("{EXECUTABLE_NAME}", Escape(executableName));
-
-            return result;
-        }
-
-        public async Task WriteUnitFileAsync(string unitFilePath, string serviceName, string symlinkPath, string executableName, CancellationToken cancellationToken = default)
-        {
-            string content = await ReadTemplateWithSubstitutionsAsync(serviceName, symlinkPath, executableName, cancellationToken);
-            await File.WriteAllTextAsync(unitFilePath, content, cancellationToken);
-
-            // 0644 on the unit file: launchd refuses anything else; systemd is more lenient but accepts it.
-            // Ownership (root:wheel on macOS) is enforced by MacServiceManager just before bootstrap;
-            // keeping it out of here means UnitFileManager doesn't branch on platform.
-            File.SetUnixFileMode(unitFilePath,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite |
-                UnixFileMode.GroupRead |
-                UnixFileMode.OtherRead);
-        }
-
-        public string GetUnitFilePath(string serviceName)
-        {
-            return Path.Combine(_platform.UnitFileDirectory, _platform.UnitLabelPrefix + serviceName + _platform.UnitFileExtension);
-        }
-
-        public Task EnsureWritableAsync(CancellationToken cancellationToken = default)
-        {
-            if (!Directory.Exists(_platform.UnitFileDirectory))
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("[Unit]");
+            builder.AppendLine($"Description={SystemdSyntax.EscapeSpecifiers(unit.AppName)} (managed by updaemon)");
+            if (_scope.IsSystem)
             {
-                throw new InvalidOperationException($"Directory '{_platform.UnitFileDirectory}' does not exist.");
+                builder.AppendLine("After=network.target");
             }
 
-            string testFilePath = Path.Combine(_platform.UnitFileDirectory, $".updaemon-init-check-{Guid.NewGuid()}");
-            try
+            builder.AppendLine();
+            builder.AppendLine("[Service]");
+            builder.AppendLine("Type=simple");
+            if (unit.RunAs != null)
             {
-                File.WriteAllText(testFilePath, string.Empty);
+                builder.AppendLine($"User={SystemdSyntax.EscapeSpecifiers(unit.RunAs)}");
             }
-            finally
-            {
-                try { File.Delete(testFilePath); } catch { /* best-effort cleanup of probe file */ }
-            }
-            return Task.CompletedTask;
+
+            builder.AppendLine($"WorkingDirectory={SystemdSyntax.EscapeSpecifiers(unit.WorkingDirectory)}");
+            builder.AppendLine($"EnvironmentFile={SystemdSyntax.EscapeSpecifiers(unit.SettingsFilePath)}");
+            builder.AppendLine($"EnvironmentFile=-{SystemdSyntax.EscapeSpecifiers(unit.SecretsFilePath)}");
+            IEnumerable<string> command = new[] { unit.ExecutablePath }.Concat(unit.Arguments);
+            builder.AppendLine($"ExecStart={string.Join(' ', command.Select(SystemdSyntax.QuoteArgument))}");
+            builder.AppendLine("Restart=always");
+            builder.AppendLine("RestartSec=10");
+            builder.AppendLine($"SyslogIdentifier={SystemdSyntax.EscapeSpecifiers(unit.AppName)}");
+            builder.AppendLine();
+            builder.AppendLine("[Install]");
+            builder.AppendLine(_scope.IsSystem ? "WantedBy=multi-user.target" : "WantedBy=default.target");
+            return builder.ToString();
         }
 
-        private async Task EnsureTemplateExistsAsync(CancellationToken cancellationToken = default)
+        private string RenderPlist(ServiceUnit unit)
         {
-            if (File.Exists(_templateFilePath))
+            string logBase = Path.Combine(_scope.LogDirectory, unit.AppName);
+
+            Launchd.Plist plist = new Launchd.Plist().String("Label", _scope.GetServiceLabel(unit.AppName));
+            if (unit.RunAs != null)
             {
-                return;
+                plist.String("UserName", unit.RunAs);
             }
 
-            Directory.CreateDirectory(_configDirectory);
-
-            Assembly assembly = Assembly.GetExecutingAssembly();
-            using (Stream? resourceStream = assembly.GetManifestResourceStream(_platform.EmbeddedResourceName))
-            {
-                if (resourceStream == null)
-                {
-                    throw new InvalidOperationException($"Embedded resource '{_platform.EmbeddedResourceName}' not found.");
-                }
-
-                using (FileStream fileStream = new FileStream(_templateFilePath, FileMode.Create, FileAccess.Write))
-                {
-                    await resourceStream.CopyToAsync(fileStream, cancellationToken);
-                }
-            }
+            return plist
+                .String("WorkingDirectory", unit.WorkingDirectory)
+                .Strings("ProgramArguments", new[] { unit.ExecutablePath }.Concat(unit.Arguments))
+                .Dictionary("EnvironmentVariables", unit.Environment)
+                .Boolean("RunAtLoad", true)
+                .Boolean("KeepAlive", true)
+                .Integer("ThrottleInterval", 10)
+                .String("StandardOutPath", logBase + ".log")
+                .String("StandardErrorPath", logBase + ".err.log")
+                .ToString();
         }
-
     }
 }
