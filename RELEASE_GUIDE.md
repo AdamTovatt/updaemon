@@ -83,17 +83,17 @@ Notes:
 
 The output binaries will be at:
 ```
-Updaemon/bin/Release/net8.0/<rid>/native/Updaemon
-Updaemon.GithubDistributionService/bin/Release/net8.0/<rid>/native/Updaemon.GithubDistributionService
-Updaemon.Distribution.ByteShelfDistribution/bin/Release/net8.0/<rid>/native/Updaemon.Distribution.ByteShelfDistribution
+Updaemon/bin/Release/net10.0/<rid>/native/Updaemon
+Updaemon.GithubDistributionService/bin/Release/net10.0/<rid>/native/Updaemon.GithubDistributionService
+Updaemon.Distribution.ByteShelfDistribution/bin/Release/net10.0/<rid>/native/Updaemon.Distribution.ByteShelfDistribution
 ```
 
 Rename each to include the RID suffix before uploading (this is the convention `install.sh` relies on):
 
 ```bash
-cp Updaemon/bin/Release/net8.0/linux-arm64/native/Updaemon       Updaemon-linux-arm64
-cp Updaemon/bin/Release/net8.0/linux-x64/native/Updaemon         Updaemon-linux-x64
-cp Updaemon/bin/Release/net8.0/osx-arm64/native/Updaemon         Updaemon-osx-arm64
+cp Updaemon/bin/Release/net10.0/linux-arm64/native/Updaemon       Updaemon-linux-arm64
+cp Updaemon/bin/Release/net10.0/linux-x64/native/Updaemon         Updaemon-linux-x64
+cp Updaemon/bin/Release/net10.0/osx-arm64/native/Updaemon         Updaemon-osx-arm64
 ```
 
 ### 4. Plugin registry (only when adding a plugin)

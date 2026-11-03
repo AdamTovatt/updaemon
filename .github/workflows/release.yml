@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       # AOT publish on Linux needs zlib headers; macOS runners already ship Xcode CLI tools.
       - name: Install AOT prerequisites (Linux)
@@ -40,7 +40,7 @@ jobs:
               -r ${{ matrix.rid }} \
               --self-contained true \
               -p:StripSymbols=true
-            cp ./$proj/bin/Release/net8.0/${{ matrix.rid }}/native/$proj $proj-${{ matrix.rid }}
+            cp ./$proj/bin/Release/net10.0/${{ matrix.rid }}/native/$proj $proj-${{ matrix.rid }}
           done
 
       - uses: actions/upload-artifact@v4
