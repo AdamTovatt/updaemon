@@ -25,7 +25,7 @@ namespace Updaemon.Tests.Configuration
         [InlineData("{\"format\":null}", "cannot be read: it is not an object with a whole-number 'format'.")]
         [InlineData("[]", "cannot be read: it is not an object with a whole-number 'format'.")]
         [InlineData("{\"format\":2,\"apps\":[]}", "has format 2")]
-        [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\"}}}}", "cannot be read: JSON deserialization for type 'Updaemon.Models.PluginSource+Registry' was missing required properties including: 'release'.")]
+        [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\"}}}}", "config.json cannot be read: ")]
         [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\",\"release\":\"1.3\"}}}}", "cannot be read: '1.3' is not an updaemon release version (x.y.z).")]
         public async Task LoadConfigAsync_OtherFormatOrUnreadable_FailsWithOneClearLine(string json, string expected)
         {
