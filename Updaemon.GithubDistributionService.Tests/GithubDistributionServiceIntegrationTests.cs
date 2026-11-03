@@ -10,7 +10,7 @@ namespace Updaemon.GithubDistributionService.Tests
         [Fact]
         public async Task GetLatestVersionAsync_WithRealCurlRepo_ReturnsVersion()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
@@ -24,23 +24,24 @@ namespace Updaemon.GithubDistributionService.Tests
         }
 
         [Fact]
-        public async Task GetLatestVersionAsync_WithNonExistentRepo_ReturnsNull()
+        public async Task GetLatestVersionAsync_WithNonExistentRepoAndNoToken_NeedsAToken()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
             await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
-            Version? version = await service.GetLatestVersionAsync("nonexistent-user-12345/nonexistent-repo-67890");
+            CredentialNeededException ex = await Assert.ThrowsAsync<CredentialNeededException>(
+                () => service.GetLatestVersionAsync("nonexistent-user-12345/nonexistent-repo-67890"));
 
-            Assert.Null(version);
+            Assert.Equal(Common.Models.CredentialProblem.Missing, ex.Need.Problem);
         }
 
         [Fact]
         public async Task DownloadVersionAsync_WithRealRepo_DownloadsSuccessfully()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
@@ -88,7 +89,7 @@ namespace Updaemon.GithubDistributionService.Tests
         [Fact]
         public async Task FullFlow_GetVersionThenDownload_WorksCorrectly()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);

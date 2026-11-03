@@ -6,6 +6,7 @@ using Updaemon.Common;
 using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
@@ -300,6 +301,11 @@ namespace Updaemon.Services
             if (response == null)
             {
                 throw new InvalidOperationException("Failed to deserialize response");
+            }
+
+            if (!response.Success && response.CredentialNeeded != null)
+            {
+                throw new CredentialNeededException(response.CredentialNeeded, response.Error ?? $"The plugin needs its secret '{response.CredentialNeeded.Secret}'.");
             }
 
             if (!response.Success)

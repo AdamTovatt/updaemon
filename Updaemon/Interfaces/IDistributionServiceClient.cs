@@ -5,7 +5,8 @@ namespace Updaemon.Interfaces
 {
     /// <summary>
     /// Client for communicating with distribution service plugins via named pipes.
-    /// A call the plugin fails throws <see cref="PluginException"/> with the plugin's message.
+    /// A call the plugin fails throws <see cref="PluginException"/> with the plugin's message, or, when
+    /// it failed for want of a secret, <see cref="Common.Utilities.CredentialNeededException"/>.
     /// </summary>
     public interface IDistributionServiceClient : IAsyncDisposable
     {

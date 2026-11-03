@@ -64,9 +64,9 @@ For your own apps only, without root:
 curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | bash
 ```
 
-The script installs the latest release for this machine and links the `updaemon` command to it: `/usr/local/bin/updaemon` system-wide, `~/.local/bin/updaemon` for you. From then on, `updaemon update` keeps updaemon itself up to date too (see [self-update](#self-update)). Running the script again does no harm.
+The script installs the latest release for this machine and links the `updaemon` command to it: `/usr/local/bin/updaemon` system-wide, `~/.local/bin/updaemon` for you. It also turns on the update timer, every hour; `updaemon timer -` turns it off. From then on, `updaemon update` keeps updaemon itself up to date too (see [self-update](#self-update)). Running the script again does no harm: a timer that is set keeps its interval, and one turned off stays off.
 
-`updaemon help` lists the commands, `updaemon help <command>` explains one, and `updaemon --version` prints the version.
+`updaemon help` lists the commands, `updaemon help <command>` explains one, `updaemon help publishing` prints [Publishing with Updaemon](PublishingWithUpdaemon.md), and `updaemon --version` prints the version.
 
 ### Installing an app
 
@@ -78,15 +78,17 @@ sudo updaemon install byteshelf --from github:owner/byteshelf
 
 A release without `updaemon.json` can still be installed: `--command <name>` puts its executable on PATH under that name, and `--service` runs it as a service.
 
-Some plugins need secrets, for example a GitHub token for private repositories or to avoid rate limits:
+Some plugins need secrets, for example a GitHub token for private repositories or to avoid rate limits. When GitHub refuses a request for want of one, `install`, `update` and `dist-install` say why. At a terminal they ask for the token without showing it, save it as the plugin's secret and try once more. Under the timer, the update fails in one line naming the command that sets it:
 
 ```bash
-sudo updaemon secret-set github githubToken <token>
+sudo updaemon secret-set github githubToken
 ```
+
+A used-up rate limit is only reported, with when it resets. The `github` plugin's token also serves `dist-install github:<owner>/<repo>`, so plugins can come from private repositories too.
 
 ### System-wide or per user
 
-Who runs updaemon decides which apps it manages. As root, it manages system-wide apps. As anyone else, it manages that user's own apps, kept apart from the system's and from other users'. Every command works the same either way, and `updaemon status` names the scope.
+Who runs updaemon decides which apps it manages. As root, it manages system-wide apps. As anyone else, it manages that user's own apps, kept apart from the system's and from other users'. Every command works the same either way. Each command that changes something first names the scope and how to get the other one, for example "For user adam only (run with sudo for the whole machine)." `install` also warns when the other scope already has an app of the same name.
 
 | | System, Linux | System, macOS | User, Linux | User, macOS |
 | --- | --- | --- | --- | --- |
@@ -102,13 +104,13 @@ A system-wide service runs as root unless installed with `--run-as <user>`. A us
 
 ### Upgrading from 0.x
 
-Re-run `install.sh` with `sudo`. The rest is automatic: the first `updaemon` command run as root (the update timer's included) converts the 0.x setup before it does anything else, and says what it converted.
+Re-run `install.sh` with `sudo`. The rest is automatic: the script then runs `updaemon timer`, which converts the 0.x setup before it does anything else and says what it converted. Any other `updaemon` command run as root (the update timer's included) converts it the same way.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
 ```
 
-Each 0.x service or CLI tool becomes a system-wide app with the same name, source and restart setting. Its versions stay where they are, so nothing is downloaded again. `Environment=` lines in a service's unit (`EnvironmentVariables` in a plist) become the app's settings. A service set to `restart=manual` keeps running its old process until it next restarts. A CLI tool's command is its executable's name; the second link 0.x made under the tool's own name (`ripgrep` beside `rg`) is removed. Registry plugins are reinstalled from the new release and keep their secrets; any other plugin is reported with the `updaemon dist-install --as <alias> <url>` that installs it again. The update timer keeps its interval.
+Each 0.x service or CLI tool becomes a system-wide app with the same name, source and restart setting. Its versions stay where they are, so nothing is downloaded again. `Environment=` lines in a service's unit (`EnvironmentVariables` in a plist) become the app's settings. A service set to `restart=manual` keeps running its old process until it next restarts. A CLI tool's command is its executable's name; the second link 0.x made under the tool's own name (`ripgrep` beside `rg`) is removed. Registry plugins are reinstalled from the new release and keep their secrets; any other plugin is reported with the `updaemon dist-install --as <alias> <url>` that installs it again. The update timer keeps its interval, and one 0.x had turned off stays off.
 
 An app is left out, and keeps running as before, when its unit was edited by hand in any other way, its name is not a valid app name, it has no current version, or its unit, executable or command link is not what 0.x made. The report says which and what to do. Fix it, then run `sudo updaemon migrate` to convert what was left out; this also retries a plugin or the timer that failed. `sudo updaemon migrate --dry-run` shows what would be converted without changing anything. What the conversion replaces (the old config, unit template, units and timer) is kept in `0.x-backup` beside `config.json`.
 
@@ -133,7 +135,7 @@ An argument in angle brackets (`< >`) is required; one in square brackets (`[ ]`
 | [dist-list](#dist-list) | List the installed plugins. |
 | [secret-set](#secret-set) | Set a secret for a plugin. |
 | [migrate](#migrate) | Convert an updaemon 0.x setup. |
-| help | `updaemon help [command]` shows help, and the version. |
+| help | `updaemon help [command]` shows help, and the version; `updaemon help publishing` prints the publishing guide. |
 
 ### install
 
@@ -228,10 +230,10 @@ Stops and deletes the app's service, its command, all its versions, its settings
 ### timer
 
 ```bash
-updaemon timer [interval]
+updaemon timer [<interval> [--keep] | -]
 ```
 
-Runs `updaemon update` every `interval` (`30s`, `10m`, `1h`): a systemd timer on Linux, a launchd job on macOS. Without an interval, shows the current one; `-` turns it off.
+Runs `updaemon update` every `interval` (`30s`, `10m`, `1h`): a systemd timer on Linux, a launchd job on macOS. Without an interval, shows the current one; `-` turns it off and deletes its unit or plist. With `--keep`, a timer that is set keeps its interval and one turned off stays off; `install.sh` turns the timer on this way.
 
 ### self-update
 
@@ -259,7 +261,7 @@ updaemon dist-install [--as <alias>] <plugin-name|github:owner/repo|url>
 
 Installs a distribution plugin by registry name, from a GitHub repository, or from a URL. A registry plugin comes from the release of the updaemon you run, built for your machine. Each release carries the registry plugins for every platform updaemon itself is released for (see [RELEASE_GUIDE.md](RELEASE_GUIDE.md)); on another platform, build the plugin and install it from its URL. `install` already installs a missing registry plugin, so this is mostly for other plugins and aliases.
 
-`github:<owner>/<repo>` installs a third-party plugin from the repository's latest release: its one asset named `*-<rid>`, such as `my-plugin-linux-arm64`. No such asset, or several, fails and lists the release's assets. The release must have a `SHA256SUMS` (see [Publishing with Updaemon](PublishingWithUpdaemon.md)). While self-update is on, `update` installs the repository's newer releases (see [self-update](#self-update)).
+`github:<owner>/<repo>` installs a third-party plugin from the repository's latest release: its one asset named `*-<rid>`, such as `my-plugin-linux-arm64`. No such asset, or several, fails and lists the release's assets. The release must have a `SHA256SUMS` (see [Publishing with Updaemon](PublishingWithUpdaemon.md)). While self-update is on, `update` installs the repository's newer releases (see [self-update](#self-update)). The repository may be private: it is read with the `github` plugin's `githubToken`, which `dist-install` asks for at a terminal when it is needed.
 
 A plugin already installed under the alias is replaced, but only once the new one has started and answered. A registry or GitHub plugin must first match its line in its release's `SHA256SUMS`; a plugin from a plain URL is not verified.
 
@@ -274,10 +276,10 @@ Lists the installed plugins with their version, description and secrets, and how
 ### secret-set
 
 ```bash
-updaemon secret-set <plugin-alias> <key> <value>
+updaemon secret-set <plugin-alias> <key> [<value>]
 ```
 
-Sets a secret for a plugin, such as `githubToken` for `github`.
+Sets a secret for a plugin, such as `githubToken` for `github`. Without a value it asks for one without showing it, which keeps the secret out of the shell's history.
 
 ### migrate
 

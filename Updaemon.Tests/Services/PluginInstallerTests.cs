@@ -42,7 +42,11 @@ namespace Updaemon.Tests.Services
                 PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github", RunningRelease), alias);
 
                 Assert.Equal(
-                    ("https://github.com/AdamTovatt/updaemon/releases/download/v1.2.0/Updaemon.GithubDistributionService-linux-arm64", true),
+                    new PluginDownload(
+                        new Uri("https://github.com/AdamTovatt/updaemon/releases/download/v1.2.0/Updaemon.GithubDistributionService-linux-arm64"),
+                        "Updaemon.GithubDistributionService-linux-arm64",
+                        new Uri("https://github.com/AdamTovatt/updaemon/releases/download/v1.2.0/SHA256SUMS"),
+                        GitHub: null),
                     Assert.Single(downloader.Downloads));
                 InstalledPluginInfo? recorded = await configManager.GetPluginAsync(expectedAlias);
                 Assert.NotNull(recorded);
@@ -68,7 +72,7 @@ namespace Updaemon.Tests.Services
 
                 await installer.InstallAsync(source, alias);
 
-                Assert.Equal(("https://example.com/path/to/my-plugin", false), Assert.Single(downloader.Downloads));
+                Assert.Equal(new PluginDownload(new Uri("https://example.com/path/to/my-plugin"), "my-plugin", Checksums: null, GitHub: null), Assert.Single(downloader.Downloads));
                 InstalledPluginInfo? recorded = await configManager.GetPluginAsync(expectedAlias);
                 Assert.NotNull(recorded);
                 Assert.Equal(source, recorded.Source);
@@ -87,7 +91,7 @@ namespace Updaemon.Tests.Services
 
                 await Installer(tempHelper, downloader, configManager).InstallAsync(source, alias: null);
 
-                Assert.Equal((MockGitHubPluginReleases.BuildUrl("someone", "updaemon-s3", "v2.1.0"), true), Assert.Single(downloader.Downloads));
+                Assert.Equal(new Uri(MockGitHubPluginReleases.BuildUrl("someone", "updaemon-s3", "v2.1.0")), Assert.Single(downloader.Downloads).Build);
                 Assert.Equal(source, (await configManager.GetPluginAsync("mock"))!.Source);
             }
         }

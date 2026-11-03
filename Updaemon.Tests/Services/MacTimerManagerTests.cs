@@ -6,9 +6,9 @@ using Updaemon.Tests.Mocks;
 namespace Updaemon.Tests.Services
 {
     /// <summary>
-    /// Tests the parts of <see cref="MacTimerManager"/> that don't require launchctl —
+    /// Tests the parts of <see cref="MacTimerManager"/> that don't require launchctl:
     /// plist content generation and StartInterval parsing. The full SetTimerAsync /
-    /// DisableTimerAsync flows are validated by hand on macOS (see RELEASE_GUIDE.md).
+    /// RemoveTimerAsync flows need launchctl, so they are not run here.
     /// </summary>
     public class MacTimerManagerTests
     {

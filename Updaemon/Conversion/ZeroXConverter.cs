@@ -498,6 +498,13 @@ namespace Updaemon.Conversion
                 {
                     await _timerManager.SetTimerAsync(interval, cancellationToken);
                 }
+                else
+                {
+                    // Recorded as 'timer -' does, so install.sh's 'timer 1h --keep' leaves it off.
+                    UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
+                    config.TimerTurnedOff = true;
+                    await _configManager.SaveConfigAsync(config, cancellationToken);
+                }
 
                 await _timerManager.RemoveZeroXTimerAsync(timer, cancellationToken);
             }

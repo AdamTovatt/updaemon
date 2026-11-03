@@ -39,7 +39,8 @@ namespace Updaemon.Tests.Commands
             MockGitHubPluginReleases gitHubPlugins = new MockGitHubPluginReleases();
             gitHubPlugins.LatestTags["someone/updaemon-s3"] = "v2.1.0";
             PluginInstaller installer = new PluginInstaller(resolver, gitHubPlugins, downloader, configManager, TestScope.Create(tempHelper.TempDirectory));
-            return new DistInstallCommand(outputWriter, installer, gitHubPlugins, UpdaemonVersion.Of(0, 11, 0));
+            return new DistInstallCommand(
+                outputWriter, installer, gitHubPlugins, UpdaemonVersion.Of(0, 11, 0), new PluginCredentials(new MockSecretsManager(), new MockPrompter(), outputWriter));
         }
 
         [Theory]

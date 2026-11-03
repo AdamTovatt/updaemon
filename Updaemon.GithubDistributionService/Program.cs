@@ -9,7 +9,7 @@ namespace Updaemon.GithubDistributionService
         static async Task Main(string[] args)
         {
             GithubDistributionService service = new GithubDistributionService(
-                new GithubApiClient(),
+                new GithubApiClient(new HttpClient()),
                 new VersionParser(),
                 new DownloadPostProcessor());
 

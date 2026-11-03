@@ -20,6 +20,7 @@ namespace Updaemon.Commands
         private readonly PluginProvider _pluginProvider;
         private readonly GitHubPluginUpdater _gitHubPluginUpdater;
         private readonly SelfUpdater _selfUpdater;
+        private readonly PluginCredentials _credentials;
 
         public UpdateCommand(
             IConfigManager configManager,
@@ -31,7 +32,8 @@ namespace Updaemon.Commands
             AppRollback appRollback,
             PluginProvider pluginProvider,
             GitHubPluginUpdater gitHubPluginUpdater,
-            SelfUpdater selfUpdater)
+            SelfUpdater selfUpdater,
+            PluginCredentials credentials)
         {
             _configManager = configManager;
             _settingsStore = settingsStore;
@@ -43,6 +45,7 @@ namespace Updaemon.Commands
             _pluginProvider = pluginProvider;
             _gitHubPluginUpdater = gitHubPluginUpdater;
             _selfUpdater = selfUpdater;
+            _credentials = credentials;
         }
 
         public string Name => "update";
@@ -104,11 +107,15 @@ namespace Updaemon.Commands
                 return false;
             }
 
+            // The running plugin gets the secrets as stored; again after one is saved at the prompt, so
+            // the apps after that one use it too.
+            async Task InitializeAsync() =>
+                await _distributionClient.InitializeAsync(await _secretsManager.GetPluginSecretsFormattedAsync(pluginAlias, cancellationToken), cancellationToken);
+
             try
             {
                 await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
-                string? secrets = await _secretsManager.GetPluginSecretsFormattedAsync(pluginAlias, cancellationToken);
-                await _distributionClient.InitializeAsync(secrets, cancellationToken);
+                await InitializeAsync();
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -124,7 +131,15 @@ namespace Updaemon.Commands
                 {
                     try
                     {
-                        await UpdateAppAsync(app, retentionCount, cancellationToken);
+                        await _credentials.RunAsync(
+                            pluginAlias,
+                            async () =>
+                            {
+                                await UpdateAppAsync(app, retentionCount, cancellationToken);
+                                return true;
+                            },
+                            handOverSavedSecret: InitializeAsync,
+                            cancellationToken);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -271,6 +286,10 @@ namespace Updaemon.Commands
                   command and service unit from it. If the new release needs a setting the
                   app has no value for, it is not activated: the current version keeps running
                   and the message says which 'updaemon set' command to run.
+
+                  When a plugin needs a secret, such as a githubToken for a private
+                  repository, it is asked for at a terminal without echo and saved; under
+                  the timer, the update fails naming the 'updaemon secret-set' command.
 
                   Services are restarted after an update unless set to manual with
                   'updaemon set-restart <app> manual'. A restarted service must keep running

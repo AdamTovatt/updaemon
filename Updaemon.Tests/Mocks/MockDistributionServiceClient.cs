@@ -1,4 +1,6 @@
+using Updaemon.Common;
 using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -47,12 +49,30 @@ namespace Updaemon.Tests.Mocks
         /// <summary>Remotes the plugin refuses, with the message it gives.</summary>
         public Dictionary<string, string> RefusedRemotes { get; } = new Dictionary<string, string>();
 
+        /// <summary>Remotes readable only with this githubToken, as a private repository is.</summary>
+        public Dictionary<string, string> TokenProtectedRemotes { get; } = new Dictionary<string, string>();
+
         public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(GetLatestVersionAsync)}:{serviceName}");
             if (RefusedRemotes.TryGetValue(serviceName, out string? message))
             {
                 throw new PluginException(message);
+            }
+
+            if (TokenProtectedRemotes.TryGetValue(serviceName, out string? token))
+            {
+                string? given = SecretCollection.FromString(InitializedSecrets).GetValueIgnoreCase(GitHubAccess.TokenSecret);
+                if (given == null)
+                {
+                    string[] ownerAndRepo = serviceName.Split('/');
+                    throw GitHubAccess.RepositoryNotFound(ownerAndRepo[0], ownerAndRepo[1], hasToken: false);
+                }
+
+                if (given != token)
+                {
+                    throw GitHubAccess.TokenRejected();
+                }
             }
 
             return Task.FromResult(LatestVersions.GetValueOrDefault(serviceName));

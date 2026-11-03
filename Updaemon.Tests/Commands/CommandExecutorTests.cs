@@ -9,8 +9,10 @@ namespace Updaemon.Tests.Commands
     {
         private static readonly UpdaemonVersion RunningVersion = UpdaemonVersion.FromAssembly(new Version(1, 2, 0, 0));
 
+        private static readonly UpdaemonScope Scope = UpdaemonScope.ForUser(new HostPlatform(false, "linux-arm64"), 1000, "ada", "/home/ada", null, null);
+
         private static CommandExecutor Executor(MockCommandFactory factory, MockOutputWriter outputWriter, MockRunLock? runLock = null, MockZeroXConverter? converter = null) =>
-            new CommandExecutor(factory, outputWriter, runLock ?? new MockRunLock(), RunningVersion, converter ?? new MockZeroXConverter());
+            new CommandExecutor(factory, outputWriter, runLock ?? new MockRunLock(), RunningVersion, converter ?? new MockZeroXConverter(), Scope);
 
         [Theory]
         [InlineData(false)]
@@ -160,20 +162,33 @@ namespace Updaemon.Tests.Commands
         [Theory]
         [InlineData(true, 1)]
         [InlineData(false, 0)]
-        public async Task ExecuteAsync_HoldsTheLockOnlyForCommandsThatChangeState(bool changesState, int expectedAcquisitions)
+        public async Task ExecuteAsync_HoldsTheLockAndNamesTheScopeOnlyForCommandsThatChangeState(bool changesState, int expectedAcquisitions)
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockRunLock runLock = new MockRunLock();
+            MockOutputWriter outputWriter = new MockOutputWriter();
             bool heldDuringRun = false;
-            MockCommand command = new MockCommand { Name = "cmd", ChangesState = changesState, OnExecute = () => heldDuringRun = runLock.IsHeld };
+            List<string>? printedBeforeRun = null;
+            MockCommand command = new MockCommand
+            {
+                Name = "cmd",
+                ChangesState = changesState,
+                OnExecute = () =>
+                {
+                    heldDuringRun = runLock.IsHeld;
+                    printedBeforeRun = outputWriter.Messages.ToList();
+                },
+            };
             factory.RegisterCommand("cmd", command);
-            CommandExecutor executor = Executor(factory, new MockOutputWriter(), runLock);
+            CommandExecutor executor = Executor(factory, outputWriter, runLock);
 
             await executor.ExecuteAsync(new[] { "cmd" });
 
             Assert.Equal(expectedAcquisitions, runLock.Acquisitions);
             Assert.Equal(changesState, heldDuringRun);
             Assert.False(runLock.IsHeld);
+            Assert.NotNull(printedBeforeRun);
+            Assert.Equal(changesState ? new[] { Scope.Announcement } : Array.Empty<string>(), printedBeforeRun);
         }
 
         [Fact]
@@ -212,6 +227,31 @@ namespace Updaemon.Tests.Commands
             Assert.Contains("Available Commands:", outputWriter.Messages);
             Assert.Contains("update", string.Join(" ", outputWriter.Messages));
             Assert.Contains("new", string.Join(" ", outputWriter.Messages));
+            Assert.Contains(outputWriter.Messages, line => line.TrimStart().StartsWith("help publishing "));
+        }
+
+        [Theory]
+        [InlineData("publishing")]
+        [InlineData("PUBLISHING")]
+        public async Task ExecuteAsync_HelpPublishing_PrintsTheRepositorysGuideAsIs(string topic)
+        {
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(new MockCommandFactory(), outputWriter).ExecuteAsync(new[] { "help", topic });
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(new[] { File.ReadAllText(RepositoryFile("PublishingWithUpdaemon.md")) }, outputWriter.Messages.Select(line => line + "\n"));
+        }
+
+        private static string RepositoryFile(string name)
+        {
+            DirectoryInfo? directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Updaemon.sln")))
+            {
+                directory = directory.Parent;
+            }
+
+            return Path.Combine(directory?.FullName ?? throw new DirectoryNotFoundException("Updaemon.sln was not found above the test binaries."), name);
         }
 
         [Fact]

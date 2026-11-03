@@ -4,6 +4,7 @@ using System.Text.Json;
 using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
+using Updaemon.Common.Utilities;
 
 namespace Updaemon.Common.Hosting
 {
@@ -140,6 +141,17 @@ namespace Updaemon.Common.Hosting
                             Error = $"Unknown method: {request.Method}",
                         };
                 }
+            }
+            catch (CredentialNeededException ex)
+            {
+                // An expected refusal: no trace on stderr, and updaemon gets which secret is needed and why.
+                return new RpcResponse
+                {
+                    Id = request.Id,
+                    Success = false,
+                    Error = ex.Message,
+                    CredentialNeeded = ex.Need,
+                };
             }
             catch (Exception ex)
             {

@@ -1,12 +1,12 @@
 using System.Net;
 using Updaemon.Common.Utilities;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
     /// <summary>
-    /// A GitHub release asset at <c>.../releases/download/&lt;tag&gt;/&lt;asset&gt;</c> is checked against
-    /// <c>.../releases/download/&lt;tag&gt;/SHA256SUMS</c>, which every updaemon release carries.
+    /// Checks a downloaded release asset against its release's <c>SHA256SUMS</c>.
     /// </summary>
     public class ReleaseChecksums : IReleaseChecksums
     {
@@ -17,21 +17,28 @@ namespace Updaemon.Services
             _httpClient = httpClient;
         }
 
-        public async Task VerifyAsync(string assetUrl, string filePath, CancellationToken cancellationToken = default)
-        {
-            Uri asset = new Uri(assetUrl);
-            string assetName = Path.GetFileName(asset.LocalPath);
-            using (HttpResponseMessage response = await _httpClient.GetAsync(new Uri(asset, Sha256Sums.AssetName), cancellationToken))
-            {
-                if (response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    throw new ChecksumException($"{assetName} cannot be verified: its release has no {Sha256Sums.AssetName}.");
-                }
+        /// <summary>
+        /// The <c>SHA256SUMS</c> beside an asset at <c>.../releases/download/&lt;tag&gt;/&lt;asset&gt;</c>,
+        /// where every updaemon release has one.
+        /// </summary>
+        public static Uri BesideAsset(Uri assetUrl) => new Uri(assetUrl, Sha256Sums.AssetName);
 
-                response.EnsureSuccessStatusCode();
-                string sums = await response.Content.ReadAsStringAsync(cancellationToken);
-                await Sha256Sums.Parse(sums).VerifyAsync(filePath, assetName, cancellationToken);
+        public async Task VerifyAsync(Uri checksumsUrl, string assetName, string filePath, GitHubFetch? gitHub, CancellationToken cancellationToken = default)
+        {
+            string sums;
+            try
+            {
+                using (HttpResponseMessage response = await ReleaseAsset.GetAsync(_httpClient, checksumsUrl, gitHub, cancellationToken))
+                {
+                    sums = await response.Content.ReadAsStringAsync(cancellationToken);
+                }
             }
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new ChecksumException($"{assetName} cannot be verified: its release has no {Sha256Sums.AssetName}.");
+            }
+
+            await Sha256Sums.Parse(sums).VerifyAsync(filePath, assetName, cancellationToken);
         }
     }
 }

@@ -26,9 +26,48 @@ namespace Updaemon.Tests.Services
 
                 Assert.True(await h.GitHubPluginUpdater().RunAsync());
 
-                Assert.Equal((MockGitHubPluginReleases.BuildUrl("someone", "updaemon-s3", "v1.1.0"), true), Assert.Single(h.PluginDownloader.Downloads));
+                Assert.Equal(new Uri(MockGitHubPluginReleases.BuildUrl("someone", "updaemon-s3", "v1.1.0")), Assert.Single(h.PluginDownloader.Downloads).Build);
                 Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v1.1.0"), await SourceOfAsync(h));
                 Assert.Contains("Updated the 's3' plugin from v1.0.0 to v1.1.0.", h.Output.Messages);
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_PrivateRepositoryAtATerminal_AsksForTheGitHubPluginsTokenAndUpdates()
+        {
+            using (AppHarness h = await WithPluginAtAsync("v1.0.0"))
+            {
+                h.GitHubPlugins.LatestTags["someone/updaemon-s3"] = "v1.1.0";
+                h.GitHubPlugins.NextFailures.Enqueue(GitHubAccess.RepositoryNotFound("someone", "updaemon-s3", hasToken: false));
+                h.Prompter.Answers.Enqueue("tok");
+
+                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+
+                Assert.Equal(new[] { ("githubToken for the 'github' plugin (not shown): ", true) }, h.Prompter.Asked);
+                Assert.Equal("tok", await h.Secrets.GetSecretAsync("github", "githubToken"));
+                Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v1.1.0"), await SourceOfAsync(h));
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_PrivateRepositoryWithoutATerminal_FailsInOneLineAndSkipsNothing()
+        {
+            using (AppHarness h = await WithPluginAtAsync("v1.0.0"))
+            {
+                h.GitHubPlugins.NextFailures.Enqueue(GitHubAccess.RepositoryNotFound("someone", "updaemon-s3", hasToken: false));
+                h.Prompter.IsInteractive = false;
+
+                Assert.False(await h.GitHubPluginUpdater().RunAsync());
+
+                Assert.Equal(
+                    new[]
+                    {
+                        "Error: the 's3' plugin (github:someone/updaemon-s3) could not check for a newer release: " +
+                        "someone/updaemon-s3 was not found on GitHub: it does not exist, or it is private and needs a githubToken. " +
+                        "Set it with 'updaemon secret-set github githubToken'. v1.0.0 stays.",
+                    },
+                    h.Output.Errors);
+                Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v1.0.0"), await SourceOfAsync(h));
             }
         }
 

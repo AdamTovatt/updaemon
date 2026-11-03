@@ -207,6 +207,11 @@ namespace Updaemon.Tests.Conversion
                 Assert.Equal(isOn && seconds != null ? TimeSpan.FromSeconds(seconds.Value) : (TimeSpan?)null, h.Timer.LastSetInterval);
                 Assert.Equal("0.x timer", File.ReadAllText(Backup(h, "com.updaemon.timer.plist")));
                 Assert.Null(h.Timer.ZeroX);
+
+                // A timer left off is recorded so, and install.sh's 'timer 1h --keep' then leaves it off.
+                Assert.Equal(h.Timer.LastSetInterval == null, (await h.Config.LoadConfigAsync()).TimerTurnedOff);
+                Assert.Equal(0, await h.TimerCommand().ExecuteAsync(new[] { "1h", "--keep" }));
+                Assert.Equal(isOn && seconds != null, h.Timer.IsEnabled);
             }
         }
 

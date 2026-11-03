@@ -19,6 +19,7 @@ namespace Updaemon.Tests.Helpers
                 UnitDirectory = Path.Combine(root, "units"),
                 LogDirectory = Path.Combine(root, "logs"),
                 UserId = isSystem ? 0u : 1000u,
+                UserName = "ada",
             };
         }
     }

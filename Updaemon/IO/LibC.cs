@@ -45,8 +45,29 @@ namespace Updaemon.IO
             }
         }
 
+        public sealed record User(uint Id, string Home);
+
+        /// <summary>The user database's entry for <paramref name="name"/>, or null when it has none.</summary>
+        public static User? FindUser(string name)
+        {
+            // getpwnam returns a struct passwd: two pointers, then uid at 16 on both systems. Its home
+            // directory follows the gecos pointer on Linux; macOS puts pw_change and pw_class before it.
+            IntPtr entry = NativeMethods.getpwnam(name);
+            if (entry == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            uint id = (uint)Marshal.ReadInt32(entry, 16);
+            string? home = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(entry, OperatingSystem.IsMacOS() ? 48 : 32));
+            return string.IsNullOrEmpty(home) ? null : new User(id, home);
+        }
+
         private static class NativeMethods
         {
+            [DllImport("libc", SetLastError = false)]
+            public static extern IntPtr getpwnam(string name);
+
             [DllImport("libc", SetLastError = false)]
             public static extern uint geteuid();
 

@@ -14,9 +14,9 @@ namespace Updaemon.Interfaces
         Task SetTimerAsync(TimeSpan interval, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Disables the automatic update timer.
+        /// Stops the timer and deletes its files, so no boot or login brings it back. Quiet when there is none.
         /// </summary>
-        Task DisableTimerAsync(CancellationToken cancellationToken = default);
+        Task RemoveTimerAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Checks if the automatic update timer is currently enabled.
@@ -24,7 +24,7 @@ namespace Updaemon.Interfaces
         Task<bool> IsTimerEnabledAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Gets a human-readable representation of the current interval if the timer is enabled.
+        /// Gets a human-readable representation of the interval in the timer's file, or null when there is none.
         /// </summary>
         Task<string?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default);
 

@@ -53,7 +53,8 @@ namespace Updaemon.Configuration
             using (JsonDocument document = JsonDocument.Parse(json))
             {
                 if (document.RootElement.ValueKind == JsonValueKind.Object
-                    && document.RootElement.GetProperty("format") is { ValueKind: JsonValueKind.Number } element
+                    && document.RootElement.TryGetProperty("format", out JsonElement element)
+                    && element.ValueKind == JsonValueKind.Number
                     && element.TryGetInt32(out int value))
                 {
                     format = value;

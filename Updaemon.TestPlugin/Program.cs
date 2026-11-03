@@ -1,6 +1,7 @@
 using Updaemon.Common;
 using Updaemon.Common.Hosting;
 using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 
 namespace Updaemon.TestPlugin
 {
@@ -39,7 +40,8 @@ namespace Updaemon.TestPlugin
 
         /// <summary>
         /// The remotes "fail" and "fail-silently" make the plugin fail, with and without a
-        /// message, so tests can see how plugin errors reach updaemon.
+        /// message, and "rate-limited" fails for want of a token, so tests can see how plugin
+        /// errors reach updaemon.
         /// </summary>
         public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
@@ -50,6 +52,11 @@ namespace Updaemon.TestPlugin
 
                 case "fail-silently":
                     throw new InvalidOperationException(string.Empty);
+
+                case "rate-limited":
+                    throw new CredentialNeededException(
+                        new CredentialNeed { Secret = "token", Problem = CredentialProblem.RateLimited },
+                        "The rate limit is used up.");
 
                 default:
                     return Task.FromResult<Version?>(new Version(1, 0, 0));

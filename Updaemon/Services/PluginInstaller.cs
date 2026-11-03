@@ -37,17 +37,17 @@ namespace Updaemon.Services
 
         public async Task<PluginInstallResult> InstallAsync(PluginSource source, string? alias, CancellationToken cancellationToken = default)
         {
-            string downloadUrl = await ResolveDownloadUrlAsync(source, cancellationToken);
+            PluginDownload pluginDownload = await ResolveDownloadAsync(source, cancellationToken);
 
             PluginDownloadResult download;
             try
             {
-                download = await _pluginDownloader.DownloadAndInspectAsync(downloadUrl, verify: source.HasPublishedChecksums, _pluginsDirectory, cancellationToken);
+                download = await _pluginDownloader.DownloadAndInspectAsync(pluginDownload, _pluginsDirectory, cancellationToken);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound && source is PluginSource.Registry registry)
             {
                 throw new InvalidOperationException(
-                    $"Updaemon's release has no '{registry.Name}' plugin built for this machine: {downloadUrl} was not found. " +
+                    $"Updaemon's release has no '{registry.Name}' plugin built for this machine: {pluginDownload} was not found. " +
                     "Build the plugin for this machine and install it with 'updaemon dist-install <url>'.",
                     ex);
             }
@@ -65,7 +65,7 @@ namespace Updaemon.Services
 
                 string pluginDirectory = Path.Combine(_pluginsDirectory, finalAlias);
                 Directory.CreateDirectory(pluginDirectory);
-                string pluginPath = Path.Combine(pluginDirectory, FileNameFromUrl(downloadUrl));
+                string pluginPath = Path.Combine(pluginDirectory, pluginDownload.FileName);
 
                 // A rename within one filesystem: the old binary is replaced in one step.
                 File.Move(download.TempFilePath, pluginPath, overwrite: true);
@@ -97,15 +97,16 @@ namespace Updaemon.Services
             }
         }
 
-        private async Task<string> ResolveDownloadUrlAsync(PluginSource source, CancellationToken cancellationToken)
+        private async Task<PluginDownload> ResolveDownloadAsync(PluginSource source, CancellationToken cancellationToken)
         {
             switch (source)
             {
                 case PluginSource.Url url:
-                    return url.Address;
+                    Uri address = new Uri(url.Address);
+                    return new PluginDownload(address, FileNameOf(address), Checksums: null, GitHub: null);
 
                 case PluginSource.GitHub github:
-                    return await _gitHubPluginReleases.GetBuildUrlAsync(github.Owner, github.Repo, github.Tag, cancellationToken);
+                    return await _gitHubPluginReleases.GetBuildAsync(github.Owner, github.Repo, github.Tag, cancellationToken);
 
                 case PluginSource.Registry registry:
                     string? resolved = _pluginUrlResolver.Resolve(registry.Name, registry.Release);
@@ -116,16 +117,17 @@ namespace Updaemon.Services
                             "Install it from its URL with 'updaemon dist-install <url>'.");
                     }
 
-                    return resolved;
+                    Uri build = new Uri(resolved);
+                    return new PluginDownload(build, FileNameOf(build), ReleaseChecksums.BesideAsset(build), GitHub: null);
 
                 default:
                     throw new InvalidOperationException($"Unknown plugin source: {source}");
             }
         }
 
-        private static string FileNameFromUrl(string url)
+        private static string FileNameOf(Uri address)
         {
-            string fileName = Path.GetFileName(new Uri(url).LocalPath);
+            string fileName = Path.GetFileName(address.LocalPath);
             return string.IsNullOrEmpty(fileName) ? "distribution-plugin" : fileName;
         }
 

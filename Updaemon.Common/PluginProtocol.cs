@@ -9,8 +9,9 @@ namespace Updaemon.Common
     {
         /// <summary>
         /// The protocol version this build speaks. Version 1 is the unversioned protocol of
-        /// updaemon 0.x; version 2 passes the machine's runtime identifier to each download, and
-        /// each download reports whether it was verified against a checksum.
+        /// updaemon 0.x; version 2 passes the machine's runtime identifier to each download,
+        /// each download reports whether it was verified against a checksum, and a call that
+        /// fails for want of a secret says which one and why (<see cref="Models.CredentialNeed"/>).
         /// </summary>
         public const int Version = 2;
 

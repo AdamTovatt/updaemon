@@ -32,5 +32,11 @@ namespace Updaemon.Models
 
         /// <summary>Whether <c>update</c> also updates updaemon itself; set with <c>updaemon self-update on|off</c>.</summary>
         public bool SelfUpdate { get; set; } = true;
+
+        /// <summary>
+        /// Whether the update timer was turned off with <c>updaemon timer -</c>, which deletes its files;
+        /// <c>timer &lt;interval&gt; --keep</c>, as install.sh runs it, then leaves it off.
+        /// </summary>
+        public bool TimerTurnedOff { get; set; }
     }
 }

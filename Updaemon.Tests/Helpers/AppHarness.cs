@@ -35,6 +35,7 @@ namespace Updaemon.Tests.Helpers
         public AppHarness(bool isSystem = false)
         {
             Scope = TestScope.Create(_temp.TempDirectory, isSystem);
+            OtherScope = TestScope.Create(Path.Combine(_temp.TempDirectory, "other"), !isSystem);
             Config = new ConfigManager(Scope);
             Secrets = new SecretsManager(Scope);
             SettingsStore = new AppSettingsStore(Config, Secrets);
@@ -101,6 +102,9 @@ namespace Updaemon.Tests.Helpers
 
         public UpdaemonScope Scope { get; }
 
+        /// <summary>The scope this run is not in, which install looks in for the same app name.</summary>
+        public UpdaemonScope OtherScope { get; }
+
         public ConfigManager Config { get; }
 
         public SecretsManager Secrets { get; }
@@ -122,13 +126,17 @@ namespace Updaemon.Tests.Helpers
         public MockOutputWriter Output { get; } = new MockOutputWriter();
 
         public InstallCommand Install() => new InstallCommand(
-            Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins);
+            Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, new OtherScopeApps(new ConfigManager(OtherScope), OtherScope.Owner), Credentials());
 
-        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, GitHubPluginUpdater(), SelfUpdater());
+        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, GitHubPluginUpdater(), SelfUpdater(), Credentials());
 
-        public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output);
+        public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output, Credentials());
 
-        public DistInstallCommand DistInstall() => new DistInstallCommand(Output, PluginInstaller, GitHubPlugins, RunningVersion);
+        public DistInstallCommand DistInstall() => new DistInstallCommand(Output, PluginInstaller, GitHubPlugins, RunningVersion, Credentials());
+
+        public PluginCredentials Credentials() => new PluginCredentials(Secrets, Prompter, Output);
+
+        public TimerCommand TimerCommand() => new TimerCommand(Timer, Config, Output);
 
         public DistListCommand DistList() => new DistListCommand(Config, Output, Client, RunningVersion);
 

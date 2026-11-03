@@ -13,9 +13,11 @@ namespace Updaemon.Commands
         private readonly IRunLock _runLock;
         private readonly UpdaemonVersion _version;
         private readonly IZeroXConverter _converter;
+        private readonly UpdaemonScope _scope;
 
-        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock, UpdaemonVersion version, IZeroXConverter converter)
+        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock, UpdaemonVersion version, IZeroXConverter converter, UpdaemonScope scope)
         {
+            _scope = scope;
             _commandFactory = commandFactory;
             _outputWriter = outputWriter;
             _runLock = runLock;
@@ -50,6 +52,13 @@ namespace Updaemon.Commands
             {
                 if (args.Length > 1)
                 {
+                    if (HelpTopics.Find(args[1].ToLowerInvariant()) is HelpTopics.Topic topic)
+                    {
+                        // WriteLine ends the guide's last line itself.
+                        _outputWriter.WriteLine(HelpTopics.Read(topic).TrimEnd('\n'));
+                        return 0;
+                    }
+
                     // Help for specific command: updaemon help update
                     try
                     {
@@ -84,6 +93,8 @@ namespace Updaemon.Commands
                     return await command.ExecuteAsync(args[1..], cancellationToken);
                 }
 
+                // Scope is never silent where it matters: each run that may change state says whose apps it changes.
+                _outputWriter.WriteLine(_scope.Announcement);
                 using (await _runLock.AcquireAsync(cancellationToken))
                 {
                     // Asked again under the lock: another command may have converted it meanwhile.
@@ -129,6 +140,13 @@ namespace Updaemon.Commands
             foreach (ICommand command in _commandFactory.GetAllCommands())
             {
                 _outputWriter.WriteLine($"  {command.Name,-20} {command.Description}");
+            }
+
+            _outputWriter.WriteLine("");
+            _outputWriter.WriteLine("Guides:");
+            foreach (HelpTopics.Topic topic in HelpTopics.All)
+            {
+                _outputWriter.WriteLine($"  {"help " + topic.Name,-20} {topic.Description}");
             }
 
             _outputWriter.WriteLine("");

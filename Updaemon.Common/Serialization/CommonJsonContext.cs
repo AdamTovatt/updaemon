@@ -15,6 +15,7 @@ namespace Updaemon.Common.Serialization
     [JsonSerializable(typeof(SecretCollection))]
     [JsonSerializable(typeof(DistributionServiceInformation))]
     [JsonSerializable(typeof(DistributionSecretInfo))]
+    [JsonSerializable(typeof(CredentialNeed))]
     [JsonSerializable(typeof(Dictionary<string, string>))]
     [JsonSerializable(typeof(string))]
     [JsonSerializable(typeof(object))]

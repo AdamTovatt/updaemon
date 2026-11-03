@@ -49,6 +49,8 @@ namespace Updaemon
             UpdaemonScope scope = UpdaemonScope.Detect();
             services.AddSingleton(scope);
             services.AddSingleton(scope.Platform);
+            UpdaemonScope? otherScope = UpdaemonScope.DetectOther(scope);
+            services.AddSingleton(otherScope == null ? OtherScopeApps.None : new OtherScopeApps(new ConfigManager(otherScope), otherScope.Owner));
 
             // Output writer
             services.AddSingleton<IOutputWriter, ConsoleOutputWriter>();
@@ -74,6 +76,7 @@ namespace Updaemon
             services.AddSingleton<ISymlinkManager, SymlinkManager>();
             services.AddSingleton<IExecutableDetector, ExecutableDetector>();
             services.AddSingleton<IPrompter, ConsolePrompter>();
+            services.AddSingleton<PluginCredentials>();
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<AppFileWriter>();

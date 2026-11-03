@@ -17,13 +17,15 @@ namespace Updaemon.Services
         private readonly IGitHubPluginReleases _releases;
         private readonly IPluginInstaller _pluginInstaller;
         private readonly IOutputWriter _outputWriter;
+        private readonly PluginCredentials _credentials;
 
-        public GitHubPluginUpdater(IConfigManager configManager, IGitHubPluginReleases releases, IPluginInstaller pluginInstaller, IOutputWriter outputWriter)
+        public GitHubPluginUpdater(IConfigManager configManager, IGitHubPluginReleases releases, IPluginInstaller pluginInstaller, IOutputWriter outputWriter, PluginCredentials credentials)
         {
             _configManager = configManager;
             _releases = releases;
             _pluginInstaller = pluginInstaller;
             _outputWriter = outputWriter;
+            _credentials = credentials;
         }
 
         /// <summary>Returns false when a plugin could not be checked or updated; each failure is reported, and the others still run.</summary>
@@ -59,23 +61,31 @@ namespace Updaemon.Services
             string? latestTag = null;
             try
             {
-                // The latest release is the one GitHub marks Latest; any other tag than the installed one replaces it.
-                latestTag = await _releases.GetLatestTagAsync(installed.Owner, installed.Repo, cancellationToken);
-                if (latestTag == installed.Tag)
-                {
-                    _outputWriter.WriteLine($"The '{alias}' plugin is up to date ({installed.Tag}).");
-                    return true;
-                }
+                // The releases are read with the 'github' plugin's token, asked for at a terminal when one is needed.
+                return await _credentials.RunAsync(
+                    GitHubPluginReleases.TokenPluginAlias,
+                    async () =>
+                    {
+                        // The latest release is the one GitHub marks Latest; any other tag than the installed one replaces it.
+                        latestTag = await _releases.GetLatestTagAsync(installed.Owner, installed.Repo, cancellationToken);
+                        if (latestTag == installed.Tag)
+                        {
+                            _outputWriter.WriteLine($"The '{alias}' plugin is up to date ({installed.Tag}).");
+                            return true;
+                        }
 
-                if (latestTag == installed.SkippedTag)
-                {
-                    _outputWriter.WriteLine($"The '{alias}' plugin skips {latestTag}, which was refused; {installed.Tag} stays.");
-                    return true;
-                }
+                        if (latestTag == installed.SkippedTag)
+                        {
+                            _outputWriter.WriteLine($"The '{alias}' plugin skips {latestTag}, which was refused; {installed.Tag} stays.");
+                            return true;
+                        }
 
-                await _pluginInstaller.InstallAsync(installed with { Tag = latestTag, SkippedTag = null }, alias, cancellationToken);
-                _outputWriter.WriteLine($"Updated the '{alias}' plugin from {installed.Tag} to {latestTag}.");
-                return true;
+                        await _pluginInstaller.InstallAsync(installed with { Tag = latestTag, SkippedTag = null }, alias, cancellationToken);
+                        _outputWriter.WriteLine($"Updated the '{alias}' plugin from {installed.Tag} to {latestTag}.");
+                        return true;
+                    },
+                    handOverSavedSecret: null,
+                    cancellationToken);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {

@@ -26,7 +26,7 @@ namespace Updaemon.GithubDistributionService.Tests
             string remote = PrivateGithubTestEnvironmentVariable.Remote.GetValue();
             string token = PrivateGithubTestEnvironmentVariable.Token.GetValue();
 
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);

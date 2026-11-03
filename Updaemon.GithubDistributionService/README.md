@@ -34,8 +34,10 @@ Create a GitHub Personal Access Token at:
 https://github.com/settings/tokens
 
 ```bash
-updaemon secret-set github githubToken ghp_your_token_here
+updaemon secret-set github githubToken
 ```
+
+It asks for the token without showing it, which keeps it out of your shell's history. You can also skip this step: when GitHub refuses a request for want of a token, `install`, `update` and `dist-install` ask for it at a terminal, save it and try again. Under the update timer, there is no one to ask, so the update fails in one line naming the command above.
 
 **Token Permissions Required:**
 - For public repositories: No specific permissions needed
@@ -58,8 +60,8 @@ The service name determines which GitHub repository and asset to download:
 ### Example: Pattern Matching with Authentication
 
 ```bash
-# Set up GitHub token (optional but recommended for rate limits)
-updaemon secret-set github githubToken ghp_your_token_here
+# Set up GitHub token (optional but recommended for rate limits); it is asked for without echo
+updaemon secret-set github githubToken
 
 # Install the app, picking its asset with a pattern
 updaemon install myapp --from github:organization/myapp/myapp-*-self-contained.zip
@@ -135,9 +137,25 @@ For more details on creating distribution plugins, see [Updaemon.Common/README.m
 
 ### Rate Limit Errors
 
-**Problem:** `API rate limit exceeded`
+**Problem:** `GitHub's rate limit is used up until 14:05 UTC.`
 
-**Solution:** Set up a GitHub token as described in [Configuration](#configuration).
+**Solution:** Wait until then, or set up a GitHub token as described in [Configuration](#configuration); updaemon says so when none is set.
+
+### Repository Not Found
+
+**Problem:** `owner/repo was not found on GitHub: it does not exist, or it is private and needs a githubToken.`
+
+**Solution:** Check the name after `github:`. If the repository is private, give a token with the `repo` scope; at a terminal, updaemon asks for it.
+
+**Problem:** `owner/repo was not found on GitHub: it does not exist, or the githubToken cannot read it.`
+
+**Solution:** Check the name, and that the token has access to the repository.
+
+### Token Rejected
+
+**Problem:** `GitHub rejected the githubToken: it is wrong, expired or revoked.`
+
+**Solution:** Give a new token: at a terminal, updaemon asks for one; otherwise run `updaemon secret-set github githubToken`.
 
 ### No Matching Asset, or Several
 
@@ -158,7 +176,7 @@ Here's a complete example deploying an application via GitHub releases:
 ```bash
 # 1. Install and configure the plugin (one-time setup)
 updaemon dist-install github
-updaemon secret-set github githubToken ghp_your_token_here
+updaemon secret-set github githubToken
 
 # 2. Install the latest release of your application, built for this machine
 updaemon install myapp --from github:your-org/myapp

@@ -3,7 +3,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash   # system-wide
 #   curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | bash        # for you only
 # Run as root, it installs for the system; otherwise for the user running it. Running it again
-# installs the latest version the same way, also over an updaemon 0.x install.
+# installs the latest version the same way, also over an updaemon 0.x install. It turns on the
+# hourly update timer, unless it is on already or was turned off.
 set -euo pipefail
 # Whatever the caller's umask, others must be able to run the system updaemon.
 umask 022
@@ -137,4 +138,11 @@ if [ "$SCOPE" = user ]; then
   if [ "$RID" != osx-arm64 ]; then
     echo "Your services run only while you are logged in, unless lingering is on: sudo loginctl enable-linger $(id -un)"
   fi
+fi
+
+# Last, so a timer that cannot be set leaves nothing above unsaid. On by default; one that is set
+# keeps its interval, and one turned off stays off.
+if ! "$binary" timer 1h --keep; then
+  echo "updaemon is installed, but the update timer was not turned on. Turn it on with 'updaemon timer 1h'." >&2
+  exit 1
 fi

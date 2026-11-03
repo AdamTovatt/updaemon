@@ -38,14 +38,11 @@ namespace Updaemon.Services
             await Launchd.LoadAsync(_scope, _label, _plistPath, _outputWriter, cancellationToken);
         }
 
-        /// <summary>
-        /// Disables the timer. Mirrors systemd semantics: the underlying job is unloaded,
-        /// but the plist file is preserved on disk so its previous interval is still queryable
-        /// via <see cref="GetCurrentIntervalAsync"/> and a re-enable doesn't have to re-derive it.
-        /// </summary>
-        public async Task DisableTimerAsync(CancellationToken cancellationToken = default)
+        /// <summary>Unloads the job and deletes its plist: launchd loads any plist left in the directory at the next boot or login.</summary>
+        public async Task RemoveTimerAsync(CancellationToken cancellationToken = default)
         {
             await Launchd.UnloadAsync(_scope, _label, cancellationToken);
+            File.Delete(_plistPath);
         }
 
         public async Task<bool> IsTimerEnabledAsync(CancellationToken cancellationToken = default)

@@ -1,6 +1,8 @@
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
+using Updaemon.Services;
 
 namespace Updaemon.Commands
 {
@@ -13,14 +15,16 @@ namespace Updaemon.Commands
         private readonly IPluginInstaller _pluginInstaller;
         private readonly IGitHubPluginReleases _gitHubPluginReleases;
         private readonly UpdaemonVersion _updaemonVersion;
+        private readonly PluginCredentials _credentials;
 
         /// <param name="updaemonVersion">The running updaemon's version: registry plugins come from its release.</param>
-        public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, IGitHubPluginReleases gitHubPluginReleases, UpdaemonVersion updaemonVersion)
+        public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, IGitHubPluginReleases gitHubPluginReleases, UpdaemonVersion updaemonVersion, PluginCredentials credentials)
         {
             _outputWriter = outputWriter;
             _pluginInstaller = pluginInstaller;
             _gitHubPluginReleases = gitHubPluginReleases;
             _updaemonVersion = updaemonVersion;
+            _credentials = credentials;
         }
 
         public string Name => "dist-install";
@@ -45,24 +49,26 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            PluginSource source;
+            PluginInstallResult result;
             try
             {
-                source = await PluginSource.ParseAsync(
+                PluginSource source = await PluginSource.ParseAsync(
                     urlOrName,
                     _updaemonVersion,
-                    (owner, repo) => _gitHubPluginReleases.GetLatestTagAsync(owner, repo, cancellationToken));
+                    (owner, repo) => WithGitHubTokenAsync(() => _gitHubPluginReleases.GetLatestTagAsync(owner, repo, cancellationToken), cancellationToken));
+
+                _outputWriter.WriteLine(source is PluginSource.GitHub github
+                    ? $"Installing distribution plugin: {source}, release {github.Tag}"
+                    : $"Installing distribution plugin: {source}");
+
+                result = source is PluginSource.GitHub
+                    ? await WithGitHubTokenAsync(() => _pluginInstaller.InstallAsync(source, alias, cancellationToken), cancellationToken)
+                    : await _pluginInstaller.InstallAsync(source, alias, cancellationToken);
             }
-            catch (FormatException ex)
+            catch (Exception ex) when (ex is FormatException or CredentialNeededException)
             {
                 return _outputWriter.Fail(ex.Message);
             }
-
-            _outputWriter.WriteLine(source is PluginSource.GitHub github
-                ? $"Installing distribution plugin: {source}, release {github.Tag}"
-                : $"Installing distribution plugin: {source}");
-
-            PluginInstallResult result = await _pluginInstaller.InstallAsync(source, alias, cancellationToken);
 
             _outputWriter.WriteLine($"Saved plugin to: {result.Plugin.Path}");
             _outputWriter.WriteLine(result.ReplacedExisting
@@ -73,6 +79,10 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine($"  Description: {result.ServiceInformation.Description}");
             return 0;
         }
+
+        /// <summary>A github: source's call, which reads the 'github' plugin's token itself; asked for here when it needs one.</summary>
+        private Task<T> WithGitHubTokenAsync<T>(Func<Task<T>> call, CancellationToken cancellationToken) =>
+            _credentials.RunAsync(GitHubPluginReleases.TokenPluginAlias, call, handOverSavedSecret: null, cancellationToken);
 
         public string GetDetailedHelp()
         {
@@ -95,7 +105,8 @@ namespace Updaemon.Commands
                   installs the repository's latest release whenever it differs from the one
                   installed. A release refused for its checksum, its build or its plugin
                   protocol is skipped until another is latest; run dist-install again to
-                  retry it once it is fixed.
+                  retry it once it is fixed. A private repository needs the 'github'
+                  plugin's githubToken; at a terminal, dist-install asks for it.
 
                   A URL plugin is not verified and is never updated; install it again to
                   replace it.

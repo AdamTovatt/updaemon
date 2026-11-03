@@ -27,5 +27,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="PluginAssets.json" LogicalName="PluginAssets.json" />
+    <EmbeddedResource Include="..\PublishingWithUpdaemon.md" LogicalName="PublishingWithUpdaemon.md" />
   </ItemGroup>
 </Project>

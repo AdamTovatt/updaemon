@@ -18,13 +18,13 @@ namespace Updaemon.Tests.Mocks
         public DistributionServiceInformation? ServiceInformation { get; set; }
         public Exception? ExceptionToThrow { get; set; }
 
-        /// <summary>Each download's URL, and whether it was to be verified.</summary>
-        public List<(string Url, bool Verify)> Downloads { get; } = new List<(string Url, bool Verify)>();
+        /// <summary>Each download as asked for.</summary>
+        public List<PluginDownload> Downloads { get; } = new List<PluginDownload>();
 
-        public Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, bool verify, string targetDirectory, CancellationToken cancellationToken = default)
+        public Task<PluginDownloadResult> DownloadAndInspectAsync(PluginDownload download, string targetDirectory, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"DownloadAndInspectAsync:{downloadUrl}");
-            Downloads.Add((downloadUrl, verify));
+            MethodCalls.Add($"DownloadAndInspectAsync:{download.Build}");
+            Downloads.Add(download);
 
             if (ExceptionToThrow != null)
             {

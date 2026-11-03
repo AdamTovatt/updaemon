@@ -1,4 +1,5 @@
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Commands
 {
@@ -8,11 +9,13 @@ namespace Updaemon.Commands
     public class TimerCommand : ICommand
     {
         private readonly ITimerManager _timerManager;
+        private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
 
-        public TimerCommand(ITimerManager timerManager, IOutputWriter outputWriter)
+        public TimerCommand(ITimerManager timerManager, IConfigManager configManager, IOutputWriter outputWriter)
         {
             _timerManager = timerManager;
+            _configManager = configManager;
             _outputWriter = outputWriter;
         }
 
@@ -20,13 +23,33 @@ namespace Updaemon.Commands
 
         public string Description => "Manage automatic update timer";
 
-        public string Usage => "updaemon timer [interval]";
+        public string Usage => "updaemon timer [<interval> [--keep] | -]";
+
+        /// <summary>Sets the interval only when no timer was ever set; install.sh turns the timer on with it.</summary>
+        private const string KeepOption = "--keep";
 
         public bool ChangesState => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
-            string? interval = args.Length > 0 ? args[0] : null;
+            ArgumentParser parser = new ArgumentParser(args, KeepOption);
+            if (parser.GetUnknownFlags(KeepOption) is [string unknown, ..])
+            {
+                return _outputWriter.FailUnknownOption(unknown);
+            }
+
+            bool keep = parser.HasFlag(KeepOption);
+            string? interval = parser.GetPositional(0);
+            if (parser.Positionals.Count > 1 || (keep && (interval == null || interval == "-")))
+            {
+                return _outputWriter.FailUsage(this);
+            }
+
+            if (keep && await DescribeKeptTimerAsync(cancellationToken) is string kept)
+            {
+                _outputWriter.WriteLine(kept);
+                return 0;
+            }
 
             if (string.IsNullOrEmpty(interval))
             {
@@ -37,8 +60,7 @@ namespace Updaemon.Commands
 
             if (interval == "-")
             {
-                // Disable timer
-                await DisableTimerAsync(cancellationToken);
+                await RemoveTimerAsync(cancellationToken);
                 return 0;
             }
 
@@ -62,11 +84,41 @@ namespace Updaemon.Commands
             }
         }
 
-        private async Task DisableTimerAsync(CancellationToken cancellationToken)
+        /// <summary>
+        /// What --keep leaves as it is, said in one line; null when no timer was ever set. A timer
+        /// turned off (the config's record, which the 0.x conversion also writes) stays off, and one
+        /// that is set keeps its interval.
+        /// </summary>
+        private async Task<string?> DescribeKeptTimerAsync(CancellationToken cancellationToken)
+        {
+            if ((await _configManager.LoadConfigAsync(cancellationToken)).TimerTurnedOff)
+            {
+                return "The update timer stays off, as it was turned off. Turn it on with 'updaemon timer 1h'.";
+            }
+
+            return await _timerManager.GetCurrentIntervalAsync(cancellationToken) is string existing
+                ? $"The update timer stays as it was ({existing}). Turn it off with 'updaemon timer -'."
+                : null;
+        }
+
+        private async Task RemoveTimerAsync(CancellationToken cancellationToken)
         {
             _outputWriter.WriteLine("Disabling automatic update timer...");
-            await _timerManager.DisableTimerAsync(cancellationToken);
+
+            // Recorded first: if removing then fails halfway, the timer is still meant to be off, and install.sh leaves it so.
+            await RecordTurnedOffAsync(true, cancellationToken);
+            await _timerManager.RemoveTimerAsync(cancellationToken);
             _outputWriter.WriteLine("Timer disabled successfully");
+        }
+
+        private async Task RecordTurnedOffAsync(bool turnedOff, CancellationToken cancellationToken)
+        {
+            UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
+            if (config.TimerTurnedOff != turnedOff)
+            {
+                config.TimerTurnedOff = turnedOff;
+                await _configManager.SaveConfigAsync(config, cancellationToken);
+            }
         }
 
         private async Task<int> SetTimerAsync(string interval, CancellationToken cancellationToken)
@@ -81,8 +133,11 @@ namespace Updaemon.Commands
             }
 
             _outputWriter.WriteLine($"Setting automatic update timer to run every {interval}...");
+
+            // Cleared first: a record left saying off while a timer runs would make --keep call it off.
+            await RecordTurnedOffAsync(false, cancellationToken);
             await _timerManager.SetTimerAsync(parsedInterval.Value, cancellationToken);
-            _outputWriter.WriteLine($"Timer set successfully to run every {interval}");
+            _outputWriter.WriteLine($"Timer set successfully to run every {interval}. Turn it off with 'updaemon timer -'.");
             return 0;
         }
 
@@ -118,13 +173,15 @@ namespace Updaemon.Commands
                 Timer Command
 
                 Usage:
-                  updaemon timer [interval]
+                  updaemon timer [<interval> [--keep]]
                   updaemon timer -
 
                 Description:
                   Manages the automatic update timer. Without arguments, shows the current
                   timer status. With an interval, sets the timer to run updates at that
-                  interval. Use "-" to disable the timer.
+                  interval. Use "-" to turn the timer off, which deletes its unit or plist.
+                  With --keep, a timer that is set keeps its interval and one turned off
+                  stays off; install.sh uses this.
 
                 Interval Formats:
                   - 30s  (30 seconds)

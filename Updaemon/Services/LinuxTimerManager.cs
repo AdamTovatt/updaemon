@@ -33,11 +33,14 @@ namespace Updaemon.Services
             await ProcessRunner.RunAndCheckAsync("systemctl", Arguments("start", _timerUnitName), cancellationToken);
         }
 
-        public async Task DisableTimerAsync(CancellationToken cancellationToken = default)
+        public async Task RemoveTimerAsync(CancellationToken cancellationToken = default)
         {
             // Both stop and disable are best-effort: the timer may not exist or be running.
             await ProcessRunner.RunAsync("systemctl", Arguments("stop", _timerUnitName), cancellationToken);
             await ProcessRunner.RunAsync("systemctl", Arguments("disable", _timerUnitName), cancellationToken);
+            File.Delete(_timerUnitPath);
+            File.Delete(_serviceUnitPath);
+            await ProcessRunner.RunAndCheckAsync("systemctl", Arguments("daemon-reload"), cancellationToken);
         }
 
         public async Task<bool> IsTimerEnabledAsync(CancellationToken cancellationToken = default)
@@ -81,17 +84,23 @@ namespace Updaemon.Services
         }
 
         /// <summary>
-        /// Always null: 0.x's timer units have the system scope's names and run the same command, so
-        /// they already are this updaemon's timer.
+        /// 0.x's timer units have the system scope's names and run the same command, so one that is on
+        /// already is this updaemon's timer. One turned off is not: 0.x's 'timer -' left its units
+        /// behind, disabled, where this updaemon deletes them. It is found as off, to be removed.
         /// </summary>
-        public Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
+        public async Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
         {
-            return Task.FromResult<ZeroXTimer?>(null);
+            if (!_scope.IsSystem || !File.Exists(_timerUnitPath) || await IsTimerEnabledAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            return new ZeroXTimer(_timerUnitPath, IsOn: false, Interval: null);
         }
 
         public Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default)
         {
-            throw new NotSupportedException("On Linux, updaemon 0.x's timer is this updaemon's own; there is none to remove.");
+            return RemoveTimerAsync(cancellationToken);
         }
 
         private string[] Arguments(params string[] verb) => [.. _scope.SystemdScopeArguments, .. verb];

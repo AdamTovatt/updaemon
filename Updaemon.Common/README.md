@@ -100,6 +100,8 @@ class Program
 
 Updaemon shows that message to the user as is, with no stack trace, so make it say what went wrong and what to change (e.g. `Invalid GitHub remote 'myapp': expected owner/repo or owner/repo/<pattern>.`).
 
+When a call fails for want of a secret, throw `CredentialNeededException` with a `CredentialNeed`: the secret's name and the problem (`Missing`, `Rejected` or `RateLimited`; for a rate limit, the message says when it resets). At a terminal, updaemon then asks for the secret without showing it, saves it and calls again once; a rate limit is only reported. Without a terminal, it names the `updaemon secret-set` command. For GitHub, `GitHubAccess` makes the requests and throws it for you.
+
 ## Plugin Protocol Version
 
 The service information a plugin returns carries `ProtocolVersion`, the `PluginProtocol.Version` of the Updaemon.Common it was built against; plugins do not set it. Updaemon refuses a plugin whose protocol version differs from its own and tells the user to reinstall it. Rebuild your plugin against the matching Updaemon.Common when the protocol changes.
@@ -249,9 +251,12 @@ Its result is a `DownloadResult` object: `"{\"verified\":true}"`.
   "id": "unique-request-id",
   "success": true,
   "result": "\"1.2.3\"",
-  "error": null
+  "error": null,
+  "credentialNeeded": null
 }
 ```
+
+`credentialNeeded` is set beside `error` when a call failed for want of a secret, for example `{ "secret": "githubToken", "problem": "Missing" }`.
 
 ## AOT Compilation
 
@@ -275,6 +280,8 @@ Users install a plugin from your repository's releases with `updaemon dist-insta
 
 - One asset per platform named `<name>-<rid>`, such as `my-plugin-linux-arm64`, `my-plugin-linux-x64` and `my-plugin-osx-arm64`: the AOT binary itself, not an archive. Exactly one asset may end in `-<rid>` for each platform; a second one fails installs and updates on it.
 - A `SHA256SUMS` asset listing them, as `sha256sum * > SHA256SUMS` writes it. A release without one, or whose binary does not match its line, is refused.
+
+The repository may be private: updaemon reads it with the `github` plugin's `githubToken`, and asks for one at a terminal when it is not set.
 
 updaemon follows only the release GitHub marks Latest; drafts and pre-releases are never installed. Any Latest tag other than the installed one replaces it, so marking an older release Latest moves users back to it. A release refused for its checksum, its build or its plugin protocol is skipped until another release is Latest.
 

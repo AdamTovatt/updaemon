@@ -33,7 +33,21 @@ namespace Updaemon.Configuration
         /// <summary>The effective user id updaemon runs as; addresses the per-user launchd domain.</summary>
         public required uint UserId { get; init; }
 
+        /// <summary>
+        /// Who runs updaemon, by name: the scope's own user in a user scope; in the system scope, the
+        /// user who ran sudo, or null when root runs it without sudo.
+        /// </summary>
+        public required string? UserName { get; init; }
+
         public string Name => IsSystem ? "system" : "user";
+
+        /// <summary>Whose apps this scope holds, as a sentence names them: "the whole machine" or "user adam".</summary>
+        public string Owner => IsSystem ? "the whole machine" : $"user {UserName}";
+
+        /// <summary>The opening line of every command that changes state: this scope, and how to get the other.</summary>
+        public string Announcement => IsSystem
+            ? $"For the whole machine (run without sudo for {(UserName == null ? "your own user" : $"user {UserName}")} only)."
+            : $"For user {UserName} only (run with sudo for the whole machine).";
 
         public string ConfigFilePath => Path.Combine(RootDirectory, "config.json");
 
@@ -102,7 +116,8 @@ namespace Updaemon.Configuration
             uint userId = LibC.EffectiveUserId();
             if (userId == 0)
             {
-                return ForSystem(HostPlatform.Current);
+                string? sudoUser = Environment.GetEnvironmentVariable("SUDO_USER");
+                return ForSystem(HostPlatform.Current, string.IsNullOrEmpty(sudoUser) || sudoUser == "root" ? null : sudoUser);
             }
 
             string home = Environment.GetEnvironmentVariable("HOME")
@@ -111,17 +126,36 @@ namespace Updaemon.Configuration
             return ForUser(
                 HostPlatform.Current,
                 userId,
+                Environment.UserName,
                 home,
                 Environment.GetEnvironmentVariable("XDG_DATA_HOME"),
                 Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"));
         }
 
-        public static UpdaemonScope ForSystem(HostPlatform platform)
+        /// <summary>
+        /// The scope this run is not in: the system scope from a user's, or under sudo, the scope of the
+        /// user who ran sudo. That user's XDG variables are not known here, so their default paths are
+        /// used. Null when there is no such user (root without sudo, or a name the user database lacks).
+        /// </summary>
+        public static UpdaemonScope? DetectOther(UpdaemonScope scope)
+        {
+            if (!scope.IsSystem)
+            {
+                return ForSystem(scope.Platform, scope.UserName);
+            }
+
+            LibC.User? user = scope.UserName == null ? null : LibC.FindUser(scope.UserName);
+            return user == null ? null : ForUser(scope.Platform, user.Id, scope.UserName!, user.Home, null, null);
+        }
+
+        /// <param name="sudoUser">The user who ran sudo, if any.</param>
+        public static UpdaemonScope ForSystem(HostPlatform platform, string? sudoUser)
         {
             return new UpdaemonScope
             {
                 IsSystem = true,
                 Platform = platform,
+                UserName = sudoUser,
                 RootDirectory = platform.IsMacOS ? "/usr/local/var/updaemon" : "/var/lib/updaemon",
                 AppsDirectory = platform.IsMacOS ? "/usr/local/opt" : "/opt",
                 BinDirectory = "/usr/local/bin",
@@ -131,7 +165,7 @@ namespace Updaemon.Configuration
             };
         }
 
-        public static UpdaemonScope ForUser(HostPlatform platform, uint userId, string home, string? xdgDataHome, string? xdgConfigHome)
+        public static UpdaemonScope ForUser(HostPlatform platform, uint userId, string userName, string home, string? xdgDataHome, string? xdgConfigHome)
         {
             string root;
             string unitDirectory;
@@ -153,6 +187,7 @@ namespace Updaemon.Configuration
             {
                 IsSystem = false,
                 Platform = platform,
+                UserName = userName,
                 RootDirectory = root,
                 AppsDirectory = Path.Combine(root, "apps"),
                 BinDirectory = Path.Combine(home, ".local", "bin"),

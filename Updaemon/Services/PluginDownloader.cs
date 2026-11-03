@@ -29,9 +29,14 @@ namespace Updaemon.Services
             _outputWriter = outputWriter;
         }
 
-        public async Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, bool verify, string targetDirectory, CancellationToken cancellationToken = default)
+        public async Task<PluginDownloadResult> DownloadAndInspectAsync(PluginDownload download, string targetDirectory, CancellationToken cancellationToken = default)
         {
-            byte[] pluginData = await _httpClient.GetByteArrayAsync(downloadUrl, cancellationToken);
+            byte[] pluginData;
+            using (HttpResponseMessage response = await ReleaseAsset.GetAsync(_httpClient, download.Build, download.GitHub, cancellationToken))
+            {
+                pluginData = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            }
+
             _outputWriter.WriteLine($"Downloaded {pluginData.Length} bytes");
 
             Directory.CreateDirectory(targetDirectory);
@@ -42,9 +47,9 @@ namespace Updaemon.Services
                 await File.WriteAllBytesAsync(tempPath, pluginData, cancellationToken);
 
                 // Before it is made executable and run to read its service information.
-                if (verify)
+                if (download.Checksums != null)
                 {
-                    await _checksums.VerifyAsync(downloadUrl, tempPath, cancellationToken);
+                    await _checksums.VerifyAsync(download.Checksums, download.FileName, tempPath, download.GitHub, cancellationToken);
                 }
 
                 await _filePermissionManager.SetExecutablePermissionsAsync(tempPath, cancellationToken);

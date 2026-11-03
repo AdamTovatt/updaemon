@@ -39,7 +39,7 @@ namespace Updaemon.GithubDistributionService
                 {
                     new DistributionSecretInfo
                     {
-                        Name = "githubToken",
+                        Name = GitHubAccess.TokenSecret,
                         IsRequired = false,
                         Description = "GitHub personal access token. Required for private repositories and to avoid rate limiting."
                     }
@@ -49,7 +49,7 @@ namespace Updaemon.GithubDistributionService
 
         public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
         {
-            _githubToken = secrets.GetValueIgnoreCase("githubToken");
+            _githubToken = secrets.GetValueIgnoreCase(GitHubAccess.TokenSecret);
             return Task.CompletedTask;
         }
 

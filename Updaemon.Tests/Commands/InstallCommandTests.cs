@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
@@ -78,6 +79,42 @@ namespace Updaemon.Tests.Commands
                 Assert.Contains("Error: byteshelf: 1.0.0 did not stay running. See 'updaemon logs byteshelf'.", h.Output.Errors);
                 Assert.NotNull(await h.Config.GetAppAsync("byteshelf"));
                 Assert.True(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+            }
+        }
+
+        [Theory]
+        [InlineData(false, "Warning: 'byteshelf' is also installed for the whole machine. This installs a separate copy for user ada.")]
+        [InlineData(true, "Warning: 'byteshelf' is also installed for user ada. This installs a separate copy for the whole machine.")]
+        public async Task Install_SameNameInTheOtherScope_WarnsAndInstalls(bool isSystem, string warning)
+        {
+            using (AppHarness h = new AppHarness(isSystem))
+            {
+                await new ConfigManager(h.OtherScope).SaveAppAsync(new InstalledApp { Name = "byteshelf", Plugin = "github", Remote = "owner/byteshelf" });
+
+                int exitCode = await h.InstallByteShelfAsync();
+
+                Assert.Equal(0, exitCode);
+                Assert.Equal(new[] { warning }, h.Output.Errors);
+                Assert.NotNull(await h.Config.GetAppAsync("byteshelf"));
+            }
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task Install_OtherScopeWithOtherAppsOrAnUnreadableConfig_DoesNotWarn(bool unreadable)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await new ConfigManager(h.OtherScope).SaveAppAsync(new InstalledApp { Name = "other", Plugin = "github", Remote = "owner/other" });
+                if (unreadable)
+                {
+                    await File.WriteAllTextAsync(h.OtherScope.ConfigFilePath, "not json");
+                }
+
+                Assert.Equal(0, await h.InstallByteShelfAsync());
+
+                Assert.Empty(h.Output.Errors);
             }
         }
 

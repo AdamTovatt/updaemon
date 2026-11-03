@@ -27,9 +27,14 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
-        public Task DisableTimerAsync(CancellationToken cancellationToken = default)
+        public Task RemoveTimerAsync(CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add(nameof(DisableTimerAsync));
+            MethodCalls.Add(nameof(RemoveTimerAsync));
+            if (RemoveFailure != null)
+            {
+                throw RemoveFailure;
+            }
+
             IsEnabled = false;
             CurrentInterval = null;
             return Task.CompletedTask;
@@ -52,6 +57,9 @@ namespace Updaemon.Tests.Mocks
 
         /// <summary>When set, <see cref="SetTimerAsync"/> throws it.</summary>
         public Exception? SetFailure { get; set; }
+
+        /// <summary>Thrown by <see cref="RemoveTimerAsync"/> when set, before anything is removed.</summary>
+        public Exception? RemoveFailure { get; set; }
 
         public Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
         {

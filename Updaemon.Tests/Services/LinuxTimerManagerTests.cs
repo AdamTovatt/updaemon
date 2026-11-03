@@ -34,7 +34,7 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task FindZeroXTimerAsync_FindsNoneAsTheTimerUnitIsWhatUpdaemonZeroXWrote()
+        public async Task FindZeroXTimerAsync_NoTimerUnit_FindsNone_AndAZeroXOneThatIsOnIsThisUpdaemonsOwn()
         {
             const string zeroXTimerUnit = "[Unit]\nDescription=Run updaemon update periodically\n\n[Timer]\nOnCalendar=0/1:00:00\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n";
 

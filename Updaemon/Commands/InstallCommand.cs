@@ -1,3 +1,4 @@
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
@@ -22,6 +23,8 @@ namespace Updaemon.Commands
         private readonly IOutputWriter _outputWriter;
         private readonly UpdaemonScope _scope;
         private readonly PluginProvider _pluginProvider;
+        private readonly OtherScopeApps _otherScopeApps;
+        private readonly PluginCredentials _credentials;
 
         public InstallCommand(
             IConfigManager configManager,
@@ -34,7 +37,9 @@ namespace Updaemon.Commands
             IPrompter prompter,
             IOutputWriter outputWriter,
             UpdaemonScope scope,
-            PluginProvider pluginProvider)
+            PluginProvider pluginProvider,
+            OtherScopeApps otherScopeApps,
+            PluginCredentials credentials)
         {
             _configManager = configManager;
             _settingsStore = settingsStore;
@@ -47,6 +52,8 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
             _scope = scope;
             _pluginProvider = pluginProvider;
+            _otherScopeApps = otherScopeApps;
+            _credentials = credentials;
         }
 
         public string Name => "install";
@@ -71,12 +78,23 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail(refusal);
             }
 
+            string? otherOwner = await _otherScopeApps.FindOwnerOfAsync(request.AppName, cancellationToken);
+            if (otherOwner != null)
+            {
+                _outputWriter.WriteError($"Warning: '{request.AppName}' is also installed for {otherOwner}. This installs a separate copy for {_scope.Owner}.");
+            }
+
             InstalledApp app = request.CreateApp();
             DeployableVersion? staged;
             try
             {
                 InstalledPluginInfo plugin = await _pluginProvider.GetOrInstallAsync(app.Plugin, cancellationToken);
-                staged = await StageLatestAsync(app, plugin, cancellationToken);
+                // Each try starts the plugin with its secrets as stored.
+                staged = await _credentials.RunAsync(app.Plugin, () => StageLatestAsync(app, plugin, cancellationToken), handOverSavedSecret: null, cancellationToken);
+            }
+            catch (CredentialNeededException ex)
+            {
+                return _outputWriter.Fail($"{app.Name}: {ex.Message}");
             }
             catch (MissingManifestException ex)
             {
@@ -131,7 +149,9 @@ namespace Updaemon.Commands
                   Downloads the latest release of an app and sets it up as its updaemon.json
                   describes: a command on PATH, a service, or both. Asks for each required
                   setting that has no value yet; secrets are read without echo. Without a
-                  terminal, a missing required setting fails the install.
+                  terminal, a missing required setting fails the install. When the plugin
+                  needs a secret, such as a githubToken for a private repository, it is
+                  asked for the same way and saved as the plugin's secret.
 
                 Options:
                   --from <plugin>:<remote>   Where to get it, for example github:owner/repo.

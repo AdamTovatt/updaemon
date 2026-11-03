@@ -49,7 +49,8 @@ namespace Updaemon.Services
                 }
             }
 
-            await _checksums.VerifyAsync(url, destinationPath, cancellationToken);
+            Uri asset = new Uri(url);
+            await _checksums.VerifyAsync(ReleaseChecksums.BesideAsset(asset), Path.GetFileName(asset.LocalPath), destinationPath, gitHub: null, cancellationToken);
         }
 
         /// <summary>The version a release tag names: <c>v1.2.0</c>. Any other tag names no release updaemon can install.</summary>

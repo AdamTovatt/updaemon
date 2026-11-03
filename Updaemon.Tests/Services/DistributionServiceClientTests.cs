@@ -116,6 +116,26 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
+        public async Task PluginNeedsASecret_ArrivesAsWhichSecretAndWhy()
+        {
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
+            try
+            {
+                await client.ConnectAsync(TestPluginPathResolver.Resolve());
+
+                Common.Utilities.CredentialNeededException exception = await Assert.ThrowsAsync<Common.Utilities.CredentialNeededException>(
+                    () => client.GetLatestVersionAsync("rate-limited"));
+
+                Assert.Equal("The rate limit is used up.", exception.Message);
+                Assert.Equal(("token", CredentialProblem.RateLimited), (exception.Need.Secret, exception.Need.Problem));
+            }
+            finally
+            {
+                await client.DisposeAsync();
+            }
+        }
+
+        [Fact]
         public async Task PluginErrorWithoutMessage_SaysWhichCallFailed()
         {
             string pluginPath = TestPluginPathResolver.Resolve();
