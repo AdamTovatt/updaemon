@@ -13,7 +13,7 @@ namespace Updaemon.Tests.Commands
         {
             {
                 "github",
-                new PluginSource.Registry("github"),
+                new PluginSource.Registry("github", UpdaemonVersion.Of(0, 11, 0)),
                 "github",
                 "https://github.com/AdamTovatt/updaemon/releases/download/v0.11.0/Updaemon.GithubDistributionService-osx-arm64"
             },
@@ -31,7 +31,7 @@ namespace Updaemon.Tests.Commands
                 new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" },
                 new HostPlatform(true, "osx-arm64"));
             PluginInstaller installer = new PluginInstaller(resolver, downloader, configManager, TestScope.Create(tempHelper.TempDirectory));
-            return new DistInstallCommand(outputWriter, installer, new UpdaemonVersion(new Version(0, 11, 0, 0)));
+            return new DistInstallCommand(outputWriter, installer, UpdaemonVersion.Of(0, 11, 0));
         }
 
         [Theory]

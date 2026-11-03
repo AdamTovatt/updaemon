@@ -3,9 +3,10 @@ using System.Diagnostics;
 namespace Updaemon.Services
 {
     /// <summary>
-    /// Shared process-execution helpers used by the systemd / launchd wrappers.
-    /// Both stdout and stderr are read concurrently with WaitForExitAsync so the helpers
-    /// don't deadlock on processes that produce more output than the OS pipe buffer can hold.
+    /// Runs the external commands updaemon uses: systemctl, launchctl and the like, and a newly
+    /// downloaded updaemon's smoke run. Both stdout and stderr are read concurrently with
+    /// WaitForExitAsync so the helpers don't deadlock on processes that produce more output than the
+    /// OS pipe buffer can hold.
     /// </summary>
     internal static class ProcessRunner
     {
@@ -14,6 +15,7 @@ namespace Updaemon.Services
             public bool Success => ExitCode == 0;
         }
 
+        /// <summary>Runs the command to its end and returns what it printed. Cancelling kills it.</summary>
         public static async Task<Result> RunAsync(string command, string[] arguments, CancellationToken cancellationToken)
         {
             ProcessStartInfo startInfo = StartInfo(command, arguments);
@@ -26,7 +28,19 @@ namespace Updaemon.Services
                 Task<string> stdOutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
                 Task<string> stdErrTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
-                await process.WaitForExitAsync(cancellationToken);
+                try
+                {
+                    await process.WaitForExitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+
+                    throw;
+                }
 
                 string stdOut = await stdOutTask;
                 string stdErr = await stdErrTask;

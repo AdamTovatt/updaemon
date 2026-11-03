@@ -9,7 +9,7 @@ namespace Updaemon.Tests.Services
 {
     public class PluginInstallerTests
     {
-        private static readonly Version UpdaemonVersion = new Version(1, 2, 0);
+        private static readonly UpdaemonVersion RunningRelease = UpdaemonVersion.Of(1, 2, 0);
 
         private static GitHubPluginUrlResolver Resolver()
         {
@@ -38,14 +38,14 @@ namespace Updaemon.Tests.Services
                 string pluginsDirectory = tempHelper.GetFullPath(PluginsRelativePath);
                 PluginInstaller installer = Installer(tempHelper, downloader, configManager);
 
-                PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github"), alias, UpdaemonVersion);
+                PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github", RunningRelease), alias);
 
                 Assert.Equal(
                     "DownloadAndInspectAsync:https://github.com/AdamTovatt/updaemon/releases/download/v1.2.0/Updaemon.GithubDistributionService-linux-arm64",
                     Assert.Single(downloader.MethodCalls));
                 InstalledPluginInfo? recorded = await configManager.GetPluginAsync(expectedAlias);
                 Assert.NotNull(recorded);
-                Assert.Equal(new PluginSource.Registry("github"), recorded.Source);
+                Assert.Equal(new PluginSource.Registry("github", RunningRelease), recorded.Source);
                 Assert.Equal(Path.Combine(pluginsDirectory, expectedAlias, "Updaemon.GithubDistributionService-linux-arm64"), recorded.Path);
                 Assert.True(File.Exists(recorded.Path));
                 Assert.False(result.ReplacedExisting);
@@ -64,7 +64,7 @@ namespace Updaemon.Tests.Services
                 PluginInstaller installer = Installer(tempHelper, new MockPluginDownloader(), configManager);
                 PluginSource source = new PluginSource.Url("https://example.com/path/to/my-plugin");
 
-                await installer.InstallAsync(source, alias, UpdaemonVersion);
+                await installer.InstallAsync(source, alias);
 
                 InstalledPluginInfo? recorded = await configManager.GetPluginAsync(expectedAlias);
                 Assert.NotNull(recorded);
@@ -82,7 +82,7 @@ namespace Updaemon.Tests.Services
                 PluginInstaller installer = Installer(tempHelper, downloader, new MockConfigManager());
 
                 InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                    () => installer.InstallAsync(new PluginSource.Registry("gitlab"), null, UpdaemonVersion));
+                    () => installer.InstallAsync(new PluginSource.Registry("gitlab", RunningRelease), null));
 
                 Assert.Equal(
                     "'gitlab' is not in the plugin registry (github). Install it from its URL with 'updaemon dist-install <url>'.",
@@ -104,7 +104,7 @@ namespace Updaemon.Tests.Services
                 await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", installedPath));
                 PluginInstaller installer = Installer(tempHelper, new MockPluginDownloader(), configManager);
 
-                PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github"), null, UpdaemonVersion);
+                PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github", RunningRelease), null);
 
                 Assert.True(result.ReplacedExisting);
                 InstalledPluginInfo? recorded = await configManager.GetPluginAsync("github");
@@ -126,7 +126,7 @@ namespace Updaemon.Tests.Services
                 PluginInstaller installer = Installer(tempHelper, downloader, new MockConfigManager());
 
                 InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                    () => installer.InstallAsync(new PluginSource.Registry("github"), null, UpdaemonVersion));
+                    () => installer.InstallAsync(new PluginSource.Registry("github", RunningRelease), null));
 
                 Assert.Equal(
                     "Updaemon's release has no 'github' plugin built for this machine: " +
@@ -153,7 +153,7 @@ namespace Updaemon.Tests.Services
                 PluginInstaller installer = Installer(tempHelper, downloader, configManager);
 
                 await Assert.ThrowsAsync<PluginException>(
-                    () => installer.InstallAsync(new PluginSource.Registry("github"), null, UpdaemonVersion));
+                    () => installer.InstallAsync(new PluginSource.Registry("github", RunningRelease), null));
 
                 Assert.Equal(installedBytes, File.ReadAllBytes(installedPath));
                 Assert.Same(installed, await configManager.GetPluginAsync("github"));
@@ -174,7 +174,7 @@ namespace Updaemon.Tests.Services
                 PluginInstaller installer = Installer(tempHelper, downloader, configManager);
 
                 InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                    () => installer.InstallAsync(new PluginSource.Url("https://example.com/plugin"), null, UpdaemonVersion));
+                    () => installer.InstallAsync(new PluginSource.Url("https://example.com/plugin"), null));
 
                 Assert.Contains("--as <alias>", exception.Message);
                 Assert.Empty(await configManager.GetAllPluginsAsync());

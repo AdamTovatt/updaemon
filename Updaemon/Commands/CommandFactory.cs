@@ -28,7 +28,7 @@ namespace Updaemon.Commands
                 ["status"] = typeof(StatusCommand),
                 ["logs"] = typeof(LogsCommand),
                 ["dist-install"] = typeof(DistInstallCommand),
-                ["dist-update"] = typeof(DistUpdateCommand),
+                ["self-update"] = typeof(SelfUpdateCommand),
                 ["dist-list"] = typeof(DistListCommand),
                 ["secret-set"] = typeof(SecretSetCommand),
                 ["timer"] = typeof(TimerCommand),

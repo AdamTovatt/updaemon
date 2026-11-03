@@ -1,4 +1,4 @@
-using System.Reflection;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 
 namespace Updaemon.Commands
@@ -11,19 +11,14 @@ namespace Updaemon.Commands
         private readonly ICommandFactory _commandFactory;
         private readonly IOutputWriter _outputWriter;
         private readonly IRunLock _runLock;
-        private readonly string _version;
+        private readonly UpdaemonVersion _version;
 
-        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock)
+        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock, UpdaemonVersion version)
         {
             _commandFactory = commandFactory;
             _outputWriter = outputWriter;
             _runLock = runLock;
-
-            // Get version from assembly (AOT-friendly)
-            Assembly assembly = Assembly.GetExecutingAssembly();
-            _version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                       ?? assembly.GetName().Version?.ToString()
-                       ?? "unknown";
+            _version = version;
         }
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
@@ -36,7 +31,19 @@ namespace Updaemon.Commands
 
             string commandName = args[0].ToLowerInvariant();
 
-            // Handle help
+            // Flags in place of a command. Just the version: install.sh and self-update smoke-run a new updaemon with it.
+            if (commandName == "--version")
+            {
+                if (args.Length > 1)
+                {
+                    _outputWriter.WriteError("Usage: updaemon --version");
+                    return 1;
+                }
+
+                _outputWriter.WriteLine(_version.ToString());
+                return 0;
+            }
+
             if (commandName == "help" || commandName == "--help" || commandName == "-h")
             {
                 if (args.Length > 1)

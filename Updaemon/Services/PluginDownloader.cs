@@ -60,11 +60,6 @@ namespace Updaemon.Services
             }
         }
 
-        public async Task<DistributionServiceInformation> InspectLocalAsync(string pluginPath, CancellationToken cancellationToken = default)
-        {
-            return await ConnectAndGetInfoAsync(pluginPath, cancellationToken);
-        }
-
         private async Task<DistributionServiceInformation> ConnectAndGetInfoAsync(string pluginPath, CancellationToken cancellationToken)
         {
             try

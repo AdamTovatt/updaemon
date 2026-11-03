@@ -1,7 +1,15 @@
 #!/bin/bash
-set -e
+# Installs the latest updaemon.
+#   curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash   # system-wide
+#   curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | bash        # for you only
+# Run as root, it installs for the system; otherwise for the user running it. Running it again
+# installs the latest version the same way, also over an updaemon 0.x install.
+set -euo pipefail
+# Whatever the caller's umask, others must be able to run the system updaemon.
+umask 022
 
-# Detect OS + arch and pick the matching release artifact RID.
+REPO=https://github.com/AdamTovatt/updaemon
+
 case "$(uname -s)-$(uname -m)" in
   Linux-aarch64|Linux-arm64) RID=linux-arm64 ;;
   Linux-x86_64)              RID=linux-x64 ;;
@@ -13,37 +21,97 @@ case "$(uname -s)-$(uname -m)" in
     ;;
 esac
 
-case "$(uname -s)" in
-  Darwin) CONFIG_DIR=/usr/local/var/updaemon ;;
-  *)      CONFIG_DIR=/var/lib/updaemon ;;
-esac
+# The same paths updaemon uses for each scope.
+if [ "$(id -u)" -eq 0 ]; then
+  SCOPE=system
+  BIN_DIR=/usr/local/bin
+  case "$RID" in
+    osx-*) ROOT=/usr/local/var/updaemon ;;
+    *)     ROOT=/var/lib/updaemon ;;
+  esac
+else
+  SCOPE=user
+  BIN_DIR="$HOME/.local/bin"
+  case "$RID" in
+    osx-*) ROOT="$HOME/Library/Application Support/updaemon" ;;
+    *)
+      # XDG says a relative value is invalid and must be ignored.
+      case "${XDG_DATA_HOME:-}" in
+        /*) ROOT="$XDG_DATA_HOME/updaemon" ;;
+        *)  ROOT="$HOME/.local/share/updaemon" ;;
+      esac
+      ;;
+  esac
+fi
 
-# Use the /releases/latest/download/<asset> redirect rather than api.github.com.
-# The API is rate-limited to 60/hour per IP unauthenticated; the redirect URL is
-# served from github.com release infrastructure and is not API-rate-limited.
-# A missing asset returns 404 (which curl -f surfaces as a non-zero exit).
-url="https://github.com/AdamTovatt/updaemon/releases/latest/download/Updaemon-${RID}"
-
-if ! curl -fsSLI "$url" -o /dev/null; then
-  echo "No release asset found at $url" >&2
-  echo "If you're installing on a brand-new platform, the latest release may not have a build for it yet." >&2
+# The /releases/latest redirect names the latest version; unlike the API, it has no rate limit.
+latest_url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$REPO/releases/latest")
+VERSION=${latest_url##*/tag/v}
+# Releases are tagged v and three numbers, as updaemon reads them too.
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Could not read the latest version from $latest_url" >&2
   exit 1
 fi
 
-# Fresh Apple Silicon Macs ship without /usr/local/bin (Homebrew uses
-# /opt/homebrew there), so curl -o would fail with "No such file or directory".
-sudo mkdir -p /usr/local/bin
-sudo curl -fL -o /usr/local/bin/updaemon "$url"
-sudo chmod +x /usr/local/bin/updaemon
+asset="$REPO/releases/download/v$VERSION/Updaemon-$RID"
+version_dir="$ROOT/versions/$VERSION"
+binary="$version_dir/updaemon"
+download="$binary.$$.download"
+printed_file="$download.out"
 
-# Create configuration directory
-sudo mkdir -p "${CONFIG_DIR}/plugins"
+# Prints what '$1 --version' printed, giving up after 10 seconds: a build that hangs is not
+# installed. Its output goes through a file, which a process it left behind cannot hold open.
+smoke_run() {
+  "$1" --version >"$printed_file" 2>&1 &
+  local pid=$!
+  ( sleep 10; kill -9 "$pid" ) >/dev/null 2>&1 &
+  local watchdog=$!
+  wait "$pid" || true
+  kill "$watchdog" 2>/dev/null || true
+  cat "$printed_file"
+  rm -f "$printed_file"
+}
 
-# macOS: launchd writes service stdout/stderr to /var/log/updaemon/<service>.{log,err.log}.
-# Create the parent directory now so logs don't silently disappear on first service start.
-if [ "$(uname -s)" = "Darwin" ]; then
-  sudo mkdir -p /var/log/updaemon
+# Leaves nothing of a failed install behind.
+discard() {
+  rm -f "$download" "$printed_file"
+  rmdir "$version_dir" 2>/dev/null || true
+}
+
+mkdir -p "$version_dir" "$BIN_DIR"
+if ! curl -fsSL -o "$download" "$asset"; then
+  discard
+  echo "No updaemon $VERSION build for $RID at $asset" >&2
+  exit 1
+fi
+chmod 755 "$download"
+
+# Switch only to a build that runs.
+printed=$(smoke_run "$download")
+if [ "$printed" != "$VERSION" ]; then
+  discard
+  echo "updaemon $VERSION did not run here: 'updaemon --version' printed '$printed'." >&2
+  exit 1
+fi
+mv -f "$download" "$binary"
+
+# A new link renamed over the old one (or over an updaemon 0.x binary), so 'updaemon' never goes missing.
+link="$BIN_DIR/updaemon"
+ln -sf "$binary" "$link.new"
+mv -f "$link.new" "$link"
+
+if [ "$SCOPE" = system ] && [ "$RID" = osx-arm64 ]; then
+  # launchd writes service logs here and drops them silently if the directory is missing.
+  mkdir -p /var/log/updaemon
 fi
 
-echo "Updaemon installed successfully to /usr/local/bin/updaemon"
-echo "Config directory: ${CONFIG_DIR}"
+echo "Installed updaemon $VERSION for the $SCOPE at $link."
+if [ "$SCOPE" = user ]; then
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) echo "Add $BIN_DIR to your PATH to run 'updaemon'." ;;
+  esac
+  if [ "$RID" != osx-arm64 ]; then
+    echo "Your services run only while you are logged in, unless lingering is on: sudo loginctl enable-linger $(id -un)"
+  fi
+fi

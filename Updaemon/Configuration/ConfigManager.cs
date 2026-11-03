@@ -27,8 +27,14 @@ namespace Updaemon.Configuration
 
             string json = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
             CheckFormat(json);
-            UpdaemonConfig? config = JsonSerializer.Deserialize(json, UpdaemonJsonContext.Default.UpdaemonConfig);
-            return config ?? new UpdaemonConfig();
+            try
+            {
+                return JsonSerializer.Deserialize(json, UpdaemonJsonContext.Default.UpdaemonConfig) ?? new UpdaemonConfig();
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"{_configFilePath} cannot be read: {ex.Message}");
+            }
         }
 
         /// <summary>

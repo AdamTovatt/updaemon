@@ -43,7 +43,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new PluginSource.Registry("github"), (await h.Config.GetPluginAsync("github"))!.Source);
+                Assert.Equal(new PluginSource.Registry("github", AppHarness.RunningVersion), (await h.Config.GetPluginAsync("github"))!.Source);
                 Assert.Contains(h.PluginDownloader.MethodCalls, call => call.Contains("/releases/download/v1.0.0/Updaemon.GithubDistributionService-linux-arm64"));
                 Assert.True(File.Exists(h.Scope.GetCommandPath("tool")));
             }
@@ -312,7 +312,7 @@ namespace Updaemon.Tests.Commands
         [Theory]
         [InlineData("<plugin>:<remote>", "app", "--from", "github")]
         [InlineData("<plugin>:<remote>", "app", "--from", "github:")]
-        [InlineData("app: the plugin 'gitlab' is not installed and is not in the plugin registry (github). Install it with 'updaemon dist-install <url> --as gitlab'.", "app", "--from", "gitlab:owner/repo")]
+        [InlineData("app: the plugin 'gitlab' is not installed and is not in the plugin registry (github). Install it with 'updaemon dist-install --as gitlab <url>'.", "app", "--from", "gitlab:owner/repo")]
         [InlineData("not a valid environment variable", "app", "--from", "github:owner/app", "--set", "NOT VALID=1")]
         [InlineData("'updaemon' is reserved", "updaemon", "--from", "github:owner/app")]
         [InlineData("not a valid app name", "-app", "--from", "github:owner/app")]

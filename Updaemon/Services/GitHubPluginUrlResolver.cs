@@ -15,7 +15,6 @@ namespace Updaemon.Services
     /// </summary>
     public class GitHubPluginUrlResolver : IPluginUrlResolver
     {
-        private const string ReleaseDownloadUrl = "https://github.com/AdamTovatt/updaemon/releases/download";
         private const string EmbeddedRegistryName = "PluginAssets.json";
 
         private readonly IReadOnlyDictionary<string, string> _assetBaseNames;
@@ -39,15 +38,14 @@ namespace Updaemon.Services
 
         public IReadOnlyCollection<string> PluginNames => _assetBaseNames.Keys.ToList();
 
-        public string? Resolve(string pluginName, Version updaemonVersion)
+        public string? Resolve(string pluginName, UpdaemonVersion updaemonVersion)
         {
             if (!_assetBaseNames.TryGetValue(pluginName, out string? assetBaseName))
             {
                 return null;
             }
 
-            string tag = $"v{updaemonVersion.Major}.{updaemonVersion.Minor}.{Math.Max(updaemonVersion.Build, 0)}";
-            return $"{ReleaseDownloadUrl}/{tag}/{assetBaseName}-{_runtimeIdentifier}";
+            return GitHubUpdaemonReleases.AssetUrl(updaemonVersion, assetBaseName, _runtimeIdentifier);
         }
 
         /// <summary>

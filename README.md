@@ -16,7 +16,7 @@
 
 ## Features
 
-- **Updates on a schedule**: `updaemon timer 1h` checks for new releases every hour.
+- **Updates on a schedule**: `updaemon timer 1h` checks for new releases every hour, of your apps and of updaemon itself.
 - **Health check and rollback**: a service that does not keep running after an update goes back to the previous version, and the failed version is skipped. `updaemon rollback` goes back by hand.
 - **Settings and secrets**: a release declares the settings it needs; updaemon asks for them and keeps secrets in a file only the owner can read.
 - **Any release source**: GitHub releases out of the box; distribution plugins add other sources.
@@ -52,11 +52,21 @@ To make your releases installable, see [PublishingWithUpdaemon.md](PublishingWit
 > Updaemon is still in early and active development. Commands and ways of doing things could change.
 > Don't hesitate to reach out if there is a specific feature you think is missing.
 
+For system-wide apps:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
 ```
 
-`updaemon help` lists the commands, and `updaemon help <command>` explains one.
+For your own apps only, without root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | bash
+```
+
+The script installs the latest release for this machine and links the `updaemon` command to it: `/usr/local/bin/updaemon` system-wide, `~/.local/bin/updaemon` for you. From then on, `updaemon update` keeps updaemon itself up to date too (see [self-update](#self-update)). Running the script again does no harm.
+
+`updaemon help` lists the commands, `updaemon help <command>` explains one, and `updaemon --version` prints the version.
 
 ### Installing an app
 
@@ -103,9 +113,10 @@ sudo rm -r /opt/my-api
 
 On macOS, unload `/Library/LaunchDaemons/com.updaemon.my-api.plist` with `sudo launchctl bootout system/com.updaemon.my-api`, then delete it and `/usr/local/opt/my-api`.
 
-Then move the old config aside and install the apps again:
+Then install updaemon 1.0 over 0.x, move the old config aside and install the apps again:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
 sudo mv /var/lib/updaemon/config.json /var/lib/updaemon/config.0x.json
 sudo updaemon install my-api --from github:owner/my-api
 ```
@@ -119,7 +130,7 @@ An argument in angle brackets (`< >`) is required; one in square brackets (`[ ]`
 | Command | Description |
 | --- | --- |
 | [install](#install) | Install an app from a distribution plugin. |
-| [update](#update) | Update every app, or one. |
+| [update](#update) | Update every app and updaemon itself, or one app. |
 | [rollback](#rollback) | Go back to an earlier version of an app. |
 | [status](#status) | Show the apps, their versions and whether they run. |
 | [logs](#logs) | Show an app's service log. |
@@ -128,8 +139,8 @@ An argument in angle brackets (`< >`) is required; one in square brackets (`[ ]`
 | [set-restart](#set-restart) | Choose whether `update` restarts a service. |
 | [remove](#remove) | Remove an app. |
 | [timer](#timer) | Check for updates on a schedule. |
+| [self-update](#self-update) | Turn updaemon's own updates on or off. |
 | [dist-install](#dist-install) | Install a distribution plugin. |
-| [dist-update](#dist-update) | Update the installed plugins. |
 | [dist-list](#dist-list) | List the installed plugins. |
 | [secret-set](#secret-set) | Set a secret for a plugin. |
 | help | `updaemon help [command]` shows help, and the version. |
@@ -161,6 +172,8 @@ A restarted service must keep running for 10 seconds. If it does not, the previo
 
 After an update, old versions are deleted down to `releaseRetentionCount` in `config.json` (5 by default). The current version is always kept.
 
+Without an app named, `update` ends by updating updaemon itself; see [self-update](#self-update).
+
 ### rollback
 
 ```bash
@@ -177,7 +190,7 @@ Naming a newer kept version switches forward to it, for example to undo a rollba
 updaemon status [app]
 ```
 
-Shows updaemon's version, its scope and the update timer, then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions.
+Shows updaemon's version, its scope, the update timer and whether self-update is on, then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions.
 
 ### logs
 
@@ -228,6 +241,20 @@ updaemon timer [interval]
 
 Runs `updaemon update` every `interval` (`30s`, `10m`, `1h`): a systemd timer on Linux, a launchd job on macOS. Without an interval, shows the current one; `-` turns it off.
 
+### self-update
+
+```bash
+updaemon self-update [on|off]
+```
+
+When on, the default, `updaemon update` ends by updating updaemon to its latest release. The new version is downloaded into its own directory, beside the one running, and must run (`updaemon --version`) before the `updaemon` command is switched to it in one step. If anything fails, the running version stays and `update` reports why. The previous version is kept until the next self-update.
+
+Registry plugins always come from the release of the updaemon that runs them: the first install or update after a self-update reinstalls them from the new release. If that fails, the apps using that plugin fail with the reason, and the installed plugin is kept. Plugins installed from a URL are not updated; reinstall them with `dist-install` if a new updaemon needs a newer build.
+
+Self-update replaces only the scope's own `updaemon` command. Running the system-wide updaemon as another user skips it, and says so.
+
+Without an argument, shows whether self-update is on.
+
 ### dist-install
 
 ```bash
@@ -237,14 +264,6 @@ updaemon dist-install [--as <alias>] <plugin-name|url>
 Installs a distribution plugin by registry name or from a URL. A registry plugin comes from the release of the updaemon you run, built for your machine. Releases carry builds for `linux-arm64` and `osx-arm64`; on another platform, build the plugin and install it from its URL. `install` already installs a missing registry plugin, so this is mostly for URL plugins and aliases.
 
 A plugin already installed under the alias is replaced, but only once the new one has started and answered.
-
-### dist-update
-
-```bash
-updaemon dist-update [alias]
-```
-
-Updates registry plugins to the build in the running updaemon's release. Plugins installed from a URL are skipped; reinstall them with `dist-install`.
 
 ### dist-list
 
@@ -270,6 +289,7 @@ Everything updaemon keeps for a scope lives under its root directory (see [Syste
 
 ```
 config.json            installed plugins and apps
+versions/<version>/    updaemon itself; the updaemon command links to one
 plugins/<alias>/       each plugin's executable and secrets.txt
 settings/<app>.env     each app's settings, readable by everyone
 secrets/<app>.env      each app's secrets, readable by the owner only
@@ -296,7 +316,7 @@ Updaemon writes this file; the commands above change it. One setting is meant fo
     "github": {
       "alias": "github",
       "path": "/var/lib/updaemon/plugins/github/Updaemon.GithubDistributionService",
-      "source": { "kind": "registry", "name": "github" }
+      "source": { "kind": "registry", "name": "github", "release": "1.0.0" }
     }
   },
   "apps": [
@@ -309,11 +329,12 @@ Updaemon writes this file; the commands above change it. One setting is meant fo
       "skippedVersions": [ "1.4.0" ]
     }
   ],
-  "releaseRetentionCount": 5
+  "releaseRetentionCount": 5,
+  "selfUpdate": true
 }
 ```
 
-`skippedVersions` lists the versions `update` passes over: each failed its health check or was rolled back from.
+`skippedVersions` lists the versions `update` passes over: each failed its health check or was rolled back from. A registry plugin's `release` is the updaemon release it came from. `selfUpdate` is what `updaemon self-update on|off` sets.
 
 [↑ Back to top](#updaemon)
 
@@ -538,6 +559,7 @@ sequenceDiagram
         Update->>Disk: Repoint current to 1.0.0, rewrite its files, skip 1.1.0
         Update->>Manager: Restart
     end
+    Note over Update: After every app: self-update, the same way for updaemon's own binary
 ```
 
 [↑ Back to top](#updaemon)

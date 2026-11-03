@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+using Updaemon.IO;
 
 namespace Updaemon.Configuration
 {
@@ -41,7 +41,13 @@ namespace Updaemon.Configuration
 
         public string PluginsDirectory => Path.Combine(RootDirectory, "plugins");
 
+        /// <summary>The <c>updaemon</c> command: a link to one of the versions in <see cref="UpdaemonVersionsDirectory"/>.</summary>
         public string UpdaemonCommandPath => Path.Combine(BinDirectory, "updaemon");
+
+        /// <summary>Updaemon's own versions, one directory each, installed by self-update and install.sh.</summary>
+        public string UpdaemonVersionsDirectory => Path.Combine(RootDirectory, "versions");
+
+        public string GetUpdaemonBinaryPath(UpdaemonVersion release) => Path.Combine(UpdaemonVersionsDirectory, release.ToString(), "updaemon");
 
         /// <summary>The directories a state-changing command writes to.</summary>
         public IReadOnlyList<string> WritableDirectories => new[] { RootDirectory, AppsDirectory, BinDirectory, UnitDirectory };
@@ -90,7 +96,7 @@ namespace Updaemon.Configuration
 
         public static UpdaemonScope Detect()
         {
-            uint userId = NativeMethods.geteuid();
+            uint userId = LibC.EffectiveUserId();
             if (userId == 0)
             {
                 return ForSystem(HostPlatform.Current);
@@ -154,11 +160,5 @@ namespace Updaemon.Configuration
         }
 
         private static bool IsAbsolute(string? path) => !string.IsNullOrEmpty(path) && Path.IsPathRooted(path);
-
-        private static class NativeMethods
-        {
-            [DllImport("libc", SetLastError = false)]
-            public static extern uint geteuid();
-        }
     }
 }

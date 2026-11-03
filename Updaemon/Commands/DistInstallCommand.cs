@@ -11,14 +11,14 @@ namespace Updaemon.Commands
     {
         private readonly IOutputWriter _outputWriter;
         private readonly IPluginInstaller _pluginInstaller;
-        private readonly Version _updaemonVersion;
+        private readonly UpdaemonVersion _updaemonVersion;
 
         /// <param name="updaemonVersion">The running updaemon's version: registry plugins come from its release.</param>
         public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, UpdaemonVersion updaemonVersion)
         {
             _outputWriter = outputWriter;
             _pluginInstaller = pluginInstaller;
-            _updaemonVersion = updaemonVersion.Value;
+            _updaemonVersion = updaemonVersion;
         }
 
         public string Name => "dist-install";
@@ -45,11 +45,11 @@ namespace Updaemon.Commands
 
             bool isUrl = urlOrName.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                 || urlOrName.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-            PluginSource source = isUrl ? new PluginSource.Url(urlOrName) : new PluginSource.Registry(urlOrName);
+            PluginSource source = isUrl ? new PluginSource.Url(urlOrName) : new PluginSource.Registry(urlOrName, _updaemonVersion);
 
             _outputWriter.WriteLine($"Installing distribution plugin: {source}");
 
-            PluginInstallResult result = await _pluginInstaller.InstallAsync(source, alias, _updaemonVersion, cancellationToken);
+            PluginInstallResult result = await _pluginInstaller.InstallAsync(source, alias, cancellationToken);
 
             _outputWriter.WriteLine($"Saved plugin to: {result.Plugin.Path}");
             _outputWriter.WriteLine(result.ReplacedExisting

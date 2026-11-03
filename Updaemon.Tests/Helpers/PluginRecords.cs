@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Models;
 
 namespace Updaemon.Tests.Helpers
@@ -8,15 +9,27 @@ namespace Updaemon.Tests.Helpers
     public static class PluginRecords
     {
         /// <summary>
-        /// A plugin installed from the registry under its own name.
+        /// A plugin installed from the registry under its own name, by default from the release of the
+        /// updaemon the tests run as (<see cref="AppHarness.RunningVersion"/>).
         /// </summary>
-        public static InstalledPluginInfo Installed(string alias, string path)
+        public static InstalledPluginInfo Installed(string alias, string path, UpdaemonVersion? release = null)
         {
             return new InstalledPluginInfo
             {
                 Alias = alias,
                 Path = path,
-                Source = new PluginSource.Registry(alias),
+                Source = new PluginSource.Registry(alias, release ?? AppHarness.RunningVersion),
+            };
+        }
+
+        /// <summary>A plugin installed from a URL the user gave.</summary>
+        public static InstalledPluginInfo FromUrl(string alias, string path)
+        {
+            return new InstalledPluginInfo
+            {
+                Alias = alias,
+                Path = path,
+                Source = new PluginSource.Url("https://example.com/" + alias),
             };
         }
     }

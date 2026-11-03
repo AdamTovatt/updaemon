@@ -18,13 +18,5 @@ namespace Updaemon.Interfaces
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         /// <returns>Result containing the temp file path and service information.</returns>
         Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, string targetDirectory, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Connects to an already-installed plugin binary and retrieves its service information.
-        /// </summary>
-        /// <param name="pluginPath">Path to the installed plugin executable.</param>
-        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
-        /// <returns>The plugin's service information.</returns>
-        Task<DistributionServiceInformation> InspectLocalAsync(string pluginPath, CancellationToken cancellationToken = default);
     }
 }

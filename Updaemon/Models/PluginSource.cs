@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Updaemon.Configuration;
 
 namespace Updaemon.Models
 {
@@ -17,10 +18,19 @@ namespace Updaemon.Models
         {
         }
 
+        /// <summary>Whether updating updaemon brings this plugin along; a URL plugin is replaced only by hand.</summary>
+        [JsonIgnore]
+        public bool FollowsUpdaemon => this is Registry;
+
         /// <summary>
-        /// A first-party plugin named in PluginRegistry.json.
+        /// Whether this is a registry plugin built for another updaemon than <paramref name="running"/>.
+        /// Such a plugin is not run: it is reinstalled from the running updaemon's release first (see
+        /// <see cref="Services.PluginProvider"/>).
         /// </summary>
-        public sealed record Registry(string Name) : PluginSource
+        public bool IsOutOfLineWith(UpdaemonVersion running) => this is Registry registry && registry.Release != running;
+
+        /// <summary>A first-party plugin named in the registry, built in updaemon's release <paramref name="Release"/>.</summary>
+        public sealed record Registry(string Name, [property: JsonRequired] UpdaemonVersion Release) : PluginSource
         {
             public override string ToString() => Name;
         }

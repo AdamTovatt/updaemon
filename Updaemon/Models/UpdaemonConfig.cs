@@ -29,5 +29,8 @@ namespace Updaemon.Models
         /// Includes the currently-deployed version. Minimum effective value is 1.
         /// </summary>
         public int ReleaseRetentionCount { get; set; } = 5;
+
+        /// <summary>Whether <c>update</c> also updates updaemon itself; set with <c>updaemon self-update on|off</c>.</summary>
+        public bool SelfUpdate { get; set; } = true;
     }
 }

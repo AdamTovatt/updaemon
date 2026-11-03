@@ -18,6 +18,7 @@ namespace Updaemon.Commands
         private readonly IServiceDeployer _serviceDeployer;
         private readonly AppRollback _appRollback;
         private readonly PluginProvider _pluginProvider;
+        private readonly SelfUpdater _selfUpdater;
 
         public UpdateCommand(
             IConfigManager configManager,
@@ -27,7 +28,8 @@ namespace Updaemon.Commands
             IOutputWriter outputWriter,
             IServiceDeployer serviceDeployer,
             AppRollback appRollback,
-            PluginProvider pluginProvider)
+            PluginProvider pluginProvider,
+            SelfUpdater selfUpdater)
         {
             _configManager = configManager;
             _settingsStore = settingsStore;
@@ -37,11 +39,12 @@ namespace Updaemon.Commands
             _serviceDeployer = serviceDeployer;
             _appRollback = appRollback;
             _pluginProvider = pluginProvider;
+            _selfUpdater = selfUpdater;
         }
 
         public string Name => "update";
 
-        public string Description => "Update all apps, or one";
+        public string Description => "Update all apps and updaemon itself, or one app";
 
         public string Usage => "updaemon update [app]";
 
@@ -64,7 +67,6 @@ namespace Updaemon.Commands
             if (apps.Count == 0)
             {
                 _outputWriter.WriteLine("No apps installed. Use 'updaemon install <app> --from <plugin>:<remote>' to install one.");
-                return 0;
             }
 
             UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
@@ -73,6 +75,12 @@ namespace Updaemon.Commands
             foreach (IGrouping<string, InstalledApp> pluginGroup in apps.GroupBy(app => app.Plugin))
             {
                 allSucceeded &= await UpdateAppsForPluginAsync(pluginGroup.Key, pluginGroup.ToList(), config.ReleaseRetentionCount, cancellationToken);
+            }
+
+            // Last, so a run finishes on one version of the code. Updating one app leaves updaemon alone.
+            if (parser.Positionals is [])
+            {
+                allSucceeded &= await _selfUpdater.RunAsync(cancellationToken);
             }
 
             return allSucceeded ? 0 : 1;
@@ -268,6 +276,9 @@ namespace Updaemon.Commands
 
                   Old version directories are pruned after each update; releaseRetentionCount
                   in config.json sets how many to keep (default 5).
+
+                  Without an app named, update ends by updating updaemon itself to its
+                  latest release, unless 'updaemon self-update off' turned that off.
 
                 Examples:
                   updaemon update

@@ -1,16 +1,46 @@
 using Updaemon.Commands;
+using Updaemon.Configuration;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
 {
     public class CommandExecutorTests
     {
+        private static readonly UpdaemonVersion RunningVersion = UpdaemonVersion.FromAssembly(new Version(1, 2, 0, 0));
+
+        private static CommandExecutor Executor(MockCommandFactory factory, MockOutputWriter outputWriter, MockRunLock? runLock = null) =>
+            new CommandExecutor(factory, outputWriter, runLock ?? new MockRunLock(), RunningVersion);
+
+        [Fact]
+        public async Task ExecuteAsync_VersionFlag_PrintsTheReleaseVersionOnly()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            CommandExecutor executor = Executor(factory, outputWriter);
+
+            int exitCode = await executor.ExecuteAsync(new[] { "--version" });
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(new[] { "1.2.0" }, outputWriter.Messages);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_VersionFlagWithAnArgument_ShowsItsUsage()
+        {
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(new MockCommandFactory(), outputWriter).ExecuteAsync(new[] { "--version", "x" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { "Usage: updaemon --version" }, outputWriter.Errors);
+        }
+
         [Fact]
         public async Task ExecuteAsync_NoArgs_ReturnsErrorCode()
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(Array.Empty<string>());
 
@@ -22,7 +52,7 @@ namespace Updaemon.Tests.Commands
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "unknown" });
 
@@ -37,7 +67,7 @@ namespace Updaemon.Tests.Commands
             MockCommand updateCommand = new MockCommand { Name = "update" };
             factory.RegisterCommand("update", updateCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "update", "my-app" });
 
@@ -55,7 +85,7 @@ namespace Updaemon.Tests.Commands
             bool heldDuringRun = false;
             MockCommand command = new MockCommand { Name = "cmd", ChangesState = changesState, OnExecute = () => heldDuringRun = runLock.IsHeld };
             factory.RegisterCommand("cmd", command);
-            CommandExecutor executor = new CommandExecutor(factory, new MockOutputWriter(), runLock);
+            CommandExecutor executor = Executor(factory, new MockOutputWriter(), runLock);
 
             await executor.ExecuteAsync(new[] { "cmd" });
 
@@ -75,7 +105,7 @@ namespace Updaemon.Tests.Commands
             };
             factory.RegisterCommand("test", failingCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "test" });
 
@@ -92,7 +122,7 @@ namespace Updaemon.Tests.Commands
             factory.RegisterCommand("update", cmd1);
             factory.RegisterCommand("new", cmd2);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "help" });
 
@@ -113,7 +143,7 @@ namespace Updaemon.Tests.Commands
             };
             factory.RegisterCommand("update", updateCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "help", "update" });
 
@@ -126,7 +156,7 @@ namespace Updaemon.Tests.Commands
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "help", "unknown" });
 
@@ -141,7 +171,7 @@ namespace Updaemon.Tests.Commands
             MockCommand secretSetCommand = new MockCommand { Name = "secret-set" };
             factory.RegisterCommand("secret-set", secretSetCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter, new MockRunLock());
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "SECRET-SET", "github", "key", "value" });
 

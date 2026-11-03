@@ -83,6 +83,9 @@ namespace Updaemon
             services.AddTransient<PluginProvider>();
 
             services.AddSingleton(UpdaemonVersion.Current);
+            services.AddSingleton(RunningExecutable.Current);
+            services.AddSingleton<IUpdaemonReleases, GitHubUpdaemonReleases>();
+            services.AddTransient<SelfUpdater>();
 
             // Distribution service client
             services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();
@@ -107,7 +110,7 @@ namespace Updaemon
             services.AddTransient<StatusCommand>();
             services.AddTransient<LogsCommand>();
             services.AddTransient<DistInstallCommand>();
-            services.AddTransient<DistUpdateCommand>();
+            services.AddTransient<SelfUpdateCommand>();
             services.AddTransient<DistListCommand>();
             services.AddTransient<SecretSetCommand>();
             services.AddTransient<TimerCommand>();

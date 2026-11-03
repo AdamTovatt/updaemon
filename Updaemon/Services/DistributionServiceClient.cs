@@ -140,7 +140,7 @@ namespace Updaemon.Services
             {
                 throw new PluginException(
                     $"The plugin at {pluginExecutablePath} speaks plugin protocol {protocolVersion}, but this updaemon speaks protocol {PluginProtocol.Version}. " +
-                    "Reinstall the plugin with 'updaemon dist-install <name or url>'.");
+                    "Reinstall the plugin with 'updaemon dist-install [--as <alias>] <plugin-name|url>'.");
             }
 
             DistributionServiceInformation? information = JsonSerializer.Deserialize(informationJson, CommonJsonContext.Default.DistributionServiceInformation);

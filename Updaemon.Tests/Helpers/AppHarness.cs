@@ -50,9 +50,37 @@ namespace Updaemon.Tests.Helpers
             Plugins = new PluginProvider(Config, new PluginInstaller(PluginUrlResolver, PluginDownloader, Config, Scope), PluginUrlResolver, RunningVersion, Output);
         }
 
+        public MockUpdaemonReleases Releases { get; } = new MockUpdaemonReleases();
+
+        /// <summary>
+        /// The file the updaemon under test runs from. By default not the scope's own, so update's
+        /// self-update step skips; tests of self-update point it at the scope's updaemon.
+        /// </summary>
+        public RunningExecutable Executable { get; set; } = new RunningExecutable("/nonexistent/updaemon");
+
+        public SelfUpdater SelfUpdater() => new SelfUpdater(Scope, Config, Releases, new SymlinkManager(), Output, RunningVersion, Executable);
+
+        public SelfUpdater SelfUpdater(TimeSpan smokeRunTimeout) =>
+            new SelfUpdater(Scope, Config, Releases, new SymlinkManager(), Output, RunningVersion, Executable) { SmokeRunTimeout = smokeRunTimeout };
+
+        /// <summary>
+        /// Installs <see cref="RunningVersion"/> as the scope's updaemon, as install.sh does, and runs
+        /// it: self-update then replaces it.
+        /// </summary>
+        public void RunTheScopesOwnUpdaemon()
+        {
+            string binary = Scope.GetUpdaemonBinaryPath(RunningVersion);
+            Directory.CreateDirectory(Path.GetDirectoryName(binary)!);
+            File.WriteAllText(binary, $"#!/bin/sh\necho {RunningVersion}\n");
+            File.SetUnixFileMode(binary, AtomicFile.Executable);
+            Directory.CreateDirectory(Scope.BinDirectory);
+            File.CreateSymbolicLink(Scope.UpdaemonCommandPath, binary);
+            Executable = new RunningExecutable(binary);
+        }
+
         public GitHubPluginUrlResolver PluginUrlResolver { get; }
 
-        public static UpdaemonVersion RunningVersion { get; } = new UpdaemonVersion(new Version(1, 0, 0));
+        public static UpdaemonVersion RunningVersion { get; } = UpdaemonVersion.Of(1, 0, 0);
 
         public AppRollback Rollback { get; }
 
@@ -85,7 +113,7 @@ namespace Updaemon.Tests.Helpers
         public InstallCommand Install() => new InstallCommand(
             Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins);
 
-        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins);
+        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, SelfUpdater());
 
         public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Deployer, Rollback, Output);
 

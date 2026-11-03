@@ -31,6 +31,7 @@ namespace Updaemon.Tests.Commands
                     {
                         "updaemon 1.0.0, user scope",
                         "Update timer: 1h",
+                        "Self-update: on",
                         "",
                         "byteshelf  1.0.0  command + service  running  github:owner/byteshelf",
                         "tool       2.0.0  command            -        github:owner/tool       skips 2.1.0",

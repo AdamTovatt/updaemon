@@ -23,7 +23,9 @@ namespace Updaemon.Tests.Configuration
         [Theory]
         [InlineData("{\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"version\":\"1.0.0\"}},\"services\":[{\"localName\":\"api\"}]}", "is from updaemon 0.x")]
         [InlineData("{\"format\":2,\"apps\":[]}", "has format 2")]
-        public async Task LoadConfigAsync_OtherFormat_FailsWithOneClearLine(string json, string expected)
+        [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\"}}}}", "cannot be read: JSON deserialization for type 'Updaemon.Models.PluginSource+Registry' was missing required properties including: 'release'.")]
+        [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\",\"release\":\"1.3\"}}}}", "cannot be read: '1.3' is not an updaemon release version (x.y.z).")]
+        public async Task LoadConfigAsync_OtherFormatOrUnreadable_FailsWithOneClearLine(string json, string expected)
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
@@ -109,7 +111,7 @@ namespace Updaemon.Tests.Configuration
                 ConfigManager configManager = new ConfigManager(TestScope.Create(tempHelper.TempDirectory));
 
                 await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/old"));
-                Assert.Equal(new PluginSource.Registry("github"), (await configManager.GetPluginAsync("github"))!.Source);
+                Assert.Equal(new PluginSource.Registry("github", AppHarness.RunningVersion), (await configManager.GetPluginAsync("github"))!.Source);
                 PluginSource urlSource = new PluginSource.Url("https://example.com/plugin");
                 await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "github", Path = "/new", Source = urlSource });
                 Assert.Equal("/new", (await configManager.GetPluginAsync("github"))!.Path);

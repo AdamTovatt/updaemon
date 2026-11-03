@@ -16,7 +16,6 @@ namespace Updaemon.Tests.Mocks
 
         public List<string> MethodCalls { get; } = new List<string>();
         public DistributionServiceInformation? ServiceInformation { get; set; }
-        public Dictionary<string, DistributionServiceInformation> LocalServiceInformationByPath { get; } = new Dictionary<string, DistributionServiceInformation>();
         public Exception? ExceptionToThrow { get; set; }
 
         public Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, string targetDirectory, CancellationToken cancellationToken = default)
@@ -46,25 +45,6 @@ namespace Updaemon.Tests.Mocks
             {
                 TempFilePath = tempPath,
                 ServiceInformation = info,
-            });
-        }
-
-        public Task<DistributionServiceInformation> InspectLocalAsync(string pluginPath, CancellationToken cancellationToken = default)
-        {
-            MethodCalls.Add($"InspectLocalAsync:{pluginPath}");
-
-            if (LocalServiceInformationByPath.TryGetValue(pluginPath, out DistributionServiceInformation? info))
-            {
-                return Task.FromResult(info);
-            }
-
-            return Task.FromResult(ServiceInformation ?? new DistributionServiceInformation
-            {
-                FullName = "Mock Distribution Service",
-                DefaultAlias = "mock",
-                Description = "Mock distribution service for testing",
-                Version = "1.0.0",
-                Secrets = new List<DistributionSecretInfo>(),
             });
         }
     }

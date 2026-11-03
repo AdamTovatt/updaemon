@@ -4,24 +4,26 @@ How to create a new release for Updaemon.
 
 ## Automated releases (tag-triggered)
 
-Pushing a `v*` tag triggers the `Release` workflow (`.github/workflows/release.yml`), which AOT-builds every project for `linux-arm64` and `osx-arm64`, then creates the GitHub release with auto-generated notes and the binaries attached. The normal flow is therefore:
+Pushing a `v*` tag triggers the `Release` workflow (`.github/workflows/release.yml`), which AOT-builds every project for `linux-arm64`, `linux-x64` and `osx-arm64`, then creates the GitHub release with auto-generated notes and the binaries attached. The normal flow is therefore:
 
 1. Bump the `<Version>` in the relevant `.csproj` file(s) (see [Step 1](#1-bump-version-numbers)).
-2. Commit and push to `master`, then push a `vX.Y.Z` tag — the workflow does the rest.
+2. Commit and push to `master`, then push a `vX.Y.Z` tag; the workflow does the rest. The tag is `v` and three numbers, matching `<Version>`: updaemon and `install.sh` ignore any other tag.
 
-The workflow does **not** bump versions or build `linux-x64`. Use the manual steps below when you need a `linux-x64` asset or want to build/upload by hand.
+Publishing a release rolls it out: every installed updaemon with self-update on switches to it at its next `updaemon update`, which the timer runs unattended. Release only what should reach every machine.
+
+The workflow does **not** bump versions. Use the manual steps below to build or upload by hand.
 
 ## Overview
 
 A release consists of AOT-compiled, self-contained binaries uploaded as GitHub release assets. Updaemon supports the following runtime identifiers (RIDs):
 
-- `linux-arm64` — Raspberry Pi, ARM Linux servers
-- `linux-x64` — x86_64 Linux servers (build-only target; release as needed)
-- `osx-arm64` — Apple Silicon macOS
+- `linux-arm64`: Raspberry Pi, ARM Linux servers
+- `linux-x64`: x86_64 Linux servers
+- `osx-arm64`: Apple Silicon macOS
 
 Each project produces one asset **per RID**. Asset filenames must include the RID suffix (e.g. `Updaemon-linux-arm64`, `Updaemon-osx-arm64`) so that `install.sh` and updaemon itself can route to the correct binary at install/update time.
 
-For every RID a release carries, it includes every project's binary. Updaemon installs its first-party plugins from its own release (`releases/download/v<version>/<Plugin>-<rid>`), so a release with `Updaemon-<rid>` but no plugin build for that RID leaves that version unable to install the plugin there. A release without `linux-x64` at all is fine: updaemon on such a machine reports that the release has no plugin built for it.
+Every release carries every project's binary for all three RIDs. Updaemon installs its first-party plugins from its own release (`releases/download/v<version>/<Plugin>-<rid>`), and self-update downloads `Updaemon-<rid>` from the latest release, so a missing build leaves the machines of that RID unable to update or to install the plugin.
 
 ## Projects and their release assets
 
@@ -141,9 +143,11 @@ gh release create vX.Y.Z \
 - macOS services use launchd plists with reverse-DNS labels (`com.updaemon.<app>`): LaunchDaemons under `/Library/LaunchDaemons/` system-wide, LaunchAgents under `~/Library/LaunchAgents/` for a user. Updaemon generates them in code.
 - Code-signing / notarization is not currently part of the release process. Unsigned binaries run on Apple Silicon without prompts when installed via `curl`/`install.sh`.
 
-## Updating installed plugins
+## How installs pick up a release
 
-Users who already have a plugin installed can update it with `updaemon dist-update`. A registry plugin is fetched from the running updaemon's release, built for the machine's RID.
+`install.sh` and self-update (the end of `updaemon update`) read the latest version from the `releases/latest` redirect, download `Updaemon-<rid>` from that release, and switch to it only if `updaemon --version` prints exactly the release's version (`1.2.0` for tag `v1.2.0`) within 10 seconds. So the tag must be `v` and three numbers, and match the project's `<Version>`.
+
+A registry plugin is reinstalled from the running updaemon's release the first time it is used after updaemon changes version, so each release must carry the plugins built for each RID it carries.
 
 ## Version history
 

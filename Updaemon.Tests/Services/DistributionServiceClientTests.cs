@@ -116,7 +116,7 @@ namespace Updaemon.Tests.Services
 
             Assert.Equal(
                 $"The plugin at /plugins/github/plugin speaks plugin protocol {reportedVersion}, but this updaemon speaks protocol {PluginProtocol.Version}. " +
-                "Reinstall the plugin with 'updaemon dist-install <name or url>'.",
+                "Reinstall the plugin with 'updaemon dist-install [--as <alias>] <plugin-name|url>'.",
                 exception.Message);
         }
 

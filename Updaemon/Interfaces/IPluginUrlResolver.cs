@@ -1,3 +1,5 @@
+using Updaemon.Configuration;
+
 namespace Updaemon.Interfaces
 {
     /// <summary>
@@ -15,7 +17,7 @@ namespace Updaemon.Interfaces
         /// release, or null when the name is not in the registry.
         /// </summary>
         /// <param name="pluginName">The plugin's registry name, e.g. "github".</param>
-        /// <param name="updaemonVersion">The updaemon release the plugin comes from: the running version, or the one self-update installs.</param>
-        string? Resolve(string pluginName, Version updaemonVersion);
+        /// <param name="updaemonVersion">The updaemon release the plugin comes from: the running version's.</param>
+        string? Resolve(string pluginName, UpdaemonVersion updaemonVersion);
     }
 }

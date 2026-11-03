@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
@@ -114,6 +115,87 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(new Version(1, 2, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
                 Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
+            }
+        }
+
+        [Fact]
+        public async Task Update_AllApps_EndsByUpdatingUpdaemon()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.Releases.Publish(UpdaemonVersion.Of(1, 1, 0));
+                h.RunTheScopesOwnUpdaemon();
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(0, exitCode);
+                Assert.Equal("Updated updaemon from 1.0.0 to 1.1.0.", h.Output.Messages[^1]);
+            }
+        }
+
+        [Fact]
+        public async Task Update_NoAppsInstalled_StillUpdatesUpdaemon()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                h.Releases.Publish(UpdaemonVersion.Of(1, 1, 0));
+                h.RunTheScopesOwnUpdaemon();
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(0, exitCode);
+                Assert.Equal("Updated updaemon from 1.0.0 to 1.1.0.", h.Output.Messages[^1]);
+            }
+        }
+
+        [Fact]
+        public async Task Update_AppsUpdateButUpdaemonDoesNot_Fails()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.RunTheScopesOwnUpdaemon();
+                h.Releases.LatestFailure = new HttpRequestException("no network");
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(new[] { "Error: could not read updaemon's latest release: no network" }, h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task Update_OneApp_LeavesUpdaemonAlone()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.Releases.Publish(UpdaemonVersion.Of(1, 1, 0));
+                h.RunTheScopesOwnUpdaemon();
+
+                await h.Update().ExecuteAsync(new[] { "byteshelf" });
+
+                Assert.DoesNotContain(h.Output.Messages, m => m.Contains("updaemon from"));
+                Assert.Empty(h.Releases.Downloads);
+            }
+        }
+
+        [Fact]
+        public async Task Update_PluginFromAnOlderReleaseCannotBeReplaced_FailsItsAppsNamingWhy()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                await h.Config.AddOrUpdatePluginAsync(PluginRecords.Installed("github", (await h.Config.GetPluginAsync("github"))!.Path, UpdaemonVersion.Of(0, 9, 0)));
+                h.PluginDownloader.ExceptionToThrow = new HttpRequestException("offline");
+                h.Client.Downloads.Clear();
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(new[] { "Error: byteshelf: updating the 'github' plugin failed: offline" }, h.Output.Errors);
+                Assert.Empty(h.Client.Downloads);
             }
         }
 

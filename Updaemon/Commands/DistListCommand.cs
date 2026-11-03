@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -12,12 +13,14 @@ namespace Updaemon.Commands
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
         private readonly IDistributionServiceClient _distributionClient;
+        private readonly UpdaemonVersion _updaemonVersion;
 
-        public DistListCommand(IConfigManager configManager, IOutputWriter outputWriter, IDistributionServiceClient distributionClient)
+        public DistListCommand(IConfigManager configManager, IOutputWriter outputWriter, IDistributionServiceClient distributionClient, UpdaemonVersion updaemonVersion)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
             _distributionClient = distributionClient;
+            _updaemonVersion = updaemonVersion;
         }
 
         public string Name => "dist-list";
@@ -46,12 +49,16 @@ namespace Updaemon.Commands
             {
                 try
                 {
+                    // An out-of-line plugin is not run; the next install or update replaces it.
+                    if (plugin.Value.Source is PluginSource.Registry registry && registry.IsOutOfLineWith(_updaemonVersion))
+                    {
+                        WriteUnreadable(plugin.Value, $"from updaemon {registry.Release}'s release; the next install or update replaces it with this version's build");
+                        continue;
+                    }
+
                     if (!File.Exists(plugin.Value.Path))
                     {
-                        _outputWriter.WriteLine($"  Alias: {plugin.Value.Alias}");
-                        _outputWriter.WriteLine($"  Path: {plugin.Value.Path}");
-                        _outputWriter.WriteLine($"  Status: Plugin file not found");
-                        _outputWriter.WriteLine("");
+                        WriteUnreadable(plugin.Value, "Plugin file not found");
                         continue;
                     }
 
@@ -83,14 +90,20 @@ namespace Updaemon.Commands
                 }
                 catch (Exception ex)
                 {
-                    _outputWriter.WriteLine($"  Alias: {plugin.Value.Alias}");
-                    _outputWriter.WriteLine($"  Path: {plugin.Value.Path}");
-                    _outputWriter.WriteLine($"  Status: Error retrieving metadata - {ex.Message}");
-                    _outputWriter.WriteLine("");
+                    WriteUnreadable(plugin.Value, $"Error retrieving metadata - {ex.Message}");
                 }
             }
 
             return 0;
+        }
+
+        /// <summary>A plugin whose metadata is not shown, and why.</summary>
+        private void WriteUnreadable(InstalledPluginInfo plugin, string status)
+        {
+            _outputWriter.WriteLine($"  Alias: {plugin.Alias}");
+            _outputWriter.WriteLine($"  Path: {plugin.Path}");
+            _outputWriter.WriteLine($"  Status: {status}");
+            _outputWriter.WriteLine("");
         }
 
         public string GetDetailedHelp()

@@ -1,4 +1,5 @@
 using Updaemon.Commands;
+using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
@@ -7,6 +8,24 @@ namespace Updaemon.Tests.Commands
 {
     public class DistListCommandTests
     {
+        [Fact]
+        public async Task ExecuteAsync_RegistryPluginFromAnotherRelease_IsListedWithoutRunningIt()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                string path = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", path, UpdaemonVersion.Of(0, 9, 0)));
+                MockOutputWriter output = new MockOutputWriter();
+                MockDistributionServiceClient client = new MockDistributionServiceClient();
+
+                await new DistListCommand(configManager, output, client, AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
+
+                Assert.Empty(client.MethodCalls);
+                Assert.Contains("  Status: from updaemon 0.9.0's release; the next install or update replaces it with this version's build", output.Messages);
+            }
+        }
+
         [Fact]
         public async Task ExecuteAsync_ListsAllInstalledPlugins_InvokesClientForMetadata()
         {
@@ -22,7 +41,7 @@ namespace Updaemon.Tests.Commands
                 MockOutputWriter output = new MockOutputWriter();
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
 
-                DistListCommand command = new DistListCommand(configManager, output, client);
+                DistListCommand command = new DistListCommand(configManager, output, client, AppHarness.RunningVersion);
                 int exitCode = await command.ExecuteAsync(Array.Empty<string>());
                 Assert.Equal(0, exitCode);
 
@@ -42,7 +61,7 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter output = new MockOutputWriter();
             MockDistributionServiceClient client = new MockDistributionServiceClient();
 
-            DistListCommand command = new DistListCommand(configManager, output, client);
+            DistListCommand command = new DistListCommand(configManager, output, client, AppHarness.RunningVersion);
             int exitCode = await command.ExecuteAsync(Array.Empty<string>());
             Assert.Equal(0, exitCode);
 
@@ -67,7 +86,7 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
                 client.ConnectAsyncThrowsForPluginPaths.Add(pluginPath);
 
-                DistListCommand command = new DistListCommand(configManager, output, client);
+                DistListCommand command = new DistListCommand(configManager, output, client, AppHarness.RunningVersion);
                 int exitCode = await command.ExecuteAsync(Array.Empty<string>());
                 Assert.Equal(0, exitCode);
 

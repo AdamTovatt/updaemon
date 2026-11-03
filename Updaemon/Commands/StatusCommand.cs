@@ -57,8 +57,10 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            _outputWriter.WriteLine($"updaemon {_updaemonVersion.Value.ToString(3)}, {_scope.Name} scope");
+            _outputWriter.WriteLine($"updaemon {_updaemonVersion}, {_scope.Name} scope");
             _outputWriter.WriteLine($"Update timer: {await DescribeTimerAsync(cancellationToken)}");
+            UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
+            _outputWriter.WriteLine($"Self-update: {(config.SelfUpdate ? "on" : "off")}");
             _outputWriter.WriteLine(string.Empty);
 
             if (apps.Count == 0)

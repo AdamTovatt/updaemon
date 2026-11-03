@@ -31,9 +31,9 @@ namespace Updaemon.Services
             _pluginsDirectory = scope.PluginsDirectory;
         }
 
-        public async Task<PluginInstallResult> InstallAsync(PluginSource source, string? alias, Version updaemonVersion, CancellationToken cancellationToken = default)
+        public async Task<PluginInstallResult> InstallAsync(PluginSource source, string? alias, CancellationToken cancellationToken = default)
         {
-            string downloadUrl = ResolveDownloadUrl(source, updaemonVersion);
+            string downloadUrl = ResolveDownloadUrl(source);
 
             PluginDownloadResult download;
             try
@@ -93,7 +93,7 @@ namespace Updaemon.Services
             }
         }
 
-        private string ResolveDownloadUrl(PluginSource source, Version updaemonVersion)
+        private string ResolveDownloadUrl(PluginSource source)
         {
             switch (source)
             {
@@ -101,7 +101,7 @@ namespace Updaemon.Services
                     return url.Address;
 
                 case PluginSource.Registry registry:
-                    string? resolved = _pluginUrlResolver.Resolve(registry.Name, updaemonVersion);
+                    string? resolved = _pluginUrlResolver.Resolve(registry.Name, registry.Release);
                     if (resolved == null)
                     {
                         throw new InvalidOperationException(
