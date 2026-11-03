@@ -1,5 +1,6 @@
 using Updaemon.Commands;
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
@@ -27,9 +28,9 @@ namespace Updaemon.Tests.Commands
                     ["github"] = "Updaemon.GithubDistributionService",
                     ["byteshelf"] = "Updaemon.Distribution.ByteShelfDistribution",
                 },
-                "linux-arm64");
-            PluginInstaller installer = new PluginInstaller(resolver, pluginDownloader, configManager, tempHelper.CreateTempDirectory("plugins"));
-            return new DistUpdateCommand(configManager, outputWriter, installer, pluginDownloader, updaemonVersion ?? new Version(1, 0, 0));
+                new HostPlatform(false, "linux-arm64"));
+            PluginInstaller installer = new PluginInstaller(resolver, pluginDownloader, configManager, TestScope.Create(tempHelper.TempDirectory));
+            return new DistUpdateCommand(configManager, outputWriter, installer, pluginDownloader, new UpdaemonVersion(updaemonVersion ?? new Version(1, 0, 0)));
         }
 
         [Fact]

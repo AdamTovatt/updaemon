@@ -10,12 +10,14 @@ namespace Updaemon.Commands
     {
         private readonly ICommandFactory _commandFactory;
         private readonly IOutputWriter _outputWriter;
+        private readonly IRunLock _runLock;
         private readonly string _version;
 
-        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter)
+        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock)
         {
             _commandFactory = commandFactory;
             _outputWriter = outputWriter;
+            _runLock = runLock;
 
             // Get version from assembly (AOT-friendly)
             Assembly assembly = Assembly.GetExecutingAssembly();
@@ -64,7 +66,15 @@ namespace Updaemon.Commands
             try
             {
                 ICommand command = _commandFactory.GetCommand(commandName);
-                return await command.ExecuteAsync(args[1..], cancellationToken);
+                if (!command.ChangesState)
+                {
+                    return await command.ExecuteAsync(args[1..], cancellationToken);
+                }
+
+                using (await _runLock.AcquireAsync(cancellationToken))
+                {
+                    return await command.ExecuteAsync(args[1..], cancellationToken);
+                }
             }
             catch (UnknownCommandException)
             {

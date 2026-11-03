@@ -1,0 +1,158 @@
+using System.Runtime.InteropServices;
+
+namespace Updaemon.Configuration
+{
+    /// <summary>
+    /// Every path and service-manager address updaemon uses, for one scope. The scope is decided by
+    /// who runs updaemon: root gets the system scope, anyone else gets their own user scope.
+    /// </summary>
+    public sealed record UpdaemonScope
+    {
+        private const string MacLabelPrefix = "com.updaemon.";
+
+        /// <summary>True for the machine-wide scope (run as root); false for a single user's scope.</summary>
+        public required bool IsSystem { get; init; }
+
+        public required HostPlatform Platform { get; init; }
+
+        /// <summary>Holds the config, lock, plugins, settings, secrets and data directories.</summary>
+        public required string RootDirectory { get; init; }
+
+        /// <summary>Holds one directory per app, each with its version directories and a <c>current</c> link.</summary>
+        public required string AppsDirectory { get; init; }
+
+        /// <summary>Where commands are linked so they are on PATH.</summary>
+        public required string BinDirectory { get; init; }
+
+        /// <summary>Where systemd units or launchd plists are written.</summary>
+        public required string UnitDirectory { get; init; }
+
+        /// <summary>Where launchd writes service output. Unused on Linux, where services log to the journal.</summary>
+        public required string LogDirectory { get; init; }
+
+        /// <summary>The effective user id updaemon runs as; addresses the per-user launchd domain.</summary>
+        public required uint UserId { get; init; }
+
+        public string Name => IsSystem ? "system" : "user";
+
+        public string ConfigFilePath => Path.Combine(RootDirectory, "config.json");
+
+        public string LockFilePath => Path.Combine(RootDirectory, "updaemon.lock");
+
+        public string PluginsDirectory => Path.Combine(RootDirectory, "plugins");
+
+        public string UpdaemonCommandPath => Path.Combine(BinDirectory, "updaemon");
+
+        /// <summary>The directories a state-changing command writes to.</summary>
+        public IReadOnlyList<string> WritableDirectories => new[] { RootDirectory, AppsDirectory, BinDirectory, UnitDirectory };
+
+        public string SecretsDirectory => Path.Combine(RootDirectory, "secrets");
+
+        public string GetAppDirectory(string appName) => Path.Combine(AppsDirectory, appName);
+
+        /// <summary>The generated environment file with the app's non-secret settings.</summary>
+        public string GetSettingsFilePath(string appName) => Path.Combine(RootDirectory, "settings", appName + ".env");
+
+        /// <summary>The app's secret settings, readable by the scope owner only.</summary>
+        public string GetSecretsFilePath(string appName) => Path.Combine(SecretsDirectory, appName + ".env");
+
+        /// <summary>The app's own data, kept across updates and rollbacks.</summary>
+        public string GetDataDirectory(string appName) => Path.Combine(RootDirectory, "data", appName);
+
+        /// <summary>The generated command wrapper on PATH.</summary>
+        public string GetCommandPath(string commandName) => Path.Combine(BinDirectory, commandName);
+
+        public string GetCurrentLinkPath(string appName) => Path.Combine(AppsDirectory, appName, "current");
+
+        /// <summary>The systemd unit name or launchd label of an app's service.</summary>
+        public string GetServiceLabel(string appName) => Platform.IsMacOS ? MacLabelPrefix + appName : appName;
+
+        public string GetUnitFilePath(string appName) =>
+            Path.Combine(UnitDirectory, GetServiceLabel(appName) + (Platform.IsMacOS ? ".plist" : ".service"));
+
+        /// <summary>
+        /// The systemd unit name (without suffix) or launchd label of the update timer. No app label can
+        /// equal it: the app name "updaemon" is reserved, and on macOS every app label has a suffix after the prefix.
+        /// </summary>
+        public string TimerLabel => Platform.IsMacOS ? MacLabelPrefix.TrimEnd('.') : "updaemon";
+
+        /// <summary>The launchd domain services are bootstrapped into.</summary>
+        public string LaunchdDomain => IsSystem ? "system" : $"gui/{UserId}";
+
+        /// <summary>Arguments that address this scope's systemd instance, put before every systemctl or journalctl verb.</summary>
+        public string[] SystemdScopeArguments => IsSystem ? Array.Empty<string>() : new[] { "--user" };
+
+        public static UpdaemonScope Detect()
+        {
+            uint userId = NativeMethods.geteuid();
+            if (userId == 0)
+            {
+                return ForSystem(HostPlatform.Current);
+            }
+
+            string home = Environment.GetEnvironmentVariable("HOME")
+                ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            return ForUser(
+                HostPlatform.Current,
+                userId,
+                home,
+                Environment.GetEnvironmentVariable("XDG_DATA_HOME"),
+                Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"));
+        }
+
+        public static UpdaemonScope ForSystem(HostPlatform platform)
+        {
+            return new UpdaemonScope
+            {
+                IsSystem = true,
+                Platform = platform,
+                RootDirectory = platform.IsMacOS ? "/usr/local/var/updaemon" : "/var/lib/updaemon",
+                AppsDirectory = platform.IsMacOS ? "/usr/local/opt" : "/opt",
+                BinDirectory = "/usr/local/bin",
+                UnitDirectory = platform.IsMacOS ? "/Library/LaunchDaemons" : "/etc/systemd/system",
+                LogDirectory = "/var/log/updaemon",
+                UserId = 0,
+            };
+        }
+
+        public static UpdaemonScope ForUser(HostPlatform platform, uint userId, string home, string? xdgDataHome, string? xdgConfigHome)
+        {
+            string root;
+            string unitDirectory;
+            if (platform.IsMacOS)
+            {
+                root = Path.Combine(home, "Library", "Application Support", "updaemon");
+                unitDirectory = Path.Combine(home, "Library", "LaunchAgents");
+            }
+            else
+            {
+                // XDG says a relative value is invalid and must be ignored.
+                string dataHome = IsAbsolute(xdgDataHome) ? xdgDataHome! : Path.Combine(home, ".local", "share");
+                string configHome = IsAbsolute(xdgConfigHome) ? xdgConfigHome! : Path.Combine(home, ".config");
+                root = Path.Combine(dataHome, "updaemon");
+                unitDirectory = Path.Combine(configHome, "systemd", "user");
+            }
+
+            return new UpdaemonScope
+            {
+                IsSystem = false,
+                Platform = platform,
+                RootDirectory = root,
+                AppsDirectory = Path.Combine(root, "apps"),
+                BinDirectory = Path.Combine(home, ".local", "bin"),
+                UnitDirectory = unitDirectory,
+                LogDirectory = Path.Combine(home, "Library", "Logs", "updaemon"),
+                UserId = userId,
+            };
+        }
+
+        private static bool IsAbsolute(string? path) => !string.IsNullOrEmpty(path) && Path.IsPathRooted(path);
+
+        private static class NativeMethods
+        {
+            [DllImport("libc", SetLastError = false)]
+            public static extern uint geteuid();
+        }
+    }
+}

@@ -1,5 +1,5 @@
+using Updaemon.Interfaces;
 using Updaemon.Models;
-using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -7,383 +7,213 @@ namespace Updaemon.Tests.Services
 {
     public class ServiceDeployerTests
     {
+        private static InstalledApp App(string name = "byteshelf") => new InstalledApp { Name = name, Plugin = "github", Remote = "owner/byteshelf" };
+
         [Fact]
-        public async Task DeployVersionAsync_HappyPath_DownloadsAndCreatesSymlink()
+        public async Task StageAsync_InvalidReleaseManifest_ThrowsAndDeletesTheDownload()
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
+                h.AddRelease("owner/byteshelf", "1.0.0", """{ "executable": "bin/byteshelf" }""");
 
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                MockExecutableDetector executableDetector = new MockExecutableDetector();
-                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                await Assert.ThrowsAsync<ManifestException>(() => h.Deployer.StageAsync(App(), new Version(1, 0, 0), h.Client));
 
-                RegisteredService service = new RegisteredService
-                {
-                    LocalName = "my-api",
-                    RemoteName = "MyApi",
-                    DistributionPluginAlias = "github",
-                };
-
-                Version version = new Version(1, 0, 0);
-                string versionDir = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0");
-                string execPath = Path.Combine(versionDir, "my-api");
-                executableDetector.SetExecutableResult(versionDir, "my-api", execPath);
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, executableDetector, filePermissionManager, outputWriter, serviceBaseDirectory);
-
-                DeployResult? result = await deployer.DeployVersionAsync(service, version, distributionClient);
-
-                Assert.NotNull(result);
-                Assert.Equal(versionDir, result.VersionDirectory);
-                Assert.Equal(execPath, result.ExecutablePath);
-                Assert.Equal(Path.Combine(serviceBaseDirectory, "my-api", "current"), result.SymlinkPath);
-
-                // Verify download was called
-                Assert.Single(distributionClient.Downloads);
-                Assert.Equal("MyApi", distributionClient.Downloads[0].ServiceName);
-                Assert.Equal(version, distributionClient.Downloads[0].Version);
-
-                // Verify permissions were set
-                Assert.Contains(execPath, filePermissionManager.ExecutablePermissionsCalls);
-                Assert.Contains(Path.Combine(serviceBaseDirectory, "my-api"), filePermissionManager.DirectoryPermissionsCalls);
-
-                // Verify symlink was created
-                string expectedSymlinkCall = $"CreateOrUpdateSymlinkAsync:{result.SymlinkPath}:{versionDir}";
-                Assert.Contains(symlinkManager.MethodCalls, c => c == expectedSymlinkCall);
+                Assert.False(Directory.Exists(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "1.0.0")));
             }
         }
 
         [Fact]
-        public async Task DeployVersionAsync_ExecutableNotFound_ReturnsNull()
+        public async Task StageAsync_LeftoverDirectoryOfThatVersion_IsReplaced()
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
+                string leftover = Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "1.0.0", "partial");
+                Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+                File.WriteAllText(leftover, "from an interrupted attempt");
 
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                MockExecutableDetector executableDetector = new MockExecutableDetector();
-                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                StagedVersion staged = await h.Deployer.StageAsync(App(), new Version(1, 0, 0), h.Client);
 
-                RegisteredService service = new RegisteredService
-                {
-                    LocalName = "my-api",
-                    RemoteName = "MyApi",
-                    DistributionPluginAlias = "github",
-                };
-                // Don't configure executable detector — returns null
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, executableDetector, filePermissionManager, outputWriter, serviceBaseDirectory);
-
-                DeployResult? result = await deployer.DeployVersionAsync(service, new Version(1, 0, 0), distributionClient);
-
-                Assert.Null(result);
-                Assert.Contains(outputWriter.Errors, e => e.Contains("Could not find executable"));
-                // Should not create symlink
-                Assert.DoesNotContain(symlinkManager.MethodCalls, c => c.StartsWith("CreateOrUpdateSymlinkAsync"));
+                Assert.False(File.Exists(leftover));
+                Assert.True(File.Exists(Path.Combine(staged.Directory, "bin", "byteshelf")));
             }
         }
 
         [Fact]
-        public async Task DeployVersionAsync_UsesCustomExecutableName()
+        public async Task StageAsync_TheCurrentVersion_IsRefused()
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
+                await h.InstallByteShelfAsync();
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
 
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                MockExecutableDetector executableDetector = new MockExecutableDetector();
-                MockFilePermissionManager filePermissionManager = new MockFilePermissionManager();
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.StageAsync(app, new Version(1, 0, 0), h.Client));
 
-                RegisteredService service = new RegisteredService
-                {
-                    LocalName = "my-api",
-                    RemoteName = "MyApi",
-                    ExecutableName = "CustomExec",
-                    DistributionPluginAlias = "github",
-                };
-
-                Version version = new Version(1, 0, 0);
-                string versionDir = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0");
-                string execPath = Path.Combine(versionDir, "CustomExec");
-                executableDetector.SetExecutableResult(versionDir, "CustomExec", execPath);
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, executableDetector, filePermissionManager, outputWriter, serviceBaseDirectory);
-
-                DeployResult? result = await deployer.DeployVersionAsync(service, version, distributionClient);
-
-                Assert.NotNull(result);
-                Assert.Equal(execPath, result.ExecutablePath);
+                Assert.Contains("already the current version", ex.Message);
+                Assert.True(File.Exists(Path.Combine(h.Scope.GetCurrentLinkPath("byteshelf"), "bin", "byteshelf")));
             }
         }
 
         [Fact]
-        public void GetSymlinkPath_ReturnsExpectedPath()
+        public async Task ActivateAsync_ManifestRenamesCommandAndDropsService_RemovesTheOldWrapperAndUnit()
         {
-            ServiceDeployer deployer = new ServiceDeployer(
-                new MockSymlinkManager(), new MockExecutableDetector(),
-                new MockFilePermissionManager(), new MockOutputWriter(), "/opt");
-
-            Assert.Equal("/opt/my-api/current", deployer.GetSymlinkPath("my-api"));
-        }
-
-        [Fact]
-        public async Task ReadCurrentTargetAsync_WhenInitialized_ReturnsTarget()
-        {
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-            symlinkManager.Symlinks["/opt/my-api/current"] = "/opt/my-api/1.0.0";
-
-            ServiceDeployer deployer = new ServiceDeployer(
-                symlinkManager, new MockExecutableDetector(),
-                new MockFilePermissionManager(), new MockOutputWriter(), "/opt");
-
-            string? target = await deployer.ReadCurrentTargetAsync("my-api");
-
-            Assert.Equal("/opt/my-api/1.0.0", target);
-        }
-
-        [Fact]
-        public async Task ReadCurrentTargetAsync_WhenNotInitialized_ReturnsNull()
-        {
-            MockSymlinkManager symlinkManager = new MockSymlinkManager();
-
-            ServiceDeployer deployer = new ServiceDeployer(
-                symlinkManager, new MockExecutableDetector(),
-                new MockFilePermissionManager(), new MockOutputWriter(), "/opt");
-
-            string? target = await deployer.ReadCurrentTargetAsync("my-api");
-
-            Assert.Null(target);
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_RemovesVersionsBeyondRetentionCount()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/byteshelf", "command": "shelf" }""");
+                h.ServiceManager.MethodCalls.Clear();
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
 
-                // Create 7 version directories
-                string[] versions = { "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0" };
-                foreach (string v in versions)
+                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+                await h.Deployer.ActivateAsync(app, staged);
+
+                Assert.False(File.Exists(h.Scope.GetCommandPath("byteshelf")));
+                Assert.True(File.Exists(h.Scope.GetCommandPath("shelf")));
+                Assert.False(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+                int stop = h.ServiceManager.MethodCalls.IndexOf(MockServiceManager.Call(nameof(IServiceManager.StopServiceAsync), "byteshelf"));
+                int disable = h.ServiceManager.MethodCalls.IndexOf(MockServiceManager.Call(nameof(IServiceManager.DisableServiceAsync), "byteshelf"));
+                Assert.InRange(stop, 0, disable - 1);
+            }
+        }
+
+        [Fact]
+        public async Task ActivateAsync_CommandNameTakenByAnotherFile_ThrowsAndKeepsCurrentVersion()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                File.WriteAllText(h.Scope.GetCommandPath("shelf"), "#!/bin/sh\necho mine\n");
+                h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/byteshelf", "command": "shelf" }""");
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged));
+
+                Assert.Contains("did not create it", ex.Message);
+                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal("#!/bin/sh\necho mine\n", File.ReadAllText(h.Scope.GetCommandPath("shelf")));
+            }
+        }
+
+        [Fact]
+        public async Task ActivateAsync_CommandNameOwnedByAnotherApp_Throws()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/other", "1.0.0", """{ "executable": "bin/byteshelf", "command": "byteshelf" }""");
+                InstalledApp other = new InstalledApp { Name = "other", Plugin = "github", Remote = "owner/other" };
+                StagedVersion staged = await h.Deployer.StageAsync(other, new Version(1, 0, 0), h.Client);
+
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(other, staged));
+
+                Assert.Equal("The command 'byteshelf' already belongs to the app 'byteshelf'.", ex.Message);
+            }
+        }
+
+        [Fact]
+        public async Task ActivateAsync_ExecutableMissingFromTheRelease_ThrowsAndKeepsCurrentVersion()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/renamed", "service": {} }""");
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged));
+
+                Assert.Contains("'bin/renamed'", ex.Message);
+                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+            }
+        }
+
+        [Fact]
+        public async Task ActivateAsync_GeneratingFilesFails_SwitchesBackToThePreviousVersion()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/byteshelf", "1.0.0", """{ "executable": "bin/byteshelf", "command": "byteshelf" }""");
+                await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" });
+                h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/byteshelf", "command": "byteshelf", "service": {} }""");
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+                StagedVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
+                // A file where the unit directory should be: writing the new service unit fails.
+                File.WriteAllText(h.Scope.UnitDirectory, "");
+
+                await Assert.ThrowsAnyAsync<IOException>(() => h.Deployer.ActivateAsync(app, staged));
+
+                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+            }
+        }
+
+        [Fact]
+        public async Task ApplySettingsAsync_ServiceStopped_DoesNotStartIt()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.ServiceManager.ServiceRunningStates["byteshelf"] = false;
+                h.ServiceManager.MethodCalls.Clear();
+
+                await h.Deployer.ApplySettingsAsync((await h.Config.GetAppAsync("byteshelf"))!);
+
+                Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+                Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task RestartAsync_ServiceStopped_StartsIt()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.Deployer.RestartAsync("byteshelf");
+
+                Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+                Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+            }
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task RemoveAsync_DeletesEverything_KeepsDataUnlessPurged(bool purge)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+
+                await h.Deployer.RemoveAsync(app, purge);
+
+                Assert.False(Directory.Exists(h.Scope.GetAppDirectory("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetCommandPath("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetSettingsFilePath("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetSecretsFilePath("byteshelf")));
+                Assert.Equal(!purge, Directory.Exists(h.Scope.GetDataDirectory("byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task PruneOldVersionsAsync_KeepsNewestAndCurrent_IgnoresOtherDirectories()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                string appDirectory = h.Scope.GetAppDirectory("my-api");
+                foreach (string version in new[] { "1.0.0", "1.1.0", "1.2.0", "1.3.0", "not-a-version" })
                 {
-                    Directory.CreateDirectory(Path.Combine(serviceDir, v));
+                    Directory.CreateDirectory(Path.Combine(appDirectory, version));
                 }
 
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.6.0");
+                File.CreateSymbolicLink(h.Scope.GetCurrentLinkPath("my-api"), Path.Combine(appDirectory, "1.0.0"));
 
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
+                await h.Deployer.PruneOldVersionsAsync("my-api", 2);
 
-                await deployer.PruneOldVersionsAsync("my-api", 3);
-
-                // Should keep top 3 (1.6.0, 1.5.0, 1.4.0) and delete the rest
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.6.0")));
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.5.0")));
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.4.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.3.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.2.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
-            }
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_PreservesCurrentSymlinkTarget()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
-
-                string[] versions = { "1.0.0", "1.1.0", "1.2.0", "1.3.0" };
-                foreach (string v in versions)
-                {
-                    Directory.CreateDirectory(Path.Combine(serviceDir, v));
-                }
-
-                // Symlink points to an old version outside the retention window
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.0.0");
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
-
-                await deployer.PruneOldVersionsAsync("my-api", 2);
-
-                // Top 2 by version: 1.3.0, 1.2.0 — kept by retention
-                // 1.0.0 — kept because it's the current symlink target
-                // 1.1.0 — deleted
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.3.0")));
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.2.0")));
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
-            }
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_NoVersionDirectories_DoesNothing()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
-                Directory.CreateDirectory(serviceDir);
-
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
-
-                await deployer.PruneOldVersionsAsync("my-api", 5);
-
-                // Should not throw, directory still exists
-                Assert.True(Directory.Exists(serviceDir));
-            }
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_SkipsNonVersionDirectories()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
-
-                Directory.CreateDirectory(Path.Combine(serviceDir, "1.0.0"));
-                Directory.CreateDirectory(Path.Combine(serviceDir, "1.1.0"));
-                Directory.CreateDirectory(Path.Combine(serviceDir, "logs"));
-                Directory.CreateDirectory(Path.Combine(serviceDir, "data"));
-
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.1.0");
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
-
-                await deployer.PruneOldVersionsAsync("my-api", 1);
-
-                // 1.1.0 kept (in retention window), 1.0.0 deleted
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
-                // Non-version directories untouched
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "logs")));
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "data")));
-            }
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_FewerVersionsThanRetentionCount_DeletesNothing()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
-
-                Directory.CreateDirectory(Path.Combine(serviceDir, "1.0.0"));
-                Directory.CreateDirectory(Path.Combine(serviceDir, "1.1.0"));
-
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.1.0");
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
-
-                await deployer.PruneOldVersionsAsync("my-api", 5);
-
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
-            }
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_RetentionCountZero_ClampsToOne()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-                string serviceDir = Path.Combine(serviceBaseDirectory, "my-api");
-
-                Directory.CreateDirectory(Path.Combine(serviceDir, "1.0.0"));
-                Directory.CreateDirectory(Path.Combine(serviceDir, "1.1.0"));
-                Directory.CreateDirectory(Path.Combine(serviceDir, "1.2.0"));
-
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-                symlinkManager.Symlinks[Path.Combine(serviceDir, "current")] = Path.Combine(serviceDir, "1.2.0");
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
-
-                await deployer.PruneOldVersionsAsync("my-api", 0);
-
-                // Clamped to 1, so keeps top 1 (1.2.0) and deletes the rest
-                Assert.True(Directory.Exists(Path.Combine(serviceDir, "1.2.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.1.0")));
-                Assert.False(Directory.Exists(Path.Combine(serviceDir, "1.0.0")));
-            }
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_ServiceDirectoryDoesNotExist_DoesNothing()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
-
-                // Should not throw even though /opt/nonexistent doesn't exist
-                await deployer.PruneOldVersionsAsync("nonexistent", 5);
-            }
-        }
-
-        [Fact]
-        public async Task CleanupDeployAsync_RemovesVersionDirectory()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                string serviceBaseDirectory = tempHelper.TempDirectory;
-                string versionDir = Path.Combine(serviceBaseDirectory, "my-api", "1.0.0");
-                Directory.CreateDirectory(versionDir);
-                File.WriteAllText(Path.Combine(versionDir, "dummy"), "test");
-
-                MockSymlinkManager symlinkManager = new MockSymlinkManager();
-
-                ServiceDeployer deployer = new ServiceDeployer(
-                    symlinkManager, new MockExecutableDetector(),
-                    new MockFilePermissionManager(), new MockOutputWriter(), serviceBaseDirectory);
-
-                DeployResult result = new DeployResult
-                {
-                    VersionDirectory = versionDir,
-                    ExecutablePath = Path.Combine(versionDir, "my-api"),
-                    SymlinkPath = Path.Combine(serviceBaseDirectory, "my-api", "current"),
-                };
-
-                await deployer.CleanupDeployAsync(result);
-
-                Assert.False(Directory.Exists(versionDir));
+                string[] remaining = Directory.GetDirectories(appDirectory).Select(Path.GetFileName).Order().ToArray()!;
+                Assert.Equal(new[] { "1.0.0", "1.2.0", "1.3.0", "current", "not-a-version" }, remaining);
             }
         }
     }

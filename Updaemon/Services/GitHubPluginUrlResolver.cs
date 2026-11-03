@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Serialization;
 
@@ -20,12 +21,20 @@ namespace Updaemon.Services
         private readonly IReadOnlyDictionary<string, string> _assetBaseNames;
         private readonly string _runtimeIdentifier;
 
-        /// <param name="assetBaseNames">Plugin name to asset base name, as in PluginRegistry.json.</param>
-        /// <param name="runtimeIdentifier">This machine's runtime identifier, e.g. "linux-arm64".</param>
-        public GitHubPluginUrlResolver(IReadOnlyDictionary<string, string> assetBaseNames, string runtimeIdentifier)
+        /// <summary>
+        /// Resolves against the registry compiled into this build.
+        /// </summary>
+        public GitHubPluginUrlResolver(HostPlatform platform)
+            : this(LoadEmbeddedRegistry(), platform)
+        {
+        }
+
+        /// <param name="assetBaseNames">Plugin name to asset base name, as in PluginAssets.json.</param>
+        /// <param name="platform">This machine; plugins are resolved to its runtime identifier's build.</param>
+        public GitHubPluginUrlResolver(IReadOnlyDictionary<string, string> assetBaseNames, HostPlatform platform)
         {
             _assetBaseNames = assetBaseNames;
-            _runtimeIdentifier = runtimeIdentifier;
+            _runtimeIdentifier = platform.RuntimeIdentifier;
         }
 
         public IReadOnlyCollection<string> PluginNames => _assetBaseNames.Keys.ToList();

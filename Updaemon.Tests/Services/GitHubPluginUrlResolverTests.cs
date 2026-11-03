@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Services;
 
 namespace Updaemon.Tests.Services
@@ -12,7 +13,7 @@ namespace Updaemon.Tests.Services
         {
             GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(
                 new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" },
-                "linux-x64");
+                new HostPlatform(false, "linux-x64"));
 
             Assert.Equal(expectedUrl, resolver.Resolve(pluginName, Version.Parse(updaemonVersion)));
         }

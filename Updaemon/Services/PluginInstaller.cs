@@ -22,21 +22,13 @@ namespace Updaemon.Services
         public PluginInstaller(
             IPluginUrlResolver pluginUrlResolver,
             IPluginDownloader pluginDownloader,
-            IConfigManager configManager)
-            : this(pluginUrlResolver, pluginDownloader, configManager, Path.Combine(PlatformPaths.ConfigDirectory, "plugins"))
-        {
-        }
-
-        public PluginInstaller(
-            IPluginUrlResolver pluginUrlResolver,
-            IPluginDownloader pluginDownloader,
             IConfigManager configManager,
-            string pluginsDirectory)
+            UpdaemonScope scope)
         {
             _pluginUrlResolver = pluginUrlResolver;
             _pluginDownloader = pluginDownloader;
             _configManager = configManager;
-            _pluginsDirectory = pluginsDirectory;
+            _pluginsDirectory = scope.PluginsDirectory;
         }
 
         public async Task<PluginInstallResult> InstallAsync(PluginSource source, string? alias, Version updaemonVersion, CancellationToken cancellationToken = default)

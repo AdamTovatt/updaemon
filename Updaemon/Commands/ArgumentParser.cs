@@ -1,129 +1,103 @@
-using Updaemon.Interfaces;
-
 namespace Updaemon.Commands
 {
     /// <summary>
-    /// Helper for parsing command-line arguments.
+    /// Parses a command's arguments. A <c>--name</c> argument takes the next argument as its value
+    /// unless it is one of the boolean flags given to the constructor. Everything after a bare
+    /// <c>--</c> is taken literally, as <see cref="Rest"/>.
     /// </summary>
     public class ArgumentParser
     {
-        private readonly string[] _args;
-        private readonly IOutputWriter _outputWriter;
+        private const string EndOfOptions = "--";
 
-        public ArgumentParser(string[] args, IOutputWriter outputWriter)
+        private readonly string[] _args;
+        private readonly HashSet<string> _booleanFlags;
+
+        public ArgumentParser(string[] args, params string[] booleanFlags)
         {
-            _args = args;
-            _outputWriter = outputWriter;
+            int end = Array.IndexOf(args, EndOfOptions);
+            _args = end >= 0 ? args[..end] : args;
+            Rest = end >= 0 ? args[(end + 1)..] : null;
+            _booleanFlags = new HashSet<string>(booleanFlags, StringComparer.Ordinal);
         }
 
+        /// <summary>The arguments after <c>--</c>; null when there is no <c>--</c>.</summary>
+        public IReadOnlyList<string>? Rest { get; }
+
         /// <summary>
-        /// Gets a positional argument at the specified index.
+        /// Arguments before <c>--</c> that are neither flags nor flag values.
         /// </summary>
+        public IReadOnlyList<string> Positionals
+        {
+            get
+            {
+                List<string> positionals = new List<string>();
+                for (int i = 0; i < _args.Length; i++)
+                {
+                    string arg = _args[i];
+                    if (IsFlag(arg))
+                    {
+                        if (!_booleanFlags.Contains(arg))
+                        {
+                            i++; // skip the flag's value
+                        }
+
+                        continue;
+                    }
+
+                    positionals.Add(arg);
+                }
+
+                return positionals;
+            }
+        }
+
         public string? GetPositional(int index)
         {
-            return index < _args.Length ? _args[index] : null;
-        }
-
-        /// <summary>
-        /// Gets a required positional argument or returns error code.
-        /// </summary>
-        public bool TryGetRequiredPositional(int index, string argName, out string value, out int errorCode)
-        {
-            value = string.Empty;
-            errorCode = 0;
-
-            if (index >= _args.Length)
-            {
-                _outputWriter.WriteError($"Error: Missing required argument: {argName}");
-                errorCode = 1;
-                return false;
-            }
-
-            value = _args[index];
-            return true;
-        }
-
-        /// <summary>
-        /// Gets the value of a named flag (e.g., --from <value>).
-        /// </summary>
-        public string? GetFlag(string flagName)
-        {
-            for (int i = 0; i < _args.Length - 1; i++)
-            {
-                if (_args[i] == flagName)
-                {
-                    return _args[i + 1];
-                }
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Gets a required flag value or returns error code.
-        /// </summary>
-        public bool TryGetRequiredFlag(string flagName, out string value, out int errorCode)
-        {
-            value = string.Empty;
-            errorCode = 0;
-
-            string? flagValue = GetFlag(flagName);
-            if (string.IsNullOrEmpty(flagValue))
-            {
-                _outputWriter.WriteError($"Error: Missing required flag: {flagName}");
-                errorCode = 1;
-                return false;
-            }
-
-            value = flagValue;
-            return true;
+            IReadOnlyList<string> positionals = Positionals;
+            return index < positionals.Count ? positionals[index] : null;
         }
 
         /// <summary>
         /// Gets the first non-flag argument (useful for commands like dist-install).
         /// </summary>
-        public string? GetFirstNonFlag()
+        public string? GetFirstNonFlag() => GetPositional(0);
+
+        /// <summary>
+        /// Gets the value of a named flag (e.g., --from &lt;value&gt;); the first one if it is repeated.
+        /// </summary>
+        public string? GetFlag(string flagName) => GetFlagValues(flagName).FirstOrDefault();
+
+        /// <summary>
+        /// Gets every value of a flag that may be repeated (e.g., --set A=1 --set B=2).
+        /// </summary>
+        public IReadOnlyList<string> GetFlagValues(string flagName)
         {
-            for (int i = 0; i < _args.Length; i++)
+            List<string> values = new List<string>();
+            for (int i = 0; i < _args.Length - 1; i++)
             {
-                string arg = _args[i];
-                if (!arg.StartsWith("--"))
+                if (_args[i] == flagName)
                 {
-                    // Check if this is a flag value (the argument after a flag)
-                    if (i > 0 && _args[i - 1].StartsWith("--"))
-                    {
-                        continue; // This is a flag value, skip it
-                    }
-                    return arg;
+                    values.Add(_args[i + 1]);
+                    i++;
                 }
             }
-            return null;
+
+            return values;
         }
 
         /// <summary>
         /// Checks if a boolean flag is present (e.g., --force).
         /// </summary>
-        public bool HasFlag(string flagName)
-        {
-            return _args.Contains(flagName);
-        }
+        public bool HasFlag(string flagName) => _args.Contains(flagName);
 
         /// <summary>
-        /// Validates minimum argument count.
+        /// Flags given before <c>--</c> that are not in <paramref name="knownFlags"/>.
         /// </summary>
-        public bool ValidateMinimumArgs(int minimum, string usage, out int errorCode)
+        public IReadOnlyList<string> GetUnknownFlags(params string[] knownFlags)
         {
-            errorCode = 0;
-
-            if (_args.Length < minimum)
-            {
-                _outputWriter.WriteError($"Error: Insufficient arguments");
-                _outputWriter.WriteLine($"Usage: {usage}");
-                errorCode = 1;
-                return false;
-            }
-
-            return true;
+            return _args.Where(arg => IsFlag(arg) && !knownFlags.Contains(arg)).ToList();
         }
+
+        private static bool IsFlag(string arg) => arg.StartsWith("--", StringComparison.Ordinal);
     }
 }
-

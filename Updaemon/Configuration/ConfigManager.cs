@@ -1,29 +1,21 @@
 using System.Text.Json;
 using Updaemon.Interfaces;
+using Updaemon.IO;
 using Updaemon.Models;
 using Updaemon.Serialization;
 
 namespace Updaemon.Configuration
 {
     /// <summary>
-    /// Manages the updaemon configuration stored in /var/lib/updaemon/config.json
+    /// Manages the updaemon configuration stored in the scope root's config.json.
     /// </summary>
     public class ConfigManager : IConfigManager
     {
-        private const string ConfigFileName = "config.json";
-
         private readonly string _configFilePath;
-        private readonly string _configDirectory;
 
-        public ConfigManager()
-            : this(PlatformPaths.ConfigDirectory)
+        public ConfigManager(UpdaemonScope scope)
         {
-        }
-
-        public ConfigManager(string configDirectory)
-        {
-            _configDirectory = configDirectory;
-            _configFilePath = Path.Combine(_configDirectory, ConfigFileName);
+            _configFilePath = scope.ConfigFilePath;
         }
 
         public async Task<UpdaemonConfig> LoadConfigAsync(CancellationToken cancellationToken = default)
@@ -34,90 +26,78 @@ namespace Updaemon.Configuration
             }
 
             string json = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
+            CheckFormat(json);
             UpdaemonConfig? config = JsonSerializer.Deserialize(json, UpdaemonJsonContext.Default.UpdaemonConfig);
             return config ?? new UpdaemonConfig();
         }
 
+        /// <summary>
+        /// Refuses a config of another format with one clear line, before the serializer can fail on
+        /// fields that changed shape (0.x 'services', plugins without a source).
+        /// </summary>
+        private void CheckFormat(string json)
+        {
+            int? format = null;
+            using (JsonDocument document = JsonDocument.Parse(json))
+            {
+                if (document.RootElement.ValueKind == JsonValueKind.Object
+                    && document.RootElement.TryGetProperty("format", out JsonElement element)
+                    && element.TryGetInt32(out int value))
+                {
+                    format = value;
+                }
+            }
+
+            if (format == null)
+            {
+                throw new InvalidOperationException($"{_configFilePath} is from updaemon 0.x. Move it aside, then reinstall your apps with 'updaemon install'.");
+            }
+
+            if (format != UpdaemonConfig.CurrentFormat)
+            {
+                throw new InvalidOperationException($"{_configFilePath} has format {format}, which this updaemon cannot read; update updaemon.");
+            }
+        }
+
         public async Task SaveConfigAsync(UpdaemonConfig config, CancellationToken cancellationToken = default)
         {
-            Directory.CreateDirectory(_configDirectory);
             string json = JsonSerializer.Serialize(config, UpdaemonJsonContext.Default.UpdaemonConfig);
-            await File.WriteAllTextAsync(_configFilePath, json, cancellationToken);
+            await AtomicFile.WriteAsync(_configFilePath, json, AtomicFile.Readable, cancellationToken);
         }
 
-        public async Task RegisterServiceAsync(string localName, string remoteName, string distributionPluginAlias, ServiceType serviceType = ServiceType.Service, CancellationToken cancellationToken = default)
+        public async Task<InstalledApp?> GetAppAsync(string name, CancellationToken cancellationToken = default)
         {
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
+            return config.Apps.FirstOrDefault(app => app.Name == name);
+        }
 
-            RegisteredService? existing = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (existing != null)
+        public async Task<IReadOnlyList<InstalledApp>> GetAllAppsAsync(CancellationToken cancellationToken = default)
+        {
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
+            return config.Apps.AsReadOnly();
+        }
+
+        public async Task SaveAppAsync(InstalledApp app, CancellationToken cancellationToken = default)
+        {
+            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
+            int index = config.Apps.FindIndex(existing => existing.Name == app.Name);
+            if (index >= 0)
             {
-                throw new InvalidOperationException($"Service '{localName}' is already registered.");
+                config.Apps[index] = app;
             }
-
-            config.Services.Add(new RegisteredService
+            else
             {
-                LocalName = localName,
-                RemoteName = remoteName,
-                DistributionPluginAlias = distributionPluginAlias,
-                ServiceType = serviceType,
-            });
+                config.Apps.Add(app);
+            }
 
             await SaveConfigAsync(config, cancellationToken);
         }
 
-        public async Task SetRemoteNameAsync(string localName, string remoteName, CancellationToken cancellationToken = default)
+        public async Task RemoveAppAsync(string name, CancellationToken cancellationToken = default)
         {
             UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-
-            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (service == null)
-            {
-                throw new InvalidOperationException($"Service '{localName}' is not registered.");
-            }
-
-            service.RemoteName = remoteName;
+            config.Apps.RemoveAll(app => app.Name == name);
             await SaveConfigAsync(config, cancellationToken);
-        }
-
-        public async Task SetExecutableNameAsync(string localName, string? executableName, CancellationToken cancellationToken = default)
-        {
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-
-            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (service == null)
-            {
-                throw new InvalidOperationException($"Service '{localName}' is not registered.");
-            }
-
-            service.ExecutableName = executableName;
-            await SaveConfigAsync(config, cancellationToken);
-        }
-
-        public async Task SetAutoRestartAsync(string localName, bool autoRestart, CancellationToken cancellationToken = default)
-        {
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-
-            RegisteredService? service = config.Services.FirstOrDefault(s => s.LocalName == localName);
-            if (service == null)
-            {
-                throw new InvalidOperationException($"Service '{localName}' is not registered.");
-            }
-
-            service.AutoRestart = autoRestart;
-            await SaveConfigAsync(config, cancellationToken);
-        }
-
-        public async Task<RegisteredService?> GetServiceAsync(string localName, CancellationToken cancellationToken = default)
-        {
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            return config.Services.FirstOrDefault(s => s.LocalName == localName);
-        }
-
-        public async Task<IReadOnlyList<RegisteredService>> GetAllServicesAsync(CancellationToken cancellationToken = default)
-        {
-            UpdaemonConfig config = await LoadConfigAsync(cancellationToken);
-            return config.Services.AsReadOnly();
         }
 
         public async Task AddOrUpdatePluginAsync(InstalledPluginInfo pluginInfo, CancellationToken cancellationToken = default)
@@ -147,4 +127,3 @@ namespace Updaemon.Configuration
         }
     }
 }
-

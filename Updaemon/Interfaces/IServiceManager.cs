@@ -11,11 +11,9 @@ namespace Updaemon.Interfaces
         Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Stops a managed service. On systemd this is "systemctl stop" — the unit remains loaded
-        /// and enabled. On launchd this is "launchctl bootout" — the plist is unloaded as well as
-        /// the process terminated, because services with KeepAlive would otherwise be relaunched
-        /// immediately. Re-starting via <see cref="StartServiceAsync"/> works on both: the launchd
-        /// path re-bootstraps the plist transparently.
+        /// Stops a managed service. On systemd the unit stays enabled. On launchd the job is unloaded,
+        /// because with KeepAlive a killed process would be relaunched; <see cref="StartServiceAsync"/>
+        /// loads it again.
         /// </summary>
         Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default);
 
@@ -25,8 +23,8 @@ namespace Updaemon.Interfaces
         Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Enables a service to start at boot. On systemd this calls "systemctl enable";
-        /// on launchd this loads/bootstraps the plist.
+        /// Enables a service to start at boot. On systemd this calls "systemctl enable"; on launchd
+        /// it does nothing, since launchd loads every plist in the scope's directory.
         /// </summary>
         Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default);
 
@@ -41,13 +39,14 @@ namespace Updaemon.Interfaces
         Task<bool> IsServiceRunningAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Checks if a unit file for the service has been written.
+        /// Whether a service by this name exists anywhere the service manager looks, not only in this
+        /// scope's unit directory: a distro's unit (for example ssh.service), or one left by updaemon 0.x.
         /// </summary>
         Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Reloads the service manager's configuration. On systemd this is "systemctl daemon-reload";
-        /// on launchd this is a no-op (launchd reloads on each bootstrap call).
+        /// on launchd it does nothing, since every start and restart reloads the plist.
         /// </summary>
         Task DaemonReloadAsync(CancellationToken cancellationToken = default);
     }

@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
@@ -14,8 +15,16 @@ namespace Updaemon.Tests.Services
         {
             return new GitHubPluginUrlResolver(
                 new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" },
-                "linux-arm64");
+                new HostPlatform(false, "linux-arm64"));
         }
+
+        private static PluginInstaller Installer(TempFileHelper tempHelper, MockPluginDownloader downloader, MockConfigManager configManager)
+        {
+            return new PluginInstaller(Resolver(), downloader, configManager, TestScope.Create(tempHelper.TempDirectory));
+        }
+
+        // Where TestScope puts the plugins directory, relative to the temp root.
+        private const string PluginsRelativePath = "root/plugins";
 
         [Theory]
         [InlineData(null, "github")]
@@ -26,8 +35,8 @@ namespace Updaemon.Tests.Services
             {
                 MockConfigManager configManager = new MockConfigManager();
                 MockPluginDownloader downloader = new MockPluginDownloader();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-                PluginInstaller installer = new PluginInstaller(Resolver(), downloader, configManager, pluginsDirectory);
+                string pluginsDirectory = tempHelper.GetFullPath(PluginsRelativePath);
+                PluginInstaller installer = Installer(tempHelper, downloader, configManager);
 
                 PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github"), alias, UpdaemonVersion);
 
@@ -51,8 +60,8 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-                PluginInstaller installer = new PluginInstaller(Resolver(), new MockPluginDownloader(), configManager, pluginsDirectory);
+                string pluginsDirectory = tempHelper.GetFullPath(PluginsRelativePath);
+                PluginInstaller installer = Installer(tempHelper, new MockPluginDownloader(), configManager);
                 PluginSource source = new PluginSource.Url("https://example.com/path/to/my-plugin");
 
                 await installer.InstallAsync(source, alias, UpdaemonVersion);
@@ -70,7 +79,7 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockPluginDownloader downloader = new MockPluginDownloader();
-                PluginInstaller installer = new PluginInstaller(Resolver(), downloader, new MockConfigManager(), tempHelper.CreateTempDirectory("plugins"));
+                PluginInstaller installer = Installer(tempHelper, downloader, new MockConfigManager());
 
                 InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                     () => installer.InstallAsync(new PluginSource.Registry("gitlab"), null, UpdaemonVersion));
@@ -90,10 +99,10 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-                string installedPath = tempHelper.CreateTempFile($"plugins/github/{installedFileName}", "old");
+                string pluginsDirectory = tempHelper.GetFullPath(PluginsRelativePath);
+                string installedPath = tempHelper.CreateTempFile($"{PluginsRelativePath}/github/{installedFileName}", "old");
                 await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", installedPath));
-                PluginInstaller installer = new PluginInstaller(Resolver(), new MockPluginDownloader(), configManager, pluginsDirectory);
+                PluginInstaller installer = Installer(tempHelper, new MockPluginDownloader(), configManager);
 
                 PluginInstallResult result = await installer.InstallAsync(new PluginSource.Registry("github"), null, UpdaemonVersion);
 
@@ -114,7 +123,7 @@ namespace Updaemon.Tests.Services
                 {
                     ExceptionToThrow = new HttpRequestException("Response status code does not indicate success: 404 (Not Found).", null, System.Net.HttpStatusCode.NotFound),
                 };
-                PluginInstaller installer = new PluginInstaller(Resolver(), downloader, new MockConfigManager(), tempHelper.CreateTempDirectory("plugins"));
+                PluginInstaller installer = Installer(tempHelper, downloader, new MockConfigManager());
 
                 InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                     () => installer.InstallAsync(new PluginSource.Registry("github"), null, UpdaemonVersion));
@@ -133,8 +142,7 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
-                string installedPath = tempHelper.CreateTempFile("plugins/github/Updaemon.GithubDistributionService-linux-arm64", "installed");
+                string installedPath = tempHelper.CreateTempFile($"{PluginsRelativePath}/github/Updaemon.GithubDistributionService-linux-arm64", "installed");
                 byte[] installedBytes = File.ReadAllBytes(installedPath);
                 InstalledPluginInfo installed = PluginRecords.Installed("github", installedPath);
                 await configManager.AddOrUpdatePluginAsync(installed);
@@ -142,7 +150,7 @@ namespace Updaemon.Tests.Services
                 {
                     ExceptionToThrow = new PluginException("speaks plugin protocol 1"),
                 };
-                PluginInstaller installer = new PluginInstaller(Resolver(), downloader, configManager, pluginsDirectory);
+                PluginInstaller installer = Installer(tempHelper, downloader, configManager);
 
                 await Assert.ThrowsAsync<PluginException>(
                     () => installer.InstallAsync(new PluginSource.Registry("github"), null, UpdaemonVersion));
@@ -158,12 +166,12 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
                 MockConfigManager configManager = new MockConfigManager();
-                string pluginsDirectory = tempHelper.CreateTempDirectory("plugins");
+                string pluginsDirectory = tempHelper.GetFullPath(PluginsRelativePath);
                 MockPluginDownloader downloader = new MockPluginDownloader
                 {
                     ServiceInformation = new DistributionServiceInformation { FullName = "Test Plugin", DefaultAlias = "", Version = "1.0.0" },
                 };
-                PluginInstaller installer = new PluginInstaller(Resolver(), downloader, configManager, pluginsDirectory);
+                PluginInstaller installer = Installer(tempHelper, downloader, configManager);
 
                 InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
                     () => installer.InstallAsync(new PluginSource.Url("https://example.com/plugin"), null, UpdaemonVersion));

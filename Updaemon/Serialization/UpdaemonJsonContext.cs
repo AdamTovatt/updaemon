@@ -8,18 +8,13 @@ namespace Updaemon.Serialization
     /// For RPC types, use Updaemon.Common.Serialization.CommonJsonContext.
     /// </summary>
     [JsonSerializable(typeof(UpdaemonConfig))]
-    [JsonSerializable(typeof(RegisteredService))]
-    [JsonSerializable(typeof(InstalledPluginInfo))]
-    [JsonSerializable(typeof(Dictionary<string, InstalledPluginInfo>))]
+    [JsonSerializable(typeof(AppManifest))]
     [JsonSerializable(typeof(Dictionary<string, string>))]
-    [JsonSerializable(typeof(AppConfig))]
-    [JsonSerializable(typeof(ServiceType))]
     [JsonSourceGenerationOptions(
         WriteIndented = true,
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
     public partial class UpdaemonJsonContext : JsonSerializerContext
     {
     }
 }
-

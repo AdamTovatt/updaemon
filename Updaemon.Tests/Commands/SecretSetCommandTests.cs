@@ -44,7 +44,7 @@ namespace Updaemon.Tests.Commands
             int exitCode = await command.ExecuteAsync(new[] { "plugin", "key" });
 
             Assert.Equal(1, exitCode);
-            Assert.Contains(outputWriter.Errors, e => e.Contains("Insufficient arguments"));
+            Assert.Contains($"Usage: {command.Usage}", outputWriter.Errors);
         }
     }
 }

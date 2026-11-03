@@ -18,10 +18,10 @@ This plugin enables Updaemon to download and manage applications distributed via
 ## Installation
 
 ```bash
-sudo updaemon dist-install github
+updaemon dist-install github
 ```
 
-This installs the plugin from the release of the updaemon you run, built for your machine.
+This installs the plugin from the release of the updaemon you run, built for your machine. The examples here run in your user scope; run them with `sudo` for the system scope.
 
 ## Configuration
 
@@ -33,7 +33,7 @@ Create a GitHub Personal Access Token at:
 https://github.com/settings/tokens
 
 ```bash
-sudo updaemon secret-set github githubToken ghp_your_token_here
+updaemon secret-set github githubToken ghp_your_token_here
 ```
 
 **Token Permissions Required:**
@@ -58,17 +58,16 @@ The service name determines which GitHub repository and asset to download:
 
 ```bash
 # Set up GitHub token (optional but recommended for rate limits)
-sudo updaemon secret-set githubToken ghp_your_token_here
+updaemon secret-set github githubToken ghp_your_token_here
 
-# Create a new service
-sudo updaemon new myapp
-
-# Set the remote with a pattern to match the desired asset
-sudo updaemon set-remote myapp organization/myapp/myapp-linux-*.zip
+# Install the app, picking its asset with a pattern
+updaemon install myapp --from github:organization/myapp/myapp-*-self-contained.zip
 
 # Update to the latest version
-sudo updaemon update myapp
+updaemon update myapp
 ```
+
+Without a pattern (`--from github:organization/myapp`), the plugin picks the asset built for this machine.
 
 ## Service Name Patterns
 
@@ -157,20 +156,14 @@ Here's a complete example deploying an application via GitHub releases:
 
 ```bash
 # 1. Install and configure the plugin (one-time setup)
-sudo updaemon dist-install github
-sudo updaemon secret-set github githubToken ghp_your_token_here
+updaemon dist-install github
+updaemon secret-set github githubToken ghp_your_token_here
 
-# 2. Create a service for your application
-sudo updaemon new myapp --from github
+# 2. Install the latest release of your application, built for this machine
+updaemon install myapp --from github:your-org/myapp
 
-# 3. Point it to the GitHub repository with a pattern
-sudo updaemon set-remote myapp your-org/myapp/myapp-linux-*.zip
-
-# 4. Download and install the latest version
-sudo updaemon update myapp
-
-# 5. The service is now running and will auto-update when new versions are released
-systemctl status myapp
+# 3. Later releases are installed by the update timer, or by hand
+updaemon update myapp
 ```
 
 ## Contributing

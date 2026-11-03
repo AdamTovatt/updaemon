@@ -26,6 +26,8 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon dist-list";
 
+        public bool ChangesState => false;
+
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
             IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await _configManager.GetAllPluginsAsync(cancellationToken);

@@ -18,11 +18,6 @@ namespace Updaemon.Interfaces
         /// <param name="linkPath">The path of the symlink to read.</param>
         /// <returns>The target path, or null if the symlink doesn't exist.</returns>
         Task<string?> ReadSymlinkAsync(string linkPath, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Checks if a path is a symbolic link.
-        /// </summary>
-        Task<bool> IsSymlinkAsync(string path, CancellationToken cancellationToken = default);
     }
 }
 

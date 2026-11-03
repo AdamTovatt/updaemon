@@ -10,14 +10,17 @@ namespace Updaemon.Tests.Mocks
         public string Name { get; set; } = "mock";
         public string Description { get; set; } = "Mock command";
         public string Usage { get; set; } = "updaemon mock";
+        public bool ChangesState { get; set; }
         public string DetailedHelp { get; set; } = "Mock command help";
         public string[]? ReceivedArgs { get; private set; }
         public int ReturnCode { get; set; } = 0;
         public Exception? ExceptionToThrow { get; set; }
+        public Action? OnExecute { get; set; }
 
         public Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
             ReceivedArgs = args;
+            OnExecute?.Invoke();
             if (ExceptionToThrow != null)
             {
                 throw ExceptionToThrow;

@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
@@ -14,11 +15,11 @@ namespace Updaemon.Tests.Services
         [Fact]
         public void BuildPlist_HasExpectedShape()
         {
-            string plist = MacTimerManager.BuildPlist("com.updaemon.timer", "/usr/local/bin/updaemon", 600);
+            string plist = MacTimerManager.BuildPlist("com.updaemon", "/usr/local/bin/updaemon", 600);
 
             Assert.Contains("<plist", plist);
             Assert.Contains("<key>Label</key>", plist);
-            Assert.Contains("<string>com.updaemon.timer</string>", plist);
+            Assert.Contains("<string>com.updaemon</string>", plist);
             Assert.Contains("<key>ProgramArguments</key>", plist);
             Assert.Contains("<string>/usr/local/bin/updaemon</string>", plist);
             Assert.Contains("<string>update</string>", plist);
@@ -32,13 +33,11 @@ namespace Updaemon.Tests.Services
         public async Task GetCurrentIntervalAsync_NoFile_ReturnsNull()
         {
             using TempFileHelper tempHelper = new TempFileHelper();
-            string plistPath = Path.Combine(tempHelper.TempDirectory, "missing.plist");
+            UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory, isMacOS: true);
+            string plistPath = Path.Combine(scope.UnitDirectory, scope.TimerLabel + ".plist");
+            Directory.CreateDirectory(scope.UnitDirectory);
 
-            MacTimerManager manager = new MacTimerManager(
-                new MockOutputWriter(),
-                plistPath,
-                "com.updaemon.timer",
-                "/usr/local/bin/updaemon");
+            MacTimerManager manager = new MacTimerManager(new MockOutputWriter(), scope);
 
             string? interval = await manager.GetCurrentIntervalAsync();
 
@@ -54,16 +53,14 @@ namespace Updaemon.Tests.Services
         public async Task GetCurrentIntervalAsync_FormatsHumanReadable(int seconds, string expected)
         {
             using TempFileHelper tempHelper = new TempFileHelper();
-            string plistPath = Path.Combine(tempHelper.TempDirectory, "timer.plist");
+            UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory, isMacOS: true);
+            string plistPath = Path.Combine(scope.UnitDirectory, scope.TimerLabel + ".plist");
+            Directory.CreateDirectory(scope.UnitDirectory);
 
-            string plist = MacTimerManager.BuildPlist("com.updaemon.timer", "/usr/local/bin/updaemon", seconds);
+            string plist = MacTimerManager.BuildPlist(scope.TimerLabel, "/usr/local/bin/updaemon", seconds);
             await File.WriteAllTextAsync(plistPath, plist);
 
-            MacTimerManager manager = new MacTimerManager(
-                new MockOutputWriter(),
-                plistPath,
-                "com.updaemon.timer",
-                "/usr/local/bin/updaemon");
+            MacTimerManager manager = new MacTimerManager(new MockOutputWriter(), scope);
 
             string? interval = await manager.GetCurrentIntervalAsync();
 
@@ -74,14 +71,12 @@ namespace Updaemon.Tests.Services
         public async Task GetCurrentIntervalAsync_PlistMissingStartInterval_ReturnsNull()
         {
             using TempFileHelper tempHelper = new TempFileHelper();
-            string plistPath = Path.Combine(tempHelper.TempDirectory, "noninterval.plist");
+            UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory, isMacOS: true);
+            string plistPath = Path.Combine(scope.UnitDirectory, scope.TimerLabel + ".plist");
+            Directory.CreateDirectory(scope.UnitDirectory);
             await File.WriteAllTextAsync(plistPath, "<?xml version=\"1.0\"?><plist><dict></dict></plist>");
 
-            MacTimerManager manager = new MacTimerManager(
-                new MockOutputWriter(),
-                plistPath,
-                "com.updaemon.timer",
-                "/usr/local/bin/updaemon");
+            MacTimerManager manager = new MacTimerManager(new MockOutputWriter(), scope);
 
             string? interval = await manager.GetCurrentIntervalAsync();
 

@@ -1,5 +1,6 @@
 using Updaemon.Common;
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
@@ -14,7 +15,7 @@ namespace Updaemon.Tests.Services
     /// </summary>
     public class DistributionServiceClientTests
     {
-        private const string TestRid = "linux-arm64";
+        private static readonly HostPlatform TestPlatform = new HostPlatform(false, "linux-arm64");
 
         [Fact]
         public async Task DownloadVersionAsync_PassesTheRuntimeIdentifierToThePlugin()
@@ -22,7 +23,7 @@ namespace Updaemon.Tests.Services
             string pluginPath = TestPluginPathResolver.Resolve();
             string targetPath = Path.Combine(Path.GetTempPath(), $"updaemon_test_{Guid.NewGuid():N}");
 
-            DistributionServiceClient client = new DistributionServiceClient("osx-arm64");
+            DistributionServiceClient client = new DistributionServiceClient(new HostPlatform(true, "osx-arm64"));
             try
             {
                 await client.ConnectAsync(pluginPath);
@@ -46,7 +47,7 @@ namespace Updaemon.Tests.Services
         {
             string pluginPath = TestPluginPathResolver.Resolve();
 
-            DistributionServiceClient client = new DistributionServiceClient(TestRid);
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
             try
             {
                 await client.ConnectAsync(pluginPath);
@@ -67,7 +68,7 @@ namespace Updaemon.Tests.Services
         {
             string pluginPath = TestPluginPathResolver.Resolve();
 
-            DistributionServiceClient client = new DistributionServiceClient(TestRid);
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
             try
             {
                 await client.ConnectAsync(pluginPath);
@@ -128,7 +129,7 @@ namespace Updaemon.Tests.Services
             // "No process is associated with this object."
             string pluginPath = TestPluginPathResolver.Resolve();
 
-            DistributionServiceClient client = new DistributionServiceClient(TestRid);
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
             try
             {
                 await client.ConnectAsync(pluginPath);
@@ -157,7 +158,7 @@ namespace Updaemon.Tests.Services
             // the same instance must be usable for a fresh successful connect.
             string pluginPath = TestPluginPathResolver.Resolve();
 
-            DistributionServiceClient client = new DistributionServiceClient(TestRid);
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
             try
             {
                 await Assert.ThrowsAsync<InvalidOperationException>(
@@ -185,7 +186,7 @@ namespace Updaemon.Tests.Services
             // both macOS and Linux, where /bin is symlinked to /usr/bin under usr-merge.)
             string failingBinary = "/usr/bin/false";
 
-            DistributionServiceClient client = new DistributionServiceClient(TestRid);
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
             try
             {
                 InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -219,7 +220,7 @@ namespace Updaemon.Tests.Services
                 UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
 #pragma warning restore CA1416
 
-            DistributionServiceClient client = new DistributionServiceClient(TestRid);
+            DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
             try
             {
                 InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(

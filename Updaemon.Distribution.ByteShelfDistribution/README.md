@@ -31,8 +31,10 @@ Root Tenant (authenticated with API key)
 ## Installation
 
 ```bash
-sudo updaemon dist-install byteshelf
+updaemon dist-install byteshelf
 ```
+
+The examples here run in your user scope; run them with `sudo` for the system scope.
 
 ## Configuration
 
@@ -40,11 +42,11 @@ sudo updaemon dist-install byteshelf
 > You need to configure two secrets for the plugin to work.
 
 ```bash
-sudo updaemon secret-set byteshelf byteShelfUrl https://your-byteshelf-instance.com
+updaemon secret-set byteshelf byteShelfUrl https://your-byteshelf-instance.com
 ```
 
 ```bash
-sudo updaemon secret-set byteshelf byteShelfApiKey your-api-key-here
+updaemon secret-set byteshelf byteShelfApiKey your-api-key-here
 ```
 
 The API key must have access to your files.
@@ -69,30 +71,21 @@ The tenant that the api key leads to is expected to have `MyApp` in it. Then, in
 
 ```bash
 # 1. Set up ByteShelf credentials
-sudo updaemon secret-set byteShelfUrl https://byteshelf.example.com
-sudo updaemon secret-set byteShelfApiKey abc123xyz
+updaemon secret-set byteshelf byteShelfUrl https://byteshelf.example.com
+updaemon secret-set byteshelf byteShelfApiKey abc123xyz
 
-# 2. Create a new service
-sudo updaemon new myapp --from byteshelf
+# 2. Install the app from your ByteShelf app subtenant
+updaemon install myapp --from byteshelf:MyApp
 
-# 3. Set the remote to your ByteShelf app subtenant
-sudo updaemon set-remote myapp MyApp
-
-# 4. Update to the latest version
-sudo updaemon update myapp
+# 3. Update to the latest version
+updaemon update myapp
 ```
 
 ### Example: Pattern Matching
 
 ```bash
-# Create a service
-sudo updaemon new word-library-api --from byteshelf
-
-# Set the remote with a pattern to match platform-specific files
-sudo updaemon set-remote word-library-api WordLibraryApi/linux-x64.zip
-
-# Update to the latest version
-sudo updaemon update word-library-api
+# Install with a pattern to match platform-specific files
+updaemon install word-library-api --from byteshelf:WordLibraryApi/linux-x64.zip
 ```
 
 ## Service Name Patterns
@@ -164,8 +157,8 @@ For more details on creating distribution plugins, see [Updaemon.Common/README.m
 
 **Solution:** Set up both required secrets:
 ```bash
-sudo updaemon secret-set byteShelfUrl https://your-byteshelf-instance.com
-sudo updaemon secret-set byteShelfApiKey your-api-key-here
+updaemon secret-set byteshelf byteShelfUrl https://your-byteshelf-instance.com
+updaemon secret-set byteshelf byteShelfApiKey your-api-key-here
 ```
 
 ### App Subtenant Not Found
@@ -216,9 +209,9 @@ Here's a complete example deploying an application via ByteShelf:
 
 ```bash
 # 1. Configure ByteShelf (one-time setup)
-sudo updaemon dist-install byteshelf
-sudo updaemon secret-set byteShelfUrl https://byteshelf.example.com
-sudo updaemon secret-set byteShelfApiKey your-api-key
+updaemon dist-install byteshelf
+updaemon secret-set byteshelf byteShelfUrl https://byteshelf.example.com
+updaemon secret-set byteshelf byteShelfApiKey your-api-key
 
 # 2. Create the ByteShelf structure
 # In ByteShelf, create:
@@ -228,19 +221,12 @@ sudo updaemon secret-set byteShelfApiKey your-api-key
 #     Sub-subtenant: 1.0.1
 #       File: linux-x64.zip
 
-# 3. Create and configure the service
-sudo updaemon new myapp
-sudo updaemon set-remote myapp MyApp/linux-x64.zip
+# 3. Install the latest version
+updaemon install myapp --from byteshelf:MyApp/linux-x64.zip
 
-# 4. Download and install the latest version
-sudo updaemon update myapp
-
-# 5. Verify the service is running
-systemctl status myapp
-
-# 6. When you upload a new version (e.g., 1.0.2) to ByteShelf,
-#    just run the update command again
-sudo updaemon update myapp
+# 4. When you upload a new version (e.g., 1.0.2) to ByteShelf,
+#    the update timer installs it, or run the update command
+updaemon update myapp
 ```
 
 ## License

@@ -6,6 +6,7 @@ using Updaemon.Common;
 using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -28,10 +29,10 @@ namespace Updaemon.Services
         private StringBuilder? _stderrBuffer;
         private bool _disposed;
 
-        /// <param name="runtimeIdentifier">This machine's runtime identifier, passed to the plugin in each download.</param>
-        public DistributionServiceClient(string runtimeIdentifier)
+        /// <param name="platform">This machine; its runtime identifier is passed to the plugin in each download.</param>
+        public DistributionServiceClient(HostPlatform platform)
         {
-            _runtimeIdentifier = runtimeIdentifier;
+            _runtimeIdentifier = platform.RuntimeIdentifier;
         }
 
         public async Task<DistributionServiceInformation> ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)

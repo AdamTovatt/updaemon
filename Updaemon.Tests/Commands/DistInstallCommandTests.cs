@@ -1,4 +1,5 @@
 using Updaemon.Commands;
+using Updaemon.Configuration;
 using Updaemon.Models;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
@@ -28,9 +29,9 @@ namespace Updaemon.Tests.Commands
         {
             GitHubPluginUrlResolver resolver = new GitHubPluginUrlResolver(
                 new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" },
-                "osx-arm64");
-            PluginInstaller installer = new PluginInstaller(resolver, downloader, configManager, tempHelper.CreateTempDirectory("plugins"));
-            return new DistInstallCommand(outputWriter, installer, new Version(0, 11, 0, 0));
+                new HostPlatform(true, "osx-arm64"));
+            PluginInstaller installer = new PluginInstaller(resolver, downloader, configManager, TestScope.Create(tempHelper.TempDirectory));
+            return new DistInstallCommand(outputWriter, installer, new UpdaemonVersion(new Version(0, 11, 0, 0)));
         }
 
         [Theory]

@@ -1,33 +1,28 @@
 using Updaemon.Interfaces;
+using Updaemon.IO;
 
 namespace Updaemon.Configuration
 {
     /// <summary>
-    /// Manages secrets stored per-plugin in /var/lib/updaemon/plugins/&lt;alias&gt;/secrets.txt in key=value format.
+    /// Stores secrets, readable by the scope owner only: each plugin's in
+    /// &lt;scope root&gt;/plugins/&lt;alias&gt;/secrets.txt (key=value lines, passed to the plugin as is),
+    /// and each app's in &lt;scope root&gt;/secrets/&lt;app&gt;.env (an <see cref="EnvFile"/> that
+    /// units and command wrappers load directly).
     /// </summary>
     public class SecretsManager : ISecretsManager
     {
-        private const string PluginsDirectory = "plugins";
         private const string SecretsFileName = "secrets.txt";
 
-        private readonly string _configDirectory;
-        private readonly string _pluginsDirectory;
+        private readonly UpdaemonScope _scope;
 
-        public SecretsManager()
-            : this(PlatformPaths.ConfigDirectory)
+        public SecretsManager(UpdaemonScope scope)
         {
-        }
-
-        public SecretsManager(string configDirectory)
-        {
-            _configDirectory = configDirectory;
-            _pluginsDirectory = Path.Combine(_configDirectory, PluginsDirectory);
+            _scope = scope;
         }
 
         public string GetPluginSecretsPath(string pluginAlias)
         {
-            string pluginDirectory = Path.Combine(_pluginsDirectory, pluginAlias);
-            return Path.Combine(pluginDirectory, SecretsFileName);
+            return Path.Combine(_scope.PluginsDirectory, pluginAlias, SecretsFileName);
         }
 
         public async Task SetSecretAsync(string pluginAlias, string key, string value, CancellationToken cancellationToken = default)
@@ -62,6 +57,32 @@ namespace Updaemon.Configuration
             await SavePluginSecretsAsync(pluginAlias, secrets, cancellationToken);
         }
 
+        public Task<Dictionary<string, string>> GetAppSecretsAsync(string appName, CancellationToken cancellationToken = default)
+        {
+            return EnvFile.ReadAsync(_scope.GetSecretsFilePath(appName), cancellationToken);
+        }
+
+        public async Task SaveAppSecretsAsync(string appName, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default)
+        {
+            if (secrets.Count == 0)
+            {
+                DeleteAppSecrets(appName);
+                return;
+            }
+
+            Directory.CreateDirectory(_scope.SecretsDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            await EnvFile.WriteAsync(_scope.GetSecretsFilePath(appName), secrets, AtomicFile.OwnerOnly, cancellationToken);
+        }
+
+        public void DeleteAppSecrets(string appName)
+        {
+            string path = _scope.GetSecretsFilePath(appName);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
         private async Task<Dictionary<string, string>> LoadPluginSecretsAsync(string pluginAlias, CancellationToken cancellationToken = default)
         {
             string secretsFilePath = GetPluginSecretsPath(pluginAlias);
@@ -91,13 +112,8 @@ namespace Updaemon.Configuration
 
         private async Task SavePluginSecretsAsync(string pluginAlias, Dictionary<string, string> secrets, CancellationToken cancellationToken = default)
         {
-            string pluginDirectory = Path.Combine(_pluginsDirectory, pluginAlias);
-            Directory.CreateDirectory(pluginDirectory);
-
-            string secretsFilePath = GetPluginSecretsPath(pluginAlias);
             string content = string.Join(Environment.NewLine, secrets.Select(kvp => $"{kvp.Key}={kvp.Value}"));
-            await File.WriteAllTextAsync(secretsFilePath, content, cancellationToken);
+            await AtomicFile.WriteAsync(GetPluginSecretsPath(pluginAlias), content, AtomicFile.OwnerOnly, cancellationToken);
         }
     }
 }
-

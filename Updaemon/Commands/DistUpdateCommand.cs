@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -22,13 +23,13 @@ namespace Updaemon.Commands
             IOutputWriter outputWriter,
             IPluginInstaller pluginInstaller,
             IPluginDownloader pluginDownloader,
-            Version updaemonVersion)
+            UpdaemonVersion updaemonVersion)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
             _pluginInstaller = pluginInstaller;
             _pluginDownloader = pluginDownloader;
-            _updaemonVersion = updaemonVersion;
+            _updaemonVersion = updaemonVersion.Value;
         }
 
         public string Name => "dist-update";
@@ -36,6 +37,8 @@ namespace Updaemon.Commands
         public string Description => "Update installed distribution plugins";
 
         public string Usage => "updaemon dist-update [alias]";
+
+        public bool ChangesState => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {

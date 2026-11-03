@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -13,11 +14,11 @@ namespace Updaemon.Commands
         private readonly Version _updaemonVersion;
 
         /// <param name="updaemonVersion">The running updaemon's version: registry plugins come from its release.</param>
-        public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, Version updaemonVersion)
+        public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, UpdaemonVersion updaemonVersion)
         {
             _outputWriter = outputWriter;
             _pluginInstaller = pluginInstaller;
-            _updaemonVersion = updaemonVersion;
+            _updaemonVersion = updaemonVersion.Value;
         }
 
         public string Name => "dist-install";
@@ -26,9 +27,11 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon dist-install [--as <alias>] <plugin-name|url>";
 
+        public bool ChangesState => true;
+
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
-            ArgumentParser parser = new ArgumentParser(args, _outputWriter);
+            ArgumentParser parser = new ArgumentParser(args);
 
             string? alias = parser.GetFlag("--as");
             string? urlOrName = parser.GetFirstNonFlag();

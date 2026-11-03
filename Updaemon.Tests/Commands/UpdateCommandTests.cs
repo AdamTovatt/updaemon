@@ -1,4 +1,4 @@
-using Updaemon.Commands;
+using Updaemon.Interfaces;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
@@ -7,1046 +7,202 @@ namespace Updaemon.Tests.Commands
 {
     public class UpdateCommandTests
     {
-        [Fact]
-        public async Task ExecuteAsync_NoPluginConfigured_DoesNotProceed()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                new MockSecretsManager(),
-                new MockServiceManager(),
-                distributionClient,
-                new MockOutputWriter(),
-                new MockVersionExtractor(),
-                new MockServiceDeployer()
-            );
-
-            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
-            Assert.Equal(0, exitCode);
-
-            Assert.DoesNotContain(distributionClient.MethodCalls, call => call.StartsWith("ConnectAsync"));
-        }
+        private static readonly string RestartCall = MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf");
+        private static readonly string StartCall = MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf");
 
         [Fact]
-        public async Task ExecuteAsync_SpecificServiceNotRegistered_DoesNotProceed()
+        public async Task Update_NewerRelease_ActivatesItAndRestartsTheService()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", "/path/to/plugin");
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                new MockSecretsManager(),
-                new MockServiceManager(),
-                distributionClient,
-                new MockOutputWriter(),
-                new MockVersionExtractor(),
-                new MockServiceDeployer()
-            );
-
-            int exitCode = await command.ExecuteAsync(new[] { "non-existent-service" });
-            Assert.Equal(1, exitCode);
-
-            Assert.DoesNotContain(distributionClient.MethodCalls, call => call.StartsWith("GetLatestVersionAsync"));
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_NoServicesRegistered_DoesNotProceed()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", "/path/to/plugin");
-            await configManager.AddOrUpdatePluginAsync(pluginInfo);
-
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                new MockSecretsManager(),
-                new MockServiceManager(),
-                distributionClient,
-                new MockOutputWriter(),
-                new MockVersionExtractor(),
-                new MockServiceDeployer()
-            );
-
-            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
-            Assert.Equal(0, exitCode);
-
-            Assert.DoesNotContain(distributionClient.MethodCalls, call => call.StartsWith("GetLatestVersionAsync"));
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_UpdatesSpecificServiceWhenAppNameProvided()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+                h.ServiceManager.ServiceRunningStates["byteshelf"] = true;
 
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/0.9.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 0, 0));
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
                 Assert.Equal(0, exitCode);
-
-                Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:MyApi");
-                Assert.Contains(serviceDeployer.MethodCalls, call => call == "DeployVersionAsync:my-api:1.0.0");
+                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Contains(RestartCall, h.ServiceManager.MethodCalls);
+                Assert.Contains("Updated byteshelf from 1.0.0 to 1.1.0.", h.Output.Messages);
             }
         }
 
         [Fact]
-        public async Task ExecuteAsync_UpdatesAllServicesWhenNoAppNameProvided()
+        public async Task Update_AlreadyLatest_DownloadsNothing()
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("service1", "Service1", "github");
-                await configManager.RegisterServiceAsync("service2", "Service2", "github");
+                await h.InstallByteShelfAsync();
+                h.Client.Downloads.Clear();
 
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("service1", "/opt/service1/0.9.0");
-                serviceDeployer.SetInitialized("service2", "/opt/service2/0.9.0");
-                serviceDeployer.SetDeployResult("service1", new Version(1, 0, 0));
-                serviceDeployer.SetDeployResult("service2", new Version(1, 0, 0));
+                int exitCode = await h.Update().ExecuteAsync(new[] { "byteshelf" });
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("Service1", new Version(1, 0, 0));
-                distributionClient.SetLatestVersion("Service2", new Version(1, 0, 0));
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
                 Assert.Equal(0, exitCode);
-
-                Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service1");
-                Assert.Contains(distributionClient.MethodCalls, call => call == "GetLatestVersionAsync:Service2");
-
-                // Both services should be pruned with default retention count
-                Assert.Equal(2, serviceDeployer.PrunedServices.Count);
-                Assert.Contains(serviceDeployer.PrunedServices, p => p.LocalName == "service1");
-                Assert.Contains(serviceDeployer.PrunedServices, p => p.LocalName == "service2");
-                Assert.All(serviceDeployer.PrunedServices, p => Assert.Equal(5, p.RetentionCount));
+                Assert.Empty(h.Client.Downloads);
+                Assert.Contains("byteshelf is up to date (1.0.0).", h.Output.Messages);
             }
         }
 
         [Fact]
-        public async Task UpdateService_AlreadyUpToDate_SkipsUpdate()
+        public async Task Update_NewRequiredSettingWithoutValue_KeepsOldVersionAndNamesTheSetCommand()
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                await h.InstallByteShelfAsync();
+                string manifest = AppHarness.ByteShelfManifest.Replace(
+                    "\"settings\": {",
+                    "\"settings\": { \"BYTESHELF_DEVICE\": { \"required\": true },");
+                h.AddRelease("owner/byteshelf", "1.1.0", manifest);
+                h.ServiceManager.MethodCalls.Clear();
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                // Should not deploy if already up to date
-                Assert.DoesNotContain(serviceDeployer.MethodCalls, call => call.StartsWith("DeployVersionAsync"));
-
-                // Should not call any service manager methods (no restart/start)
-                Assert.Empty(serviceManager.MethodCalls.Where(call =>
-                    call.Contains("Start") || call.Contains("Restart") || call.Contains("Stop")));
-
-                // Should not prune when no deploy happened
-                Assert.Empty(serviceDeployer.PrunedServices);
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_NewerVersionAvailable_DeploysNewVersion()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                Assert.Contains(serviceDeployer.MethodCalls, call => call == "DeployVersionAsync:my-api:1.1.0");
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_RestartsRunningService()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-                serviceManager.ServiceExistsStates["my-api"] = true;
-                serviceManager.ServiceRunningStates["my-api"] = true;
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_AutoRestartManual_DeploysButDoesNotRestart()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                // Opt the service out of auto-restart.
-                UpdaemonConfig config = await configManager.LoadConfigAsync();
-                config.Services.First(s => s.LocalName == "my-api").AutoRestart = false;
-                await configManager.SaveConfigAsync(config);
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-                serviceManager.ServiceExistsStates["my-api"] = true;
-                serviceManager.ServiceRunningStates["my-api"] = true;
-
-                MockOutputWriter outputWriter = new MockOutputWriter();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    outputWriter,
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                // New version was deployed.
-                Assert.Contains(serviceDeployer.MethodCalls, call => call == "DeployVersionAsync:my-api:1.1.0");
-
-                // The running process was left untouched — neither restart nor start.
-                Assert.Empty(serviceManager.MethodCalls.Where(call =>
-                    call.Contains("Start") || call.Contains("Restart")));
-
-                // Skip is communicated to the user.
-                Assert.Contains(outputWriter.Messages, m => m.Contains("restart skipped"));
-
-                // Prune still runs after a deploy-only update.
-                Assert.Single(serviceDeployer.PrunedServices);
-                Assert.Equal("my-api", serviceDeployer.PrunedServices[0].LocalName);
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_StartsStoppedService()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-                serviceManager.ServiceExistsStates["my-api"] = true;
-                serviceManager.ServiceRunningStates["my-api"] = false;
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                Assert.Contains(serviceManager.MethodCalls, call => call == "StartServiceAsync:my-api");
-                Assert.DoesNotContain(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_DeployFailed_DoesNotRestartService()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/0.9.0");
-                // Don't configure deploy result — deployer returns null (executable not found)
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(0, 9, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                // Deploy was attempted but returned null
-                Assert.Contains(serviceDeployer.MethodCalls, call => call == "DeployVersionAsync:my-api:1.0.0");
-                // Should not restart/start service
-                Assert.Empty(serviceManager.MethodCalls.Where(call =>
-                    call.Contains("Start") || call.Contains("Restart")));
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_InitializesDistributionClientWithSecrets()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockSecretsManager secretsManager = new MockSecretsManager();
-                await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
-                await secretsManager.SetSecretAsync("github", "tenantId", "550e8400");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/0.9.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 0, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    secretsManager,
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                Assert.NotNull(distributionClient.InitializedSecrets);
-                Assert.Contains("apiKey=abc123", distributionClient.InitializedSecrets);
-                Assert.Contains("tenantId=550e8400", distributionClient.InitializedSecrets);
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_MultiplePlugins_GroupsByPluginAndInitializesWithPerPluginSecrets()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string githubPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                string byteshelfPath = tempHelper.CreateTempFile("plugins/byteshelf/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", githubPath));
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("byteshelf", byteshelfPath));
-                await configManager.RegisterServiceAsync("svc1", "Svc1", "github");
-                await configManager.RegisterServiceAsync("svc2", "Svc2", "byteshelf");
-
-                MockSecretsManager secretsManager = new MockSecretsManager();
-                await secretsManager.SetSecretAsync("github", "token", "gh123");
-                await secretsManager.SetSecretAsync("byteshelf", "apiKey", "bs456");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("svc1", "/opt/svc1/0.9.0");
-                serviceDeployer.SetInitialized("svc2", "/opt/svc2/0.9.0");
-                serviceDeployer.SetDeployResult("svc1", new Version(1, 0, 0));
-                serviceDeployer.SetDeployResult("svc2", new Version(1, 0, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("Svc1", new Version(1, 0, 0));
-                distributionClient.SetLatestVersion("Svc2", new Version(1, 0, 0));
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    secretsManager,
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
-                Assert.Equal(0, exitCode);
-
-                // One connect per plugin
-                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("github"));
-                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync:") && c.Contains("byteshelf"));
-
-                // Initialize with per-plugin secrets
-                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:token=gh123"));
-                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("InitializeAsync:apiKey=bs456"));
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_ServiceWithoutPluginAlias_SkipsWithError()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("old-service", "OldService", "github");
-                UpdaemonConfig config = await configManager.LoadConfigAsync();
-                RegisteredService serviceWithoutAlias = config.Services.First();
-                serviceWithoutAlias.DistributionPluginAlias = "";
-                await configManager.SaveConfigAsync(config);
-
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    outputWriter,
-                    new MockVersionExtractor(),
-                    new MockServiceDeployer()
-                );
-
-                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
                 Assert.Equal(1, exitCode);
-
-                Assert.Contains(outputWriter.Errors, e => e.Contains("does not have a distribution plugin assigned"));
-                Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+                string error = Assert.Single(h.Output.Errors);
+                Assert.StartsWith("Error: byteshelf: ", error);
+                Assert.Contains("updaemon set byteshelf BYTESHELF_DEVICE=<value>", error);
+                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.False(Directory.Exists(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "1.1.0")));
+                Assert.Empty(h.ServiceManager.MethodCalls);
             }
         }
 
         [Fact]
-        public async Task ExecuteAsync_PluginNotFound_SkipsWithError()
+        public async Task Update_ReleaseMarksASettingSecret_MovesItsValueIntoTheSecrets()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            await configManager.RegisterServiceAsync("my-service", "MyService", "non-existent-plugin");
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                string manifest = AppHarness.ByteShelfManifest.Replace(
+                    "\"description\": \"Server URL\", \"required\": true",
+                    "\"description\": \"Server URL\", \"required\": true, \"secret\": true");
+                h.AddRelease("owner/byteshelf", "1.1.0", manifest);
 
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
+                await h.Update().ExecuteAsync(Array.Empty<string>());
 
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                new MockSecretsManager(),
-                new MockServiceManager(),
-                distributionClient,
-                outputWriter,
-                new MockVersionExtractor(),
-                new MockServiceDeployer()
-            );
-
-            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
-            Assert.Equal(0, exitCode);
-
-            Assert.Contains(outputWriter.Errors, e => e.Contains("Plugin 'non-existent-plugin' not found"));
-            Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
+                Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.Settings);
+                Assert.Equal("https://shelf", (await h.Secrets.GetAppSecretsAsync("byteshelf"))["BYTESHELF_URL"]);
+                Assert.DoesNotContain("https://shelf", await File.ReadAllTextAsync(h.Scope.GetSettingsFilePath("byteshelf")));
+            }
         }
 
         [Fact]
-        public async Task ExecuteAsync_UninitializedService_SkipsWithWarning()
+        public async Task Update_ManualRestart_DeploysWithoutRestarting()
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
+                await h.InstallByteShelfAsync();
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+                app.AutoRestart = false;
+                await h.Config.SaveAppAsync(app);
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+                h.ServiceManager.MethodCalls.Clear();
 
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                // No initialized target — service is not initialized
+                await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
+                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.DoesNotContain(RestartCall, h.ServiceManager.MethodCalls);
+                Assert.DoesNotContain(StartCall, h.ServiceManager.MethodCalls);
+            }
+        }
 
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    outputWriter,
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
+        [Fact]
+        public async Task Update_ReleaseStartsShippingAManifest_DropsTheOneFromInstallFlags()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/tool", "1.0.0", manifest: null, executable: "tool");
+                await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool", "--command", "tool" });
+                h.AddRelease("owner/tool", "1.1.0", """{ "executable": "tool", "command": "tool" }""", executable: "tool");
 
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
+                await h.Update().ExecuteAsync(new[] { "tool" });
+
+                Assert.Null((await h.Config.GetAppAsync("tool"))!.Manifest);
+                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("tool"));
+            }
+        }
+
+        [Fact]
+        public async Task Update_Failures_PrintOneLineNamingTheApp()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", """{ "executablePath": "bin/byteshelf" }""");
+                InstalledApp orphan = new InstalledApp { Name = "orphan", Plugin = "gone", Remote = "x/y" };
+                await h.Config.SaveAppAsync(orphan);
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: byteshelf: Invalid updaemon.json") && !e.Contains('\n'));
+                Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: orphan: the plugin 'gone' is not installed"));
+                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+            }
+        }
+
+        [Fact]
+        public async Task Update_PluginFailsToStart_NamesItsApps()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                InstalledPluginInfo plugin = (await h.Config.GetPluginAsync("github"))!;
+                h.Client.ConnectAsyncThrowsForPluginPaths.Add(plugin.Path);
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: byteshelf: the plugin 'github' failed to start"));
+            }
+        }
+
+        [Fact]
+        public async Task Update_NoReleasedVersion_SaysSo()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.Client.LatestVersions["owner/byteshelf"] = null;
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
                 Assert.Equal(0, exitCode);
-
-                Assert.Contains(outputWriter.Messages, m => m.Contains("not initialized") && m.Contains("updaemon init"));
-                Assert.DoesNotContain(serviceDeployer.MethodCalls, c => c.StartsWith("DeployVersionAsync"));
+                Assert.Contains("byteshelf: no released version found for github:owner/byteshelf.", h.Output.Messages);
             }
         }
 
         [Fact]
-        public async Task UpdateService_CliType_DoesNotRestartService()
+        public async Task Update_RestartFails_ReportsItForTheApp()
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                InstalledPluginInfo pluginInfo = PluginRecords.Installed("github", pluginPath);
-                await configManager.AddOrUpdatePluginAsync(pluginInfo);
-                await configManager.RegisterServiceAsync("my-tool", "MyTool", "github", ServiceType.Cli);
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+                h.ServiceManager.ServiceRunningStates["byteshelf"] = true;
+                h.ServiceManager.RestartFailure = new InvalidOperationException("Simulated restart failure");
 
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-tool", "/opt/my-tool/1.0.0");
-                serviceDeployer.SetDeployResult("my-tool", new Version(1, 1, 0));
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyTool", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-                MockOutputWriter outputWriter = new MockOutputWriter();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    outputWriter,
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
-                Assert.Equal(0, exitCode);
-
-                // Should have deployed the new version
-                Assert.Contains(serviceDeployer.MethodCalls, call => call == "DeployVersionAsync:my-tool:1.1.0");
-
-                // Should NOT have called any service manager methods
-                Assert.Empty(serviceManager.MethodCalls.Where(call =>
-                    call.Contains("Start") || call.Contains("Restart") || call.Contains("ServiceExists") || call.Contains("IsServiceRunning")));
-
-                // Should print CLI success message
-                Assert.Contains(outputWriter.Messages, m => m.Contains("CLI tool updated successfully"));
+                Assert.Equal(1, exitCode);
+                Assert.Contains("Error: byteshelf: Simulated restart failure", h.Output.Errors);
             }
         }
 
-        [Fact]
-        public async Task ExecuteAsync_UninitializedCliTool_SkipsWithWarning()
+        [Theory]
+        [InlineData("Unknown option '--foo'", "--foo")]
+        [InlineData("Usage: updaemon update", "a", "b")]
+        [InlineData("'missing' is not installed", "missing")]
+        public async Task Update_InvalidArguments_Fail(string expectedError, params string[] args)
         {
-            using (TempFileHelper tempHelper = new TempFileHelper())
+            using (AppHarness h = new AppHarness())
             {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("my-tool", "MyTool", "github", ServiceType.Cli);
+                int exitCode = await h.Update().ExecuteAsync(args);
 
-                MockOutputWriter outputWriter = new MockOutputWriter();
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                // No initialized target — CLI tool is not initialized
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyTool", new Version(1, 0, 0));
-
-                MockServiceManager serviceManager = new MockServiceManager();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    outputWriter,
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-tool" });
-                Assert.Equal(0, exitCode);
-
-                Assert.Contains(outputWriter.Messages, m => m.Contains("not initialized") && m.Contains("updaemon init"));
-                Assert.DoesNotContain(serviceDeployer.MethodCalls, c => c.StartsWith("DeployVersionAsync"));
-
-                // Should NOT have called any service manager methods
-                Assert.Empty(serviceManager.MethodCalls.Where(call =>
-                    call.Contains("Start") || call.Contains("Restart") || call.Contains("ServiceExists") || call.Contains("IsServiceRunning")));
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_PluginExecutableNotFound_SkipsWithError()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", "/nonexistent/plugin/path"));
-            await configManager.RegisterServiceAsync("my-service", "MyService", "github");
-
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-
-            UpdateCommand command = new UpdateCommand(
-                configManager,
-                new MockSecretsManager(),
-                new MockServiceManager(),
-                distributionClient,
-                outputWriter,
-                new MockVersionExtractor(),
-                new MockServiceDeployer()
-            );
-
-            int exitCode = await command.ExecuteAsync(Array.Empty<string>());
-            Assert.Equal(0, exitCode);
-
-            Assert.Contains(outputWriter.Errors, e => e.Contains("Plugin executable not found"));
-            Assert.DoesNotContain(distributionClient.MethodCalls, c => c.StartsWith("ConnectAsync"));
-        }
-
-        [Fact]
-        public async Task UpdateService_SuccessfulDeploy_PrunesOldVersions()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                await command.ExecuteAsync(new[] { "my-api" });
-
-                Assert.Single(serviceDeployer.PrunedServices);
-                Assert.Equal("my-api", serviceDeployer.PrunedServices[0].LocalName);
-                Assert.Equal(5, serviceDeployer.PrunedServices[0].RetentionCount);
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_FailedDeploy_DoesNotPrune()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/0.9.0");
-                // Don't configure deploy result — deployer returns null
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 0, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(0, 9, 0);
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                await command.ExecuteAsync(new[] { "my-api" });
-
-                Assert.Empty(serviceDeployer.PrunedServices);
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_SuccessfulDeploy_NoServiceUnit_StillPrunes()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-                // serviceExists defaults to false — no systemd unit file
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                await command.ExecuteAsync(new[] { "my-api" });
-
-                Assert.Single(serviceDeployer.PrunedServices);
-                Assert.Equal("my-api", serviceDeployer.PrunedServices[0].LocalName);
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_RestartFails_SkipsPrune()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                MockServiceManager serviceManager = new MockServiceManager();
-                serviceManager.ServiceExistsStates["my-api"] = true;
-                serviceManager.ServiceRunningStates["my-api"] = true;
-                serviceManager.ThrowOnRestart = true;
-
-                MockOutputWriter outputWriter = new MockOutputWriter();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    serviceManager,
-                    distributionClient,
-                    outputWriter,
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(new[] { "my-api" });
-                Assert.Equal(0, exitCode);
-
-                // Restart was attempted
-                Assert.Contains(serviceManager.MethodCalls, call => call == "RestartServiceAsync:my-api");
-
-                // Prune should NOT have been called because the restart exception
-                // causes the outer catch to fire, skipping the prune block
-                Assert.Empty(serviceDeployer.PrunedServices);
-
-                // Error should be reported
-                Assert.Contains(outputWriter.Errors, e => e.Contains("Error updating service"));
-            }
-        }
-
-        [Fact]
-        public async Task UpdateService_CustomRetentionCount_PassedToPrune()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string pluginPath = tempHelper.CreateTempFile("plugins/github/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", pluginPath));
-                await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-
-                // Set custom retention count
-                UpdaemonConfig config = await configManager.LoadConfigAsync();
-                config.ReleaseRetentionCount = 10;
-                await configManager.SaveConfigAsync(config);
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("my-api", "/opt/my-api/1.0.0");
-                serviceDeployer.SetDeployResult("my-api", new Version(1, 1, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.SetLatestVersion("MyApi", new Version(1, 1, 0));
-
-                MockVersionExtractor versionExtractor = new MockVersionExtractor();
-                versionExtractor.ExtractVersionFromPathResult = new Version(1, 0, 0);
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    versionExtractor,
-                    serviceDeployer
-                );
-
-                await command.ExecuteAsync(new[] { "my-api" });
-
-                Assert.Single(serviceDeployer.PrunedServices);
-                Assert.Equal(10, serviceDeployer.PrunedServices[0].RetentionCount);
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_FirstPluginFailsToConnect_ContinuesWithRemainingPlugins()
-        {
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string failingPath = tempHelper.CreateTempFile("plugins/failing/bin", "fake-plugin");
-                string workingPath = tempHelper.CreateTempFile("plugins/working/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("failing", failingPath));
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("working", workingPath));
-                await configManager.RegisterServiceAsync("svc-failing", "SvcFailing", "failing");
-                await configManager.RegisterServiceAsync("svc-working", "SvcWorking", "working");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("svc-working", "/opt/svc-working/0.9.0");
-                serviceDeployer.SetDeployResult("svc-working", new Version(1, 0, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.ConnectAsyncThrowsForPluginPaths.Add(failingPath);
-                distributionClient.SetLatestVersion("SvcWorking", new Version(1, 0, 0));
-
-                MockOutputWriter outputWriter = new MockOutputWriter();
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    outputWriter,
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
-
-                int exitCode = await command.ExecuteAsync(Array.Empty<string>());
-                Assert.Equal(0, exitCode);
-
-                Assert.Contains(outputWriter.Errors, e => e.Contains("Error using plugin 'failing'"));
-                Assert.Contains(outputWriter.Errors, e => e.Contains("Continuing with remaining plugins"));
-
-                Assert.Contains(distributionClient.MethodCalls, c => c == $"ConnectAsync:{failingPath}");
-                Assert.Contains(distributionClient.MethodCalls, c => c == $"ConnectAsync:{workingPath}");
-                Assert.Contains(distributionClient.MethodCalls, c => c.StartsWith("GetLatestVersionAsync:SvcWorking"));
-            }
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_PluginConnectFails_DisposeRunsBeforeNextPlugin()
-        {
-            // The bug this PR fixes was a stale Process field surviving from one
-            // plugin into the next ConnectAsync. The contract now is that
-            // DisposeAsync runs before the next ConnectAsync regardless of how
-            // the previous plugin's lifecycle ended (success or failure).
-            using (TempFileHelper tempHelper = new TempFileHelper())
-            {
-                MockConfigManager configManager = new MockConfigManager();
-                string failingPath = tempHelper.CreateTempFile("plugins/failing/bin", "fake-plugin");
-                string workingPath = tempHelper.CreateTempFile("plugins/working/bin", "fake-plugin");
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("failing", failingPath));
-                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("working", workingPath));
-                await configManager.RegisterServiceAsync("svc-failing", "SvcFailing", "failing");
-                await configManager.RegisterServiceAsync("svc-working", "SvcWorking", "working");
-
-                MockServiceDeployer serviceDeployer = new MockServiceDeployer();
-                serviceDeployer.SetInitialized("svc-working", "/opt/svc-working/0.9.0");
-                serviceDeployer.SetDeployResult("svc-working", new Version(1, 0, 0));
-
-                MockDistributionServiceClient distributionClient = new MockDistributionServiceClient();
-                distributionClient.ConnectAsyncThrowsForPluginPaths.Add(failingPath);
-                distributionClient.SetLatestVersion("SvcWorking", new Version(1, 0, 0));
-
-                UpdateCommand command = new UpdateCommand(
-                    configManager,
-                    new MockSecretsManager(),
-                    new MockServiceManager(),
-                    distributionClient,
-                    new MockOutputWriter(),
-                    new MockVersionExtractor(),
-                    serviceDeployer
-                );
-
-                await command.ExecuteAsync(Array.Empty<string>());
-
-                int firstConnectIndex = distributionClient.MethodCalls.IndexOf($"ConnectAsync:{failingPath}");
-                int secondConnectIndex = distributionClient.MethodCalls.IndexOf($"ConnectAsync:{workingPath}");
-
-                Assert.True(firstConnectIndex >= 0, "First (failing) ConnectAsync should have been recorded");
-                Assert.True(secondConnectIndex > firstConnectIndex, "Second ConnectAsync should follow the first");
-
-                int disposeBetweenIndex = -1;
-                for (int i = firstConnectIndex + 1; i < secondConnectIndex; i++)
-                {
-                    if (distributionClient.MethodCalls[i] == "DisposeAsync")
-                    {
-                        disposeBetweenIndex = i;
-                        break;
-                    }
-                }
-
-                Assert.True(disposeBetweenIndex >= 0, "DisposeAsync must run between consecutive plugins, even on failure");
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains(expectedError));
             }
         }
     }
