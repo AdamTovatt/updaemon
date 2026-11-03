@@ -21,7 +21,7 @@ namespace Updaemon.Tests.Services
 
         private static PluginInstaller Installer(TempFileHelper tempHelper, MockPluginDownloader downloader, MockConfigManager configManager)
         {
-            return new PluginInstaller(Resolver(), downloader, configManager, TestScope.Create(tempHelper.TempDirectory));
+            return new PluginInstaller(Resolver(), new MockGitHubPluginReleases(), downloader, configManager, TestScope.Create(tempHelper.TempDirectory));
         }
 
         // Where TestScope puts the plugins directory, relative to the temp root.
@@ -73,6 +73,22 @@ namespace Updaemon.Tests.Services
                 Assert.NotNull(recorded);
                 Assert.Equal(source, recorded.Source);
                 Assert.Equal(Path.Combine(pluginsDirectory, expectedAlias, "my-plugin"), recorded.Path);
+            }
+        }
+
+        [Fact]
+        public async Task InstallAsync_GitHubPlugin_DownloadsItsReleasesBuildVerifiedAndRecordsTheTag()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                MockPluginDownloader downloader = new MockPluginDownloader();
+                PluginSource source = new PluginSource.GitHub("someone", "updaemon-s3", "v2.1.0");
+
+                await Installer(tempHelper, downloader, configManager).InstallAsync(source, alias: null);
+
+                Assert.Equal((MockGitHubPluginReleases.BuildUrl("someone", "updaemon-s3", "v2.1.0"), true), Assert.Single(downloader.Downloads));
+                Assert.Equal(source, (await configManager.GetPluginAsync("mock"))!.Source);
             }
         }
 

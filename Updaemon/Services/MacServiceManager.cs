@@ -93,6 +93,9 @@ namespace Updaemon.Services
         public Task DaemonReloadAsync(CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task<bool> ServicesStopAtLogoutAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
         private string Label(string serviceName) => _scope.GetServiceLabel(serviceName);
 
         private async Task LoadAsync(string serviceName, CancellationToken cancellationToken)

@@ -58,6 +58,13 @@ namespace Updaemon.Interfaces
         /// on launchd it does nothing, since every start and restart reloads the plist.
         /// </summary>
         Task DaemonReloadAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Whether this scope's services stop when its user logs out. Only in a Linux user scope can
+        /// they: its services run in the user's own systemd manager, which stops at logout unless
+        /// lingering is on for the user.
+        /// </summary>
+        Task<bool> ServicesStopAtLogoutAsync(CancellationToken cancellationToken = default);
     }
 }
 

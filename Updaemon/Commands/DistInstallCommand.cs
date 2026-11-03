@@ -11,13 +11,15 @@ namespace Updaemon.Commands
     {
         private readonly IOutputWriter _outputWriter;
         private readonly IPluginInstaller _pluginInstaller;
+        private readonly IGitHubPluginReleases _gitHubPluginReleases;
         private readonly UpdaemonVersion _updaemonVersion;
 
         /// <param name="updaemonVersion">The running updaemon's version: registry plugins come from its release.</param>
-        public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, UpdaemonVersion updaemonVersion)
+        public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, IGitHubPluginReleases gitHubPluginReleases, UpdaemonVersion updaemonVersion)
         {
             _outputWriter = outputWriter;
             _pluginInstaller = pluginInstaller;
+            _gitHubPluginReleases = gitHubPluginReleases;
             _updaemonVersion = updaemonVersion;
         }
 
@@ -25,7 +27,7 @@ namespace Updaemon.Commands
 
         public string Description => "Install a distribution service plugin";
 
-        public string Usage => "updaemon dist-install [--as <alias>] <plugin-name|url>";
+        public string Usage => PluginSource.InstallUsage;
 
         public bool ChangesState => true;
 
@@ -43,11 +45,22 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            bool isUrl = urlOrName.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                || urlOrName.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-            PluginSource source = isUrl ? new PluginSource.Url(urlOrName) : new PluginSource.Registry(urlOrName, _updaemonVersion);
+            PluginSource source;
+            try
+            {
+                source = await PluginSource.ParseAsync(
+                    urlOrName,
+                    _updaemonVersion,
+                    (owner, repo) => _gitHubPluginReleases.GetLatestTagAsync(owner, repo, cancellationToken));
+            }
+            catch (FormatException ex)
+            {
+                return _outputWriter.Fail(ex.Message);
+            }
 
-            _outputWriter.WriteLine($"Installing distribution plugin: {source}");
+            _outputWriter.WriteLine(source is PluginSource.GitHub github
+                ? $"Installing distribution plugin: {source}, release {github.Tag}"
+                : $"Installing distribution plugin: {source}");
 
             PluginInstallResult result = await _pluginInstaller.InstallAsync(source, alias, cancellationToken);
 
@@ -63,24 +76,38 @@ namespace Updaemon.Commands
 
         public string GetDetailedHelp()
         {
-            return """
+            return $"""
                 Dist-Install Command
 
                 Usage:
-                  updaemon dist-install [--as <alias>] <plugin-name|url>
+                  {PluginSource.InstallUsage}
 
                 Description:
-                  Installs a distribution service plugin, from a URL or by registry name
-                  (e.g. "github"). A registry plugin comes from this updaemon version's own
-                  release, built for this machine. If --as is not given, a registry plugin is
-                  installed under its name and a URL plugin under its default alias. A plugin
-                  already installed under the alias is replaced; if the new one fails to
-                  start, the installed one is kept.
+                  Installs a distribution service plugin, by registry name (e.g. "github"),
+                  from a GitHub repository's releases, or from a URL.
+
+                  A registry plugin comes from this updaemon version's own release, built for
+                  this machine, and follows updaemon's updates.
+
+                  github:<owner>/<repo> installs the one asset named *-<rid> (e.g.
+                  *-linux-arm64) from the repository's latest release. It must match its line
+                  in the release's SHA256SUMS. While self-update is on, 'updaemon update'
+                  installs the repository's latest release whenever it differs from the one
+                  installed. A release refused for its checksum, its build or its plugin
+                  protocol is skipped until another is latest; run dist-install again to
+                  retry it once it is fixed.
+
+                  A URL plugin is not verified and is never updated; install it again to
+                  replace it.
+
+                  If --as is not given, a registry plugin is installed under its name and
+                  any other under its default alias. A plugin already installed under the
+                  alias is replaced; if the new one fails to start, the installed one is kept.
 
                 Examples:
                   updaemon dist-install github
+                  updaemon dist-install github:someone/updaemon-s3
                   updaemon dist-install --as github https://example.com/plugin
-                  updaemon dist-install https://example.com/plugin
                 """;
         }
     }

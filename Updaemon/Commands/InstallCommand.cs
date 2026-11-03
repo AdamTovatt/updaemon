@@ -320,6 +320,11 @@ namespace Updaemon.Commands
                 _outputWriter.WriteLine($"Add {_scope.BinDirectory} to your PATH to run '{staged.Manifest.Command}'.");
             }
 
+            if (staged.Manifest.IsService)
+            {
+                await LogoutWarning.WriteIfNeededAsync(_serviceManager, _outputWriter, cancellationToken);
+            }
+
             // There is no earlier version to fall back to: the app stays installed, and the log says why.
             if (!staysRunning)
             {

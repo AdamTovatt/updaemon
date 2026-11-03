@@ -61,6 +61,7 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine($"Update timer: {await DescribeTimerAsync(cancellationToken)}");
             UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
             _outputWriter.WriteLine($"Self-update: {(config.SelfUpdate ? "on" : "off")}");
+            await LogoutWarning.WriteIfNeededAsync(_serviceManager, _outputWriter, cancellationToken);
             _outputWriter.WriteLine(string.Empty);
 
             if (apps.Count == 0)
@@ -95,7 +96,9 @@ namespace Updaemon.Commands
                 Description:
                   Shows updaemon's version, its scope (system-wide or this user's) and the
                   update timer, then for each app: its version, what it is, whether its
-                  service runs, where it comes from, and any version update skips.
+                  service runs, where it comes from, and any version update skips. On Linux,
+                  for your own services, it warns when lingering is off, since they then stop
+                  when you log out.
 
                 Examples:
                   updaemon status

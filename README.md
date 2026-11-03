@@ -98,7 +98,7 @@ Who runs updaemon decides which apps it manages. As root, it manages system-wide
 
 On Linux, `$XDG_DATA_HOME` and `$XDG_CONFIG_HOME` move the user paths when set.
 
-A system-wide service runs as root unless installed with `--run-as <user>`. A user's services run as that user. On Linux they run only while the user is logged in, unless lingering is on for that user (`sudo loginctl enable-linger <user>`); updaemon does not turn it on for you.
+A system-wide service runs as root unless installed with `--run-as <user>`. A user's services run as that user. On Linux they run only while the user is logged in, unless lingering is on for that user (`sudo loginctl enable-linger <user>`). updaemon does not turn it on for you, but `install` of a service and `status` warn while it is off.
 
 ### Upgrading from 0.x
 
@@ -143,7 +143,7 @@ updaemon install <app> --from <plugin>:<remote> [--set KEY=VALUE]... [--command 
 
 Downloads the latest release, reads its `updaemon.json`, asks for each required setting without a value, writes the app's command and service, and starts the service. `<app>` is the local name: the app's directory, service and data directory are named after it.
 
-A service must keep running for 10 seconds after it starts. If it does not, the app stays installed and `install` fails, pointing to `updaemon logs <app>`.
+A service must keep running for its health-check window after it starts: 10 seconds, unless its `updaemon.json` sets `service.healthCheckSeconds` (see [Publishing with Updaemon](PublishingWithUpdaemon.md)). If it does not, the app stays installed and `install` fails, pointing to `updaemon logs <app>`.
 
 A release that publishes a `SHA256SUMS` must match it, or nothing is installed. A download its plugin could not check against a published checksum is still installed, and `install` says it was not verified (see [Publishing with Updaemon](PublishingWithUpdaemon.md) for `SHA256SUMS`).
 
@@ -160,11 +160,11 @@ updaemon update [app]
 
 Installs each app's latest release, checked against its `SHA256SUMS` as `install` does. The new release's `updaemon.json` is read again, so a release can add settings or change its arguments. If it needs a setting the app has no value for, the current version keeps running and the message names the `updaemon set` command to run.
 
-A restarted service must keep running for 10 seconds. If it does not, the previous version runs again, `update` fails pointing to `updaemon logs <app>`, and the new version is skipped: later updates pass over it until a newer release appears. `updaemon status` lists skipped versions.
+A restarted service must keep running for its health-check window, as after `install`. If it does not, the previous version runs again, `update` fails pointing to `updaemon logs <app>`, and the new version is skipped: later updates pass over it until a newer release appears. `updaemon status` lists skipped versions.
 
 After an update, old versions are deleted down to `releaseRetentionCount` in `config.json` (5 by default). The current version is always kept.
 
-Without an app named, `update` ends by updating updaemon itself; see [self-update](#self-update).
+Without an app named, and while self-update is on, `update` ends by updating GitHub plugins and updaemon itself; see [self-update](#self-update).
 
 ### rollback
 
@@ -182,7 +182,7 @@ Naming a newer kept version switches forward to it, for example to undo a rollba
 updaemon status [app]
 ```
 
-Shows updaemon's version, its scope, the update timer and whether self-update is on, then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions.
+Shows updaemon's version, its scope, the update timer and whether self-update is on, then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions. On Linux, in a user's own scope, it also warns while lingering is off, since the services then stop at logout.
 
 ### logs
 
@@ -241,7 +241,11 @@ updaemon self-update [on|off]
 
 When on, the default, `updaemon update` ends by updating updaemon to its latest release. The new version is downloaded into its own directory, beside the one running, must match its line in the release's `SHA256SUMS`, and must run (`updaemon --version`) before the `updaemon` command is switched to it in one step. If anything fails, the running version stays and `update` reports why. The previous version is kept until the next self-update.
 
-Registry plugins always come from the release of the updaemon that runs them: the first install or update after a self-update reinstalls them from the new release. If that fails, the apps using that plugin fail with the reason, and the installed plugin is kept. Plugins installed from a URL are not updated; reinstall them with `dist-install` if a new updaemon needs a newer build.
+Registry plugins always come from the release of the updaemon that runs them: the first install or update after a self-update reinstalls them from the new release. If that fails, the apps using that plugin fail with the reason, and the installed plugin is kept.
+
+Plugins installed with `dist-install github:<owner>/<repo>` are updated in the same step: when the release their repository marks Latest differs from the one installed, it is installed the way `dist-install` does. A release that fails is reported, and the installed plugin is kept. One refused for its checksum, its build for this machine or its plugin protocol is also skipped: later updates pass over it until another release is latest, and `dist-list` shows it. Install the plugin again with `dist-install` to retry a release fixed in place. If updaemon moves to a plugin protocol a plugin does not speak yet, the apps using it fail, naming the plugin and both protocol versions, until its repository releases a matching build.
+
+Plugins installed from a URL are not updated; reinstall them with `dist-install` if a new updaemon needs a newer build.
 
 Self-update replaces only the scope's own `updaemon` command. Running the system-wide updaemon as another user skips it, and says so.
 
@@ -250,12 +254,14 @@ Without an argument, shows whether self-update is on.
 ### dist-install
 
 ```bash
-updaemon dist-install [--as <alias>] <plugin-name|url>
+updaemon dist-install [--as <alias>] <plugin-name|github:owner/repo|url>
 ```
 
-Installs a distribution plugin by registry name or from a URL. A registry plugin comes from the release of the updaemon you run, built for your machine. Each release carries the registry plugins for every platform updaemon itself is released for (see [RELEASE_GUIDE.md](RELEASE_GUIDE.md)); on another platform, build the plugin and install it from its URL. `install` already installs a missing registry plugin, so this is mostly for URL plugins and aliases.
+Installs a distribution plugin by registry name, from a GitHub repository, or from a URL. A registry plugin comes from the release of the updaemon you run, built for your machine. Each release carries the registry plugins for every platform updaemon itself is released for (see [RELEASE_GUIDE.md](RELEASE_GUIDE.md)); on another platform, build the plugin and install it from its URL. `install` already installs a missing registry plugin, so this is mostly for other plugins and aliases.
 
-A plugin already installed under the alias is replaced, but only once the new one has started and answered. A registry plugin must first match its line in the release's `SHA256SUMS`; a plugin from a plain URL is not verified.
+`github:<owner>/<repo>` installs a third-party plugin from the repository's latest release: its one asset named `*-<rid>`, such as `my-plugin-linux-arm64`. No such asset, or several, fails and lists the release's assets. The release must have a `SHA256SUMS` (see [Publishing with Updaemon](PublishingWithUpdaemon.md)). While self-update is on, `update` installs the repository's newer releases (see [self-update](#self-update)).
+
+A plugin already installed under the alias is replaced, but only once the new one has started and answered. A registry or GitHub plugin must first match its line in its release's `SHA256SUMS`; a plugin from a plain URL is not verified.
 
 ### dist-list
 
@@ -263,7 +269,7 @@ A plugin already installed under the alias is replaced, but only once the new on
 updaemon dist-list
 ```
 
-Lists the installed plugins with their version, description and secrets.
+Lists the installed plugins with their version, description and secrets, and how each is updated: with updaemon, with its GitHub repository's latest release (not while self-update is off, and naming a skipped release), or, for a URL plugin, not at all.
 
 ### secret-set
 
@@ -335,7 +341,7 @@ Updaemon writes this file; the commands above change it. One setting is meant fo
 }
 ```
 
-`skippedVersions` lists the versions `update` passes over: each failed its health check or was rolled back from. A registry plugin's `release` is the updaemon release it came from. `selfUpdate` is what `updaemon self-update on|off` sets.
+`skippedVersions` lists the versions `update` passes over: each failed its health check or was rolled back from. A registry plugin's `release` is the updaemon release it came from. A GitHub plugin's source is `{ "kind": "github", "owner": "...", "repo": "...", "tag": "v2.1.0" }`, with the tag of the release installed, and `"skippedTag"` when a later release was refused. `selfUpdate` is what `updaemon self-update on|off` sets.
 
 [↑ Back to top](#updaemon)
 
@@ -385,6 +391,8 @@ For detailed instructions and advanced options, see [Updaemon.Common/README.md](
 4. Host a named pipe server that handles JSON-RPC requests
 5. Use `CommonJsonContext` for RPC serialization (AOT-compatible)
 6. Be compiled as an AOT executable for the target platform (linux-arm64, linux-x64, or osx-arm64)
+
+To let users install it with `updaemon dist-install github:<owner>/<repo>`, publish it as Updaemon.Common's README describes under "Publishing a plugin on GitHub".
 
 ### RPC Protocol
 
@@ -553,14 +561,14 @@ sequenceDiagram
     Update->>Disk: Read 1.1.0/updaemon.json, check every required setting has a value
     Update->>Disk: Repoint current to 1.1.0, write command, unit and settings file
     Update->>Manager: Restart
-    Update->>Manager: Still running 10 seconds later, not restarted?
+    Update->>Manager: Still running after its health-check window, not restarted?
     alt it is
         Update->>Disk: Prune old versions
     else it is not
         Update->>Disk: Repoint current to 1.0.0, rewrite its files, skip 1.1.0
         Update->>Manager: Restart
     end
-    Note over Update: After every app: self-update, the same way for updaemon's own binary
+    Note over Update: After every app: GitHub plugins, then self-update, the same way for updaemon's own binary
 ```
 
 [↑ Back to top](#updaemon)

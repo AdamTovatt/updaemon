@@ -147,6 +147,12 @@ namespace Updaemon.Models
                 throw new ManifestException("'service.args' contains a control character, such as a line break.");
             }
 
+            if (Service != null && Service.HealthCheckSeconds is < ServiceSpec.MinHealthCheckSeconds or > ServiceSpec.MaxHealthCheckSeconds)
+            {
+                throw new ManifestException(
+                    $"'service.healthCheckSeconds' must be {ServiceSpec.MinHealthCheckSeconds} to {ServiceSpec.MaxHealthCheckSeconds}, got {Service.HealthCheckSeconds}.");
+            }
+
             if (!IsCommand && !IsService)
             {
                 throw new ManifestException("it has neither 'command' nor 'service'; at least one is required.");
@@ -185,9 +191,19 @@ namespace Updaemon.Models
 
     public sealed class ServiceSpec
     {
+        public const int DefaultHealthCheckSeconds = 10;
+        public const int MinHealthCheckSeconds = 1;
+        public const int MaxHealthCheckSeconds = 300;
+
         /// <summary>Arguments the service runs with.</summary>
         // A setter, not init: see AppManifest.Settings.
         public List<string> Args { get; set; } = new List<string>();
+
+        /// <summary>How long the service must keep running after a (re)start to count as healthy.</summary>
+        public int HealthCheckSeconds { get; set; } = DefaultHealthCheckSeconds;
+
+        [JsonIgnore]
+        public TimeSpan HealthCheck => TimeSpan.FromSeconds(HealthCheckSeconds);
     }
 
     public sealed class SettingSpec

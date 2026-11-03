@@ -22,6 +22,17 @@ namespace Updaemon.Tests.Helpers
             };
         }
 
+        /// <summary>A plugin installed from release <paramref name="tag"/> of <paramref name="owner"/>/<paramref name="repo"/> on GitHub.</summary>
+        public static InstalledPluginInfo FromGitHub(string alias, string path, string owner, string repo, string tag)
+        {
+            return new InstalledPluginInfo
+            {
+                Alias = alias,
+                Path = path,
+                Source = new PluginSource.GitHub(owner, repo, tag),
+            };
+        }
+
         /// <summary>A plugin installed from a URL the user gave.</summary>
         public static InstalledPluginInfo FromUrl(string alias, string path)
         {

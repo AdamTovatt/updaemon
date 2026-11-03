@@ -49,8 +49,8 @@ namespace Updaemon.Interfaces
 
         /// <summary>
         /// Enables and starts a newly installed service, then runs the health check: returns whether it
-        /// came up and kept running for the <see cref="Configuration.HealthCheckWait"/> without the
-        /// service manager starting it again.
+        /// came up and kept running for its current version's <see cref="ServiceSpec.HealthCheck"/>
+        /// without the service manager starting it again.
         /// </summary>
         Task<bool> StartAsync(string appName, CancellationToken cancellationToken = default);
 

@@ -34,6 +34,7 @@ namespace Updaemon.Commands
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
             IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await _configManager.GetAllPluginsAsync(cancellationToken);
+            bool selfUpdate = (await _configManager.LoadConfigAsync(cancellationToken)).SelfUpdate;
 
             if (plugins.Count == 0)
             {
@@ -71,6 +72,7 @@ namespace Updaemon.Commands
                     _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
                     _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
                     _outputWriter.WriteLine($"  Path: {plugin.Value.Path}");
+                    _outputWriter.WriteLine($"  Updates: {UpdatesLabel(plugin.Value, selfUpdate)}");
 
                     if (serviceInfo.Secrets.Count > 0)
                     {
@@ -96,6 +98,18 @@ namespace Updaemon.Commands
 
             return 0;
         }
+
+        private static string UpdatesLabel(InstalledPluginInfo plugin, bool selfUpdate) => plugin.Source switch
+        {
+            PluginSource.GitHub github => (selfUpdate
+                    ? $"with the latest release of {github}, now {github.Tag}"
+                    : $"not while self-update is off; now {github.Tag} of {github}")
+                + (github.SkippedTag == null
+                    ? string.Empty
+                    : $"; skips {github.SkippedTag}, which was refused (retry it with 'updaemon dist-install --as {plugin.Alias} {github}')"),
+            PluginSource.Url => "not updatable: installed from a URL, so only installing it again replaces it",
+            _ => "with updaemon",
+        };
 
         /// <summary>A plugin whose metadata is not shown, and why.</summary>
         private void WriteUnreadable(InstalledPluginInfo plugin, string status)

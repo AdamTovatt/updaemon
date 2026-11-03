@@ -18,6 +18,7 @@ namespace Updaemon.Commands
         private readonly IServiceDeployer _serviceDeployer;
         private readonly AppRollback _appRollback;
         private readonly PluginProvider _pluginProvider;
+        private readonly GitHubPluginUpdater _gitHubPluginUpdater;
         private readonly SelfUpdater _selfUpdater;
 
         public UpdateCommand(
@@ -29,6 +30,7 @@ namespace Updaemon.Commands
             IServiceDeployer serviceDeployer,
             AppRollback appRollback,
             PluginProvider pluginProvider,
+            GitHubPluginUpdater gitHubPluginUpdater,
             SelfUpdater selfUpdater)
         {
             _configManager = configManager;
@@ -39,6 +41,7 @@ namespace Updaemon.Commands
             _serviceDeployer = serviceDeployer;
             _appRollback = appRollback;
             _pluginProvider = pluginProvider;
+            _gitHubPluginUpdater = gitHubPluginUpdater;
             _selfUpdater = selfUpdater;
         }
 
@@ -77,9 +80,10 @@ namespace Updaemon.Commands
                 allSucceeded &= await UpdateAppsForPluginAsync(pluginGroup.Key, pluginGroup.ToList(), config.ReleaseRetentionCount, cancellationToken);
             }
 
-            // Last, so a run finishes on one version of the code. Updating one app leaves updaemon alone.
+            // Last, so a run finishes on one version of the code. Updating one app leaves updaemon and its plugins alone.
             if (parser.Positionals is [])
             {
+                allSucceeded &= await _gitHubPluginUpdater.RunAsync(cancellationToken);
                 allSucceeded &= await _selfUpdater.RunAsync(cancellationToken);
             }
 
@@ -270,15 +274,18 @@ namespace Updaemon.Commands
 
                   Services are restarted after an update unless set to manual with
                   'updaemon set-restart <app> manual'. A restarted service must keep running
-                  for {HealthCheckWait.Default.Value.TotalSeconds} seconds; if it does not, the previous version runs again and
+                  for its health-check window ({ServiceSpec.DefaultHealthCheckSeconds} seconds unless its updaemon.json sets
+                  service.healthCheckSeconds); if it does not, the previous version runs again and
                   the new one is skipped. A skipped version, or one rolled back from, is not
                   offered again; update waits for a newer release.
 
                   Old version directories are pruned after each update; releaseRetentionCount
                   in config.json sets how many to keep (default 5).
 
-                  Without an app named, update ends by updating updaemon itself to its
-                  latest release, unless 'updaemon self-update off' turned that off.
+                  Without an app named, and unless 'updaemon self-update off' turned this off,
+                  update ends by installing newer releases of plugins installed with
+                  'dist-install github:<owner>/<repo>', then updating updaemon itself to its
+                  latest release.
 
                 Examples:
                   updaemon update

@@ -199,6 +199,24 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        [Theory]
+        [InlineData(false, "v1.1.0")]
+        [InlineData(true, "v1.0.0")]
+        public async Task Update_GitHubPluginWithANewerRelease_IsUpdatedUnlessOneAppIsNamed(bool oneApp, string expectedTag)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                await h.Config.AddOrUpdatePluginAsync(PluginRecords.FromGitHub("s3", "/plugins/s3/old", "someone", "updaemon-s3", "v1.0.0"));
+                h.GitHubPlugins.LatestTags["someone/updaemon-s3"] = "v1.1.0";
+
+                int exitCode = await h.Update().ExecuteAsync(oneApp ? new[] { "byteshelf" } : Array.Empty<string>());
+
+                Assert.Equal(0, exitCode);
+                Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", expectedTag), (await h.Config.GetPluginAsync("s3"))!.Source);
+            }
+        }
+
         [Fact]
         public async Task Update_PluginFromAnOlderReleaseCannotBeReplaced_FailsItsAppsNamingWhy()
         {

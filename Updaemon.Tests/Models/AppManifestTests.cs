@@ -48,6 +48,17 @@ namespace Updaemon.Tests.Models
 
             Assert.Empty(manifest.Service!.Args);
             Assert.Equal("service", manifest.KindLabel);
+            Assert.Equal(TimeSpan.FromSeconds(10), manifest.Service.HealthCheck);
+        }
+
+        [Theory]
+        [InlineData(1)]
+        [InlineData(300)]
+        public void Parse_HealthCheckSecondsInRange_IsTheWindow(int seconds)
+        {
+            AppManifest manifest = AppManifest.Parse($$"""{ "executable": "app", "service": { "healthCheckSeconds": {{seconds}} } }""");
+
+            Assert.Equal(TimeSpan.FromSeconds(seconds), manifest.Service!.HealthCheck);
         }
 
         [Fact]
@@ -73,6 +84,9 @@ namespace Updaemon.Tests.Models
         [InlineData("""{ "executable": "app\nUser=root", "command": "app" }""", "inside the release")]
         [InlineData("""{ "executable": "app", "service": { "args": ["run\nUser=root"] } }""", "control character")]
         [InlineData("""{ "executable": "app", "command": "app", "settings": { "A": { "default": "x\ny" } } }""", "default of 'A'")]
+        [InlineData("""{ "executable": "app", "service": { "healthCheckSeconds": 0 } }""", "'service.healthCheckSeconds' must be 1 to 300, got 0.")]
+        [InlineData("""{ "executable": "app", "service": { "healthCheckSeconds": 301 } }""", "'service.healthCheckSeconds' must be 1 to 300, got 301.")]
+        [InlineData("""{ "executable": "app", "service": { "healthCheckSeconds": "30" } }""", "Invalid updaemon.json")]
         public void Parse_InvalidManifest_ThrowsNamingTheProblem(string json, string expectedInMessage)
         {
             ManifestException ex = Assert.Throws<ManifestException>(() => AppManifest.Parse(json));

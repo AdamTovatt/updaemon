@@ -163,12 +163,12 @@ namespace Updaemon.Tests.Services
         {
             string json = $"{{\"fullName\":\"GitHub Releases\",\"defaultAlias\":\"github\",\"version\":\"0.4.0\",\"secrets\":[]{protocolProperty}}}";
 
-            PluginException exception = Assert.Throws<PluginException>(
+            PluginProtocolException exception = Assert.Throws<PluginProtocolException>(
                 () => DistributionServiceClient.ReadServiceInformation(json, "/plugins/github/plugin"));
 
             Assert.Equal(
                 $"The plugin at /plugins/github/plugin speaks plugin protocol {reportedVersion}, but this updaemon speaks protocol {PluginProtocol.Version}. " +
-                "Reinstall the plugin with 'updaemon dist-install [--as <alias>] <plugin-name|url>'.",
+                "Reinstall the plugin with 'updaemon dist-install [--as <alias>] <plugin-name|github:owner/repo|url>'.",
                 exception.Message);
         }
 

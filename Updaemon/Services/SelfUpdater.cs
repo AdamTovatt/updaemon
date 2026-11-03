@@ -101,7 +101,7 @@ namespace Updaemon.Services
 
             _outputWriter.WriteLine($"Updated updaemon from {current} to {latest}.");
 
-            foreach (InstalledPluginInfo plugin in config.InstalledPlugins.Values.Where(plugin => !plugin.Source.FollowsUpdaemon))
+            foreach (InstalledPluginInfo plugin in config.InstalledPlugins.Values.Where(plugin => plugin.Source is PluginSource.Url))
             {
                 _outputWriter.WriteLine(
                     $"The '{plugin.Alias}' plugin was installed from a URL, so it is not updated with updaemon. " +

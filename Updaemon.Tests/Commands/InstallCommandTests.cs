@@ -81,6 +81,37 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        private static async Task<AppHarness> InstallWhileServicesStopAtLogoutAsync(string manifest)
+        {
+            AppHarness h = new AppHarness();
+            await h.AddPluginAsync();
+            h.AddRelease("owner/app", "1.0.0", manifest, executable: "app");
+            h.ServiceManager.ServicesStopAtLogout = true;
+            Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "app", "--from", "github:owner/app" }));
+            return h;
+        }
+
+        [Fact]
+        public async Task Install_ServiceWhileServicesStopAtLogout_WarnsNamingTheCommand()
+        {
+            using (AppHarness h = await InstallWhileServicesStopAtLogoutAsync("""{ "executable": "app", "service": {} }"""))
+            {
+                string user = Environment.UserName;
+                Assert.Equal(
+                    new[] { $"Warning: lingering is off for {user}, so your services stop when you log out. To keep them running, run: sudo loginctl enable-linger {user}" },
+                    h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task Install_CommandWhileServicesStopAtLogout_DoesNotWarn()
+        {
+            using (AppHarness h = await InstallWhileServicesStopAtLogoutAsync("""{ "executable": "app", "command": "app" }"""))
+            {
+                Assert.Empty(h.Output.Errors);
+            }
+        }
+
         [Fact]
         public async Task Install_MissingRequiredSettings_AsksForEach_SecretsWithoutEcho()
         {

@@ -16,17 +16,20 @@ namespace Updaemon.Services
     public class PluginInstaller : IPluginInstaller
     {
         private readonly IPluginUrlResolver _pluginUrlResolver;
+        private readonly IGitHubPluginReleases _gitHubPluginReleases;
         private readonly IPluginDownloader _pluginDownloader;
         private readonly IConfigManager _configManager;
         private readonly string _pluginsDirectory;
 
         public PluginInstaller(
             IPluginUrlResolver pluginUrlResolver,
+            IGitHubPluginReleases gitHubPluginReleases,
             IPluginDownloader pluginDownloader,
             IConfigManager configManager,
             UpdaemonScope scope)
         {
             _pluginUrlResolver = pluginUrlResolver;
+            _gitHubPluginReleases = gitHubPluginReleases;
             _pluginDownloader = pluginDownloader;
             _configManager = configManager;
             _pluginsDirectory = scope.PluginsDirectory;
@@ -34,7 +37,7 @@ namespace Updaemon.Services
 
         public async Task<PluginInstallResult> InstallAsync(PluginSource source, string? alias, CancellationToken cancellationToken = default)
         {
-            string downloadUrl = ResolveDownloadUrl(source);
+            string downloadUrl = await ResolveDownloadUrlAsync(source, cancellationToken);
 
             PluginDownloadResult download;
             try
@@ -94,12 +97,15 @@ namespace Updaemon.Services
             }
         }
 
-        private string ResolveDownloadUrl(PluginSource source)
+        private async Task<string> ResolveDownloadUrlAsync(PluginSource source, CancellationToken cancellationToken)
         {
             switch (source)
             {
                 case PluginSource.Url url:
                     return url.Address;
+
+                case PluginSource.GitHub github:
+                    return await _gitHubPluginReleases.GetBuildUrlAsync(github.Owner, github.Repo, github.Tag, cancellationToken);
 
                 case PluginSource.Registry registry:
                     string? resolved = _pluginUrlResolver.Resolve(registry.Name, registry.Release);

@@ -4,16 +4,16 @@ using Updaemon.Interfaces;
 namespace Updaemon.Services
 {
     /// <summary>
-    /// Updaemon's GitHub releases. The latest version is read from where <c>releases/latest</c>
-    /// redirects to (<c>.../releases/tag/v1.2.0</c>), as install.sh does: unlike the API, that has no
-    /// rate limit. Each release carries <c>&lt;asset&gt;-&lt;rid&gt;</c> builds: updaemon's, and the
-    /// first-party plugins'.
+    /// Updaemon's GitHub releases, tagged <c>v1.2.0</c>; the latest is read as
+    /// <see cref="GitHubLatestRelease"/> does. Each release carries <c>&lt;asset&gt;-&lt;rid&gt;</c>
+    /// builds: updaemon's, and the first-party plugins'.
     /// </summary>
     public class GitHubUpdaemonReleases : IUpdaemonReleases
     {
-        private const string ReleasesUrl = "https://github.com/AdamTovatt/updaemon/releases";
+        private const string Owner = "AdamTovatt";
+        private const string Repo = "updaemon";
+        private const string ReleasesUrl = $"https://github.com/{Owner}/{Repo}/releases";
         private const string UpdaemonAssetName = "Updaemon";
-        private const string TagPrefix = "/releases/tag/v";
 
         private readonly HttpClient _httpClient;
         private readonly IReleaseChecksums _checksums;
@@ -34,12 +34,7 @@ namespace Updaemon.Services
 
         public async Task<UpdaemonVersion?> GetLatestVersionAsync(CancellationToken cancellationToken = default)
         {
-            using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Head, $"{ReleasesUrl}/latest"))
-            using (HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
-            {
-                response.EnsureSuccessStatusCode();
-                return ParseTagUrl(response.RequestMessage?.RequestUri);
-            }
+            return VersionOfTag(await GitHubLatestRelease.ReadTagAsync(_httpClient, Owner, Repo, cancellationToken));
         }
 
         public async Task DownloadAsync(UpdaemonVersion release, string destinationPath, CancellationToken cancellationToken = default)
@@ -57,17 +52,10 @@ namespace Updaemon.Services
             await _checksums.VerifyAsync(url, destinationPath, cancellationToken);
         }
 
-        /// <summary>
-        /// The version in a release page's address, after the redirects: <c>.../releases/tag/v1.2.0</c>.
-        /// A tag that is not <c>v</c> and three numbers names no release updaemon can install.
-        /// </summary>
-        internal static UpdaemonVersion? ParseTagUrl(Uri? url)
+        /// <summary>The version a release tag names: <c>v1.2.0</c>. Any other tag names no release updaemon can install.</summary>
+        private static UpdaemonVersion? VersionOfTag(string? tag)
         {
-            string? path = url?.AbsolutePath;
-            int tag = path?.IndexOf(TagPrefix, StringComparison.Ordinal) ?? -1;
-            return tag >= 0 && UpdaemonVersion.TryParse(path![(tag + TagPrefix.Length)..], out UpdaemonVersion? version)
-                ? version
-                : null;
+            return tag != null && tag.StartsWith('v') && UpdaemonVersion.TryParse(tag[1..], out UpdaemonVersion? version) ? version : null;
         }
     }
 }

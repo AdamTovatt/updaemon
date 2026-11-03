@@ -54,15 +54,11 @@ namespace Updaemon.Tests.Services
         [InlineData("https://github.com/AdamTovatt/updaemon/releases/tag/v1.3.0.0", null)]
         [InlineData("https://github.com/AdamTovatt/updaemon/releases", null)]
         [InlineData("https://github.com/AdamTovatt/updaemon/releases/tag/nightly", null)]
-        public void ParseTagUrl_AddressAfterTheLatestRedirect_ReadsOnlyAThreeNumberTag(string url, string? expected)
+        public async Task GetLatestVersionAsync_AddressAfterTheLatestRedirect_ReadsOnlyAThreeNumberTag(string url, string? expected)
         {
-            Assert.Equal(expected, GitHubUpdaemonReleases.ParseTagUrl(new Uri(url))?.ToString());
-        }
+            UpdaemonVersion? latest = await Releasing(new FakeGitHub { LatestTag = url }).GetLatestVersionAsync();
 
-        [Fact]
-        public async Task GetLatestVersionAsync_ReadsWhereTheLatestPageRedirects()
-        {
-            Assert.Equal(UpdaemonVersion.Of(1, 2, 0), await Releasing(new FakeGitHub()).GetLatestVersionAsync());
+            Assert.Equal(expected, latest?.ToString());
         }
 
         [Fact]

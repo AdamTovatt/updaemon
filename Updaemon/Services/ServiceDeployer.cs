@@ -20,7 +20,7 @@ namespace Updaemon.Services
         private readonly IServiceManager _serviceManager;
         private readonly ISecretsManager _secretsManager;
         private readonly IOutputWriter _outputWriter;
-        private readonly HealthCheckWait _healthCheckWait;
+        private readonly TimeProvider _time;
 
         private static readonly TimeSpan StartPollInterval = TimeSpan.FromMilliseconds(250);
 
@@ -33,7 +33,7 @@ namespace Updaemon.Services
             IServiceManager serviceManager,
             ISecretsManager secretsManager,
             IOutputWriter outputWriter,
-            HealthCheckWait healthCheckWait)
+            TimeProvider time)
         {
             _scope = scope;
             _symlinkManager = symlinkManager;
@@ -43,7 +43,7 @@ namespace Updaemon.Services
             _serviceManager = serviceManager;
             _secretsManager = secretsManager;
             _outputWriter = outputWriter;
-            _healthCheckWait = healthCheckWait;
+            _time = time;
         }
 
         public async Task<Version> GetCurrentVersionAsync(string appName, CancellationToken cancellationToken = default)
@@ -301,17 +301,22 @@ namespace Updaemon.Services
         }
 
         /// <summary>
-        /// Right after a (re)start: whether the service runs, then still runs after the wait without the
-        /// service manager having started it again. launchd starts a loaded job a moment after
-        /// <c>bootstrap</c> returns, so the first reading waits, within the same wait, for it to come up.
+        /// Right after a (re)start: whether the service runs, then still runs after the current version's
+        /// health-check window without the service manager having started it again. launchd starts a
+        /// loaded job a moment after <c>bootstrap</c> returns, so the first reading waits, within the same
+        /// window, for it to come up.
         /// </summary>
         private async Task<bool> StaysRunningAsync(string appName, CancellationToken cancellationToken)
         {
-            DateTime deadline = DateTime.UtcNow + _healthCheckWait.Value;
+            AppManifest manifest = await GetCurrentManifestAsync(appName, cancellationToken);
+            // Only a service is started, so only a service is checked.
+            TimeSpan window = (manifest.Service ?? throw new InvalidOperationException($"{appName}'s current version is not a service.")).HealthCheck;
+
+            DateTimeOffset deadline = _time.GetUtcNow() + window;
             ServiceState before = await _serviceManager.GetStateAsync(appName, cancellationToken);
-            while (!before.IsActive && DateTime.UtcNow < deadline)
+            while (!before.IsActive && _time.GetUtcNow() < deadline)
             {
-                await Task.Delay(StartPollInterval, cancellationToken);
+                await Task.Delay(StartPollInterval, _time, cancellationToken);
                 before = await _serviceManager.GetStateAsync(appName, cancellationToken);
             }
 
@@ -320,7 +325,7 @@ namespace Updaemon.Services
                 return false;
             }
 
-            await Task.Delay(_healthCheckWait.Value, cancellationToken);
+            await Task.Delay(window, _time, cancellationToken);
             ServiceState after = await _serviceManager.GetStateAsync(appName, cancellationToken);
             return after.IsActive && after.Starts == before.Starts;
         }

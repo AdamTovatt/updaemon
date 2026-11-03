@@ -78,7 +78,7 @@ namespace Updaemon
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<AppFileWriter>();
             services.AddSingleton<AppSettingsStore>();
-            services.AddSingleton(HealthCheckWait.Default);
+            services.AddSingleton(TimeProvider.System);
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
             services.AddSingleton<AppRollback>();
             services.AddTransient<PluginProvider>();
@@ -87,6 +87,8 @@ namespace Updaemon
             services.AddSingleton(RunningExecutable.Current);
             services.AddSingleton<IUpdaemonReleases, GitHubUpdaemonReleases>();
             services.AddTransient<SelfUpdater>();
+            services.AddSingleton<IGitHubPluginReleases, GitHubPluginReleases>();
+            services.AddTransient<GitHubPluginUpdater>();
 
             // Distribution service client
             services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();

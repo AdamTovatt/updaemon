@@ -169,6 +169,7 @@ namespace Updaemon.Tests.Services
         {
             using (AppHarness h = new AppHarness())
             {
+                await h.InstallByteShelfAsync();
                 h.ServiceManager.RestartingServices.Add("byteshelf");
 
                 Assert.False(await h.Deployer.StartAsync("byteshelf"));
@@ -176,11 +177,42 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task StartAsync_ServiceKeptRunning_IsHealthy()
+        public async Task StartAsync_ServiceKeptRunning_IsHealthyAfterTheDefaultWindow()
         {
             using (AppHarness h = new AppHarness())
             {
+                await h.InstallByteShelfAsync();
+
                 Assert.True(await h.Deployer.StartAsync("byteshelf"));
+                Assert.Equal(TimeSpan.FromSeconds(10), h.Time.Waits[^1]);
+            }
+        }
+
+        [Fact]
+        public async Task StartAsync_ReleaseSetsItsWindow_WaitsThatLong()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/slow", "1.0.0", """{ "executable": "bin/slow", "service": { "healthCheckSeconds": 45 } }""", "bin/slow");
+
+                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "slow", "--from", "github:owner/slow" }));
+                Assert.Equal(TimeSpan.FromSeconds(45), h.Time.Waits[^1]);
+            }
+        }
+
+        [Fact]
+        public async Task Update_NewReleaseSetsALongerWindow_TheRestartWaitsTheNewWindow()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest.Replace("\"args\": [\"sync\", \"run\"]", "\"args\": [\"sync\", \"run\"], \"healthCheckSeconds\": 45"));
+
+                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "byteshelf" }));
+
+                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(TimeSpan.FromSeconds(45), h.Time.Waits[^1]);
             }
         }
 
@@ -189,6 +221,7 @@ namespace Updaemon.Tests.Services
         {
             using (AppHarness h = new AppHarness())
             {
+                await h.InstallByteShelfAsync();
                 h.ServiceManager.ScriptedReadings["byteshelf"] = new Queue<bool>(new[] { true, false });
 
                 Assert.False(await h.Deployer.StartAsync("byteshelf"));
@@ -198,8 +231,9 @@ namespace Updaemon.Tests.Services
         [Fact]
         public async Task StartAsync_ServiceComesUpAMomentAfterStarting_IsHealthy()
         {
-            using (AppHarness h = new AppHarness(healthCheckWait: TimeSpan.FromMilliseconds(300)))
+            using (AppHarness h = new AppHarness())
             {
+                await h.InstallByteShelfAsync();
                 h.ServiceManager.ScriptedReadings["byteshelf"] = new Queue<bool>(new[] { false, true, true });
 
                 Assert.True(await h.Deployer.StartAsync("byteshelf"));
@@ -207,13 +241,16 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task StartAsync_ServiceNeverComesUp_IsUnhealthy()
+        public async Task StartAsync_ServiceNeverComesUp_IsUnhealthyOnceTheWindowIsOver()
         {
-            using (AppHarness h = new AppHarness(healthCheckWait: TimeSpan.FromMilliseconds(300)))
+            using (AppHarness h = new AppHarness())
             {
+                await h.InstallByteShelfAsync();
                 h.ServiceManager.CrashOnNextStart.Add("byteshelf");
+                int waitsBefore = h.Time.Waits.Count;
 
                 Assert.False(await h.Deployer.StartAsync("byteshelf"));
+                Assert.Equal(TimeSpan.FromSeconds(10), h.Time.Waits.Skip(waitsBefore).Aggregate(TimeSpan.Zero, (sum, wait) => sum + wait));
             }
         }
 
@@ -222,6 +259,10 @@ namespace Updaemon.Tests.Services
         {
             using (AppHarness h = new AppHarness())
             {
+                await h.InstallByteShelfAsync();
+                h.ServiceManager.ServiceRunningStates["byteshelf"] = false;
+                h.ServiceManager.MethodCalls.Clear();
+
                 await h.Deployer.RestartAsync("byteshelf");
 
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);

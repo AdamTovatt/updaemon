@@ -269,6 +269,17 @@ Enable AOT in your plugin project:
 </PropertyGroup>
 ```
 
+## Publishing a plugin on GitHub
+
+Users install a plugin from your repository's releases with `updaemon dist-install github:<owner>/<repo>`, and while self-update is on, each `updaemon update` installs your newer releases. For that, each release must have:
+
+- One asset per platform named `<name>-<rid>`, such as `my-plugin-linux-arm64`, `my-plugin-linux-x64` and `my-plugin-osx-arm64`: the AOT binary itself, not an archive. Exactly one asset may end in `-<rid>` for each platform; a second one fails installs and updates on it.
+- A `SHA256SUMS` asset listing them, as `sha256sum * > SHA256SUMS` writes it. A release without one, or whose binary does not match its line, is refused.
+
+updaemon follows only the release GitHub marks Latest; drafts and pre-releases are never installed. Any Latest tag other than the installed one replaces it, so marking an older release Latest moves users back to it. A release refused for its checksum, its build or its plugin protocol is skipped until another release is Latest.
+
+Build against the `Updaemon.Common` of the updaemon release your users run: updaemon refuses a plugin that speaks another protocol version (see [Versioning](#versioning)).
+
 ## Example: ByteShelf Distribution Plugin
 
 Here's a minimal example structure for a ByteShelf distribution plugin:

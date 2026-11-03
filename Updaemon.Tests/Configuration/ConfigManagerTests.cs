@@ -125,5 +125,41 @@ namespace Updaemon.Tests.Configuration
                 Assert.Null(await configManager.GetPluginAsync("github"));
             }
         }
+
+        [Theory]
+        [InlineData("""{"kind":"github","owner":"someone","repo":"updaemon-s3","tag":"v2.1.0"}""", null)]
+        [InlineData("""{"kind":"github","owner":"someone","repo":"updaemon-s3","tag":"v2.1.0","skippedTag":"v2.2.0"}""", "v2.2.0")]
+        public async Task Plugins_GitHubSourceAsStored_IsRead(string sourceJson, string? skippedTag)
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
+                Directory.CreateDirectory(scope.RootDirectory);
+                await File.WriteAllTextAsync(scope.ConfigFilePath, """{"format":1,"installedPlugins":{"s3":{"alias":"s3","path":"/p","source":""" + sourceJson + "}}}");
+
+                PluginSource source = (await new ConfigManager(scope).GetPluginAsync("s3"))!.Source;
+
+                Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v2.1.0") { SkippedTag = skippedTag }, source);
+            }
+        }
+
+        [Fact]
+        public async Task Plugins_GitHubSource_IsStoredWithItsTag()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
+                ConfigManager configManager = new ConfigManager(scope);
+
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo { Alias = "s3", Path = "/p", Source = new PluginSource.GitHub("someone", "updaemon-s3", "v2.1.0") });
+
+                string json = await File.ReadAllTextAsync(scope.ConfigFilePath);
+                Assert.Contains("\"kind\": \"github\"", json);
+                Assert.Contains("\"owner\": \"someone\"", json);
+                Assert.Contains("\"repo\": \"updaemon-s3\"", json);
+                Assert.Contains("\"tag\": \"v2.1.0\"", json);
+                Assert.DoesNotContain("skippedTag", json);
+            }
+        }
     }
 }

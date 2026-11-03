@@ -14,7 +14,7 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(0, exitCode);
                 Assert.False((await h.Config.LoadConfigAsync()).SelfUpdate);
-                Assert.Equal(new[] { $"Self-update is off: 'updaemon update' no longer updates {h.Scope.UpdaemonCommandPath}." }, h.Output.Messages);
+                Assert.Equal(new[] { $"Self-update is off: 'updaemon update' no longer updates {h.Scope.UpdaemonCommandPath} and its GitHub plugins." }, h.Output.Messages);
             }
         }
 
@@ -29,7 +29,7 @@ namespace Updaemon.Tests.Commands
                 await command.ExecuteAsync(new[] { "on" });
 
                 Assert.True((await h.Config.LoadConfigAsync()).SelfUpdate);
-                Assert.Equal($"Self-update is on: 'updaemon update' also updates {h.Scope.UpdaemonCommandPath}.", h.Output.Messages[^1]);
+                Assert.Equal($"Self-update is on: 'updaemon update' also updates {h.Scope.UpdaemonCommandPath} and its GitHub plugins.", h.Output.Messages[^1]);
             }
         }
 

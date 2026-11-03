@@ -29,8 +29,10 @@ namespace Updaemon.Tests.Helpers
 
         private readonly TempFileHelper _temp = new TempFileHelper();
 
-        /// <param name="healthCheckWait">Zero by default: the health check then takes two readings without waiting.</param>
-        public AppHarness(bool isSystem = false, TimeSpan healthCheckWait = default)
+        /// <summary>The health check's clock: it never waits, and records what it would have.</summary>
+        public InstantTimeProvider Time { get; } = new InstantTimeProvider();
+
+        public AppHarness(bool isSystem = false)
         {
             Scope = TestScope.Create(_temp.TempDirectory, isSystem);
             Config = new ConfigManager(Scope);
@@ -46,11 +48,16 @@ namespace Updaemon.Tests.Helpers
                 ServiceManager,
                 Secrets,
                 Output,
-                new HealthCheckWait(healthCheckWait));
+                Time);
             Rollback = new AppRollback(Deployer, SettingsStore, Config);
             PluginUrlResolver = new GitHubPluginUrlResolver(new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" }, Scope.Platform);
-            Plugins = new PluginProvider(Config, new PluginInstaller(PluginUrlResolver, PluginDownloader, Config, Scope), PluginUrlResolver, RunningVersion, Output);
+            PluginInstaller = new PluginInstaller(PluginUrlResolver, GitHubPlugins, PluginDownloader, Config, Scope);
+            Plugins = new PluginProvider(Config, PluginInstaller, PluginUrlResolver, RunningVersion, Output);
         }
+
+        public MockGitHubPluginReleases GitHubPlugins { get; } = new MockGitHubPluginReleases();
+
+        public PluginInstaller PluginInstaller { get; }
 
         public MockUpdaemonReleases Releases { get; } = new MockUpdaemonReleases();
 
@@ -117,7 +124,13 @@ namespace Updaemon.Tests.Helpers
         public InstallCommand Install() => new InstallCommand(
             Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins);
 
-        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, SelfUpdater());
+        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, GitHubPluginUpdater(), SelfUpdater());
+
+        public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output);
+
+        public DistInstallCommand DistInstall() => new DistInstallCommand(Output, PluginInstaller, GitHubPlugins, RunningVersion);
+
+        public DistListCommand DistList() => new DistListCommand(Config, Output, Client, RunningVersion);
 
         public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Deployer, Rollback, Output);
 

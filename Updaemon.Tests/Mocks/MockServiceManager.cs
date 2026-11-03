@@ -65,6 +65,14 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
+        /// <summary>What <see cref="ServicesStopAtLogoutAsync"/> answers; false, as when lingering is on.</summary>
+        public bool ServicesStopAtLogout { get; set; }
+
+        public Task<bool> ServicesStopAtLogoutAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ServicesStopAtLogout);
+        }
+
         /// <summary>
         /// Services whose next start or restart crashes: not running afterwards, so the health check
         /// fails. A later start runs again, as the version rolled back to does.

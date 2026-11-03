@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
@@ -46,6 +47,29 @@ namespace Updaemon.Services
         {
             return ProcessRunner.RunAttachedAsync("journalctl", JournalctlArguments(_scope, serviceName, follow), cancellationToken);
         }
+
+        public async Task<bool> ServicesStopAtLogoutAsync(CancellationToken cancellationToken = default)
+        {
+            if (_scope.IsSystem)
+            {
+                return false;
+            }
+
+            try
+            {
+                ProcessRunner.Result result = await ProcessRunner.RunAsync("loginctl", new[] { "show-user", Environment.UserName, "-p", "Linger" }, cancellationToken);
+                return !LingerIsOn(result.StdOut);
+            }
+            catch (Win32Exception)
+            {
+                // No loginctl: nothing says lingering is on.
+                return true;
+            }
+        }
+
+        /// <summary>Whether <c>loginctl show-user &lt;user&gt; -p Linger</c> printed <c>Linger=yes</c>.</summary>
+        internal static bool LingerIsOn(string output) =>
+            output.Split('\n').Any(line => line.Trim() == "Linger=yes");
 
         /// <summary>The service's last 100 journal lines, the same as <c>tail</c> shows on macOS.</summary>
         internal static string[] JournalctlArguments(UpdaemonScope scope, string serviceName, bool follow)

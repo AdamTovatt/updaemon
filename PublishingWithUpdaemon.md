@@ -38,7 +38,7 @@ Put `updaemon.json` at the release root. It says what the app is and how to run 
 |---|---|
 | `executable` | Required. Path to the executable, relative to the release root. |
 | `command` | Optional. The app is a command, put on PATH under this name. |
-| `service` | Optional. The app is a service, run with `args` (default: none). |
+| `service` | Optional. The app is a service, run with `args` (default: none). `healthCheckSeconds` (1 to 300, default 10) is how long it must keep running after a start or restart. |
 | `settings` | Optional. Environment variables the app reads, by name. |
 
 At least one of `command` and `service` is required; an app can be both. Each setting can have:
@@ -61,7 +61,7 @@ The `executablePath` format of updaemon 0.x is not read any more: replace `execu
 - **Settings**: `updaemon install` asks for each required setting that has no value; `updaemon set` changes them later. Secrets are kept in a file only the owner can read.
 - **Data**: every app gets a directory that is kept across updates, passed in `UPDAEMON_DATA_DIR`. Store state there.
 
-After an update restarts a service, it must keep running for 10 seconds. If it does not, updaemon runs the previous version again and skips the new one until a newer release appears. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`.
+After an update restarts a service, it must keep running for `service.healthCheckSeconds` (10 seconds unless set). Give a service that takes longer to fail, or to settle, a longer window. If it does not keep running, updaemon runs the previous version again and skips the new one until a newer release appears. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`.
 
 Each update reads the new release's manifest, so a release can add settings or change its arguments. If it adds a required setting the app has no value for, the update waits: the current version keeps running and updaemon names the `updaemon set` command to run.
 

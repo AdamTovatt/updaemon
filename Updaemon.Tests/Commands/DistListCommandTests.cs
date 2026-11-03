@@ -27,6 +27,56 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task ExecuteAsync_EachPlugin_SaysHowItIsUpdated()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.Installed("github", tempHelper.CreateTempFile("plugins/github/bin", "plugin")));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.FromGitHub("s3", tempHelper.CreateTempFile("plugins/s3/bin", "plugin"), "someone", "updaemon-s3", "v2.1.0"));
+                await configManager.AddOrUpdatePluginAsync(PluginRecords.FromUrl("mine", tempHelper.CreateTempFile("plugins/mine/bin", "plugin")));
+                MockOutputWriter output = new MockOutputWriter();
+
+                await new DistListCommand(configManager, output, new MockDistributionServiceClient(), AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(
+                    new[]
+                    {
+                        "  Updates: with updaemon",
+                        "  Updates: with the latest release of github:someone/updaemon-s3, now v2.1.0",
+                        "  Updates: not updatable: installed from a URL, so only installing it again replaces it",
+                    },
+                    output.Messages.Where(line => line.StartsWith("  Updates: ", StringComparison.Ordinal)));
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_GitHubPluginWithSelfUpdateOffAndASkippedRelease_SaysBoth()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockConfigManager configManager = new MockConfigManager();
+                UpdaemonConfig config = await configManager.LoadConfigAsync();
+                config.SelfUpdate = false;
+                await configManager.SaveConfigAsync(config);
+                await configManager.AddOrUpdatePluginAsync(new InstalledPluginInfo
+                {
+                    Alias = "s3",
+                    Path = tempHelper.CreateTempFile("plugins/s3/bin", "plugin"),
+                    Source = new PluginSource.GitHub("someone", "updaemon-s3", "v2.1.0") { SkippedTag = "v2.2.0" },
+                });
+                MockOutputWriter output = new MockOutputWriter();
+
+                await new DistListCommand(configManager, output, new MockDistributionServiceClient(), AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
+
+                Assert.Contains(
+                    "  Updates: not while self-update is off; now v2.1.0 of github:someone/updaemon-s3; " +
+                    "skips v2.2.0, which was refused (retry it with 'updaemon dist-install --as s3 github:someone/updaemon-s3')",
+                    output.Messages);
+            }
+        }
+
+        [Fact]
         public async Task ExecuteAsync_ListsAllInstalledPlugins_InvokesClientForMetadata()
         {
             using (TempFileHelper tempHelper = new TempFileHelper())

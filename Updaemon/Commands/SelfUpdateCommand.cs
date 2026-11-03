@@ -45,7 +45,7 @@ namespace Updaemon.Commands
                 case [string state] when state is "on" or "off":
                     config.SelfUpdate = state == "on";
                     await _configManager.SaveConfigAsync(config, cancellationToken);
-                    _outputWriter.WriteLine($"Self-update is {state}: 'updaemon update' {(config.SelfUpdate ? "also updates" : "no longer updates")} {_scope.UpdaemonCommandPath}.");
+                    _outputWriter.WriteLine($"Self-update is {state}: 'updaemon update' {(config.SelfUpdate ? "also updates" : "no longer updates")} {_scope.UpdaemonCommandPath} and its GitHub plugins.");
                     return 0;
                 default:
                     return _outputWriter.FailUsage(this);
@@ -65,7 +65,9 @@ namespace Updaemon.Commands
                   to its latest release, for this scope: system-wide as root, or your own.
                   The new version is installed beside the old one and must run before the
                   'updaemon' command is switched to it. Registry plugins follow the next
-                  time they are used. Without an argument, shows whether it is on.
+                  time they are used. Plugins installed with 'dist-install github:<owner>/<repo>'
+                  are updated to their repository's latest release in the same step.
+                  Without an argument, shows whether it is on.
 
                 Examples:
                   updaemon self-update
