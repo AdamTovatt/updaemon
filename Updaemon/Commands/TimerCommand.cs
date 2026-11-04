@@ -30,7 +30,16 @@ namespace Updaemon.Commands
         /// <summary>Sets the interval only when no timer was ever set; install.sh turns the timer on with it.</summary>
         private const string KeepOption = "--keep";
 
-        public bool ChangesState => true;
+        /// <summary>The lines setting and turning off the timer print, so showing it reads the same.</summary>
+        private const string IsOff = "The update timer is off. Turn it on with 'updaemon timer 1h'.";
+
+        private const string IntervalUnreadable = "The update timer is on, but its interval cannot be read. Set it with 'updaemon timer <interval>'.";
+
+        private static string RunsEvery(TimeSpan interval) =>
+            $"The update timer runs 'updaemon update' every {TimerInterval.Format(interval)}. Turn it off with 'updaemon timer -'.";
+
+        /// <summary>Plain 'timer' only shows it.</summary>
+        public bool ChangesState(string[] args) => args.Length > 0;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
@@ -76,17 +85,12 @@ namespace Updaemon.Commands
 
         private async Task ShowCurrentStatusAsync(CancellationToken cancellationToken)
         {
-            bool isEnabled = await _timerManager.IsTimerEnabledAsync(cancellationToken);
-
-            if (isEnabled)
+            _outputWriter.WriteLine(await TimerState.ReadAsync(_timerManager, cancellationToken) switch
             {
-                TimeSpan? interval = await _timerManager.GetCurrentIntervalAsync(cancellationToken);
-                _outputWriter.WriteLine($"Timer is enabled with interval: {(interval is TimeSpan known ? TimerInterval.Format(known) : "unknown")}");
-            }
-            else
-            {
-                _outputWriter.WriteLine("Timer is disabled");
-            }
+                TimerState.On { Interval: TimeSpan interval } => RunsEvery(interval),
+                TimerState.On => IntervalUnreadable,
+                _ => IsOff,
+            });
         }
 
         /// <summary>
@@ -111,7 +115,7 @@ namespace Updaemon.Commands
             // Recorded first: if removing then fails halfway, the timer is still meant to be off, and install.sh leaves it so.
             await RecordTurnedOffAsync(true, cancellationToken);
             await _timerManager.RemoveTimerAsync(reachable, cancellationToken);
-            _outputWriter.WriteLine("The update timer is off. Turn it on with 'updaemon timer 1h'.");
+            _outputWriter.WriteLine(IsOff);
         }
 
         private async Task RecordTurnedOffAsync(bool turnedOff, CancellationToken cancellationToken)
@@ -138,7 +142,7 @@ namespace Updaemon.Commands
             // Cleared first: a record left saying off while a timer runs would make --keep call it off.
             await RecordTurnedOffAsync(false, cancellationToken);
             await _timerManager.SetTimerAsync(parsedInterval.Value, reachable, cancellationToken);
-            _outputWriter.WriteLine($"The update timer runs 'updaemon update' every {interval}. Turn it off with 'updaemon timer -'.");
+            _outputWriter.WriteLine(RunsEvery(parsedInterval.Value));
             return 0;
         }
 

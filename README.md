@@ -211,7 +211,7 @@ updaemon set <app> KEY=VALUE... [--secret]
 updaemon unset <app> KEY...
 ```
 
-Changes the app's settings and restarts its service if it runs. The restarted service must keep running for its health-check window, as after an update; if it does not, the command fails pointing to `updaemon logs <app>`, and the change stays. A setting the app's `updaemon.json` declares secret is stored as a secret; `--secret` does the same for one it does not declare. A required setting cannot be unset.
+Changes the app's settings and restarts its service, also one that is stopped or crash-looping: on Linux unless its unit was disabled, on macOS always. The restarted service must keep running for its health-check window, as after an update; if it does not, the command fails pointing to `updaemon logs <app>`, and the change stays. A setting the app's `updaemon.json` declares secret is stored as a secret; `--secret` does the same for one it does not declare. A required setting cannot be unset.
 
 ### set-args
 
@@ -219,7 +219,7 @@ Changes the app's settings and restarts its service if it runs. The restarted se
 updaemon set-args <app> [-- args...]
 ```
 
-Sets the arguments the service runs with, in place of the ones in its `updaemon.json`. Without `--`, goes back to those. A running service is restarted and checked as `set` does.
+Sets the arguments the service runs with, in place of the ones in its `updaemon.json`. Without `--`, goes back to those. The service is restarted and checked as `set` does.
 
 ### set-restart
 

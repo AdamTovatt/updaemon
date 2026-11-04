@@ -26,7 +26,8 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon self-update [on|off]";
 
-        public bool ChangesState => true;
+        /// <summary>Plain 'self-update' only shows whether it is on.</summary>
+        public bool ChangesState(string[] args) => args.Length > 0;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {

@@ -25,7 +25,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon set-args <app> [-- args...]";
 
-        public bool ChangesState => true;
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
@@ -81,7 +81,7 @@ namespace Updaemon.Commands
 
                 Description:
                   Sets the arguments the app's service runs with, regenerates its unit and
-                  restarts it if it is running, checking it keeps running as 'set' does.
+                  restarts it as 'set' does, checking it keeps running.
                   Without '--', restores the arguments from the
                   app's updaemon.json. 'set-args <app> --' runs it with no arguments.
 

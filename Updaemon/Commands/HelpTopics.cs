@@ -20,7 +20,19 @@ namespace Updaemon.Commands
             using Stream stream = typeof(HelpTopics).Assembly.GetManifestResourceStream(topic.ResourceName)
                 ?? throw new InvalidOperationException($"This updaemon was built without {topic.ResourceName}.");
             using StreamReader reader = new StreamReader(stream);
-            return reader.ReadToEnd();
+            return WithoutBackLink(reader.ReadToEnd());
+        }
+
+        /// <summary>
+        /// The guide without its opening link back to the README: it leads somewhere on GitHub, nowhere in
+        /// a terminal. The rest is printed as it is. Internal for its tests, as ParseState and the like are.
+        /// </summary>
+        internal static string WithoutBackLink(string guide)
+        {
+            int end = guide.IndexOf('\n');
+            return end > 0 && guide.StartsWith('[') && guide[..end].TrimEnd('\r').EndsWith("(README.md)", StringComparison.Ordinal)
+                ? guide[(end + 1)..].TrimStart('\r', '\n')
+                : guide;
         }
     }
 }

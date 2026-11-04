@@ -5,6 +5,19 @@ namespace Updaemon.Tests.Commands
 {
     public class SelfUpdateCommandTests
     {
+        [Theory]
+        [InlineData(new string[0], false)]
+        [InlineData(new[] { "on" }, true)]
+        [InlineData(new[] { "off" }, true)]
+        public void ChangesState_OnlyWhenTurnedOnOrOff(string[] args, bool changes)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                // Showing it takes no lock and prints no scope line.
+                Assert.Equal(changes, new SelfUpdateCommand(h.Config, h.Output, h.Scope).ChangesState(args));
+            }
+        }
+
         [Fact]
         public async Task SelfUpdate_Off_IsStoredNamingWhatItNoLongerUpdates()
         {

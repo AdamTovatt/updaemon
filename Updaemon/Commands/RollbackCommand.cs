@@ -28,7 +28,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon rollback <app> [version]";
 
-        public bool ChangesState => true;
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {

@@ -217,7 +217,7 @@ namespace Updaemon.Services
             AppManifest manifest = await GetCurrentManifestAsync(app.Name, cancellationToken);
             await _appFileWriter.WriteAsync(app, manifest, manifest, cancellationToken);
 
-            if (!manifest.IsService || !await RestartIfRunningAsync(app.Name, cancellationToken))
+            if (!manifest.IsService || !await RestartIfEnabledAsync(app.Name, cancellationToken))
             {
                 return true;
             }
@@ -242,22 +242,17 @@ namespace Updaemon.Services
 
         public async Task<bool> RestartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
-            if (await IsRunningAsync(appName, cancellationToken))
-            {
-                await _serviceManager.RestartServiceAsync(appName, cancellationToken);
-            }
-            else
-            {
-                await _serviceManager.StartServiceAsync(appName, cancellationToken);
-            }
-
+            await _serviceManager.RestartServiceAsync(appName, cancellationToken);
             return await StaysRunningAsync(appName, cancellationToken);
         }
 
-        /// <summary>Restarts the service if it is running. Returns whether it did.</summary>
-        private async Task<bool> RestartIfRunningAsync(string appName, CancellationToken cancellationToken)
+        /// <summary>
+        /// Restarts the service if it is enabled, running or not: one crash-looping between automatic
+        /// restarts would otherwise keep its old unit until the next update. Returns whether it did.
+        /// </summary>
+        private async Task<bool> RestartIfEnabledAsync(string appName, CancellationToken cancellationToken)
         {
-            if (!await IsRunningAsync(appName, cancellationToken))
+            if (!await _serviceManager.IsEnabledAsync(appName, cancellationToken))
             {
                 return false;
             }
@@ -342,11 +337,6 @@ namespace Updaemon.Services
             {
                 _outputWriter.WriteError($"Warning: could not switch {app.Name} back to its previous version: {ex.Message}");
             }
-        }
-
-        private async Task<bool> IsRunningAsync(string appName, CancellationToken cancellationToken)
-        {
-            return (await _serviceManager.GetStateAsync(appName, cancellationToken)).IsActive;
         }
 
         /// <summary>

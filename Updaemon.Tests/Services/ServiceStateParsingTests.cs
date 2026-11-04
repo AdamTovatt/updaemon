@@ -47,5 +47,28 @@ namespace Updaemon.Tests.Services
         {
             Assert.Equal(new ServiceState(isActive, starts), MacServiceManager.ParseState(output));
         }
+
+        [Theory]
+        [InlineData(0, "enabled\n", "", true)]
+        [InlineData(0, "enabled-runtime\n", "", true)]
+        [InlineData(1, "disabled\n", "", false)]
+        [InlineData(4, "not-found\n", "", null)]
+        [InlineData(1, "", "Failed to get unit file state for app.service: No such file or directory\n", null)]
+        public void LinuxReadIsEnabled_WhatSystemctlSays_IsRead(int exitCode, string stdOut, string stdErr, bool? enabled)
+        {
+            Assert.Equal(enabled, LinuxServiceManager.ReadIsEnabled("app.service", new ProcessRunner.Result(exitCode, stdOut, stdErr)));
+        }
+
+        [Theory]
+        [InlineData(1, "", "Failed to connect to bus: No medium found\n", "Failed to connect to bus: No medium found")]
+        [InlineData(1, "masked\n", "", "masked")]
+        public void LinuxReadIsEnabled_AnythingElse_ThrowsWithWhatSystemctlSaid(int exitCode, string stdOut, string stdErr, string said)
+        {
+            // Read as disabled, it would skip a restart in silence.
+            InvalidOperationException ex = Assert.Throws<InvalidOperationException>(
+                () => LinuxServiceManager.ReadIsEnabled("app.service", new ProcessRunner.Result(exitCode, stdOut, stdErr)));
+
+            Assert.Equal($"'systemctl is-enabled app.service' could not tell whether it is enabled: {said}", ex.Message);
+        }
     }
 }

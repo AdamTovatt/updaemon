@@ -21,10 +21,10 @@ namespace Updaemon.Commands
         string Usage { get; }
 
         /// <summary>
-        /// Whether the command changes state. Such commands run under the scope's exclusive lock,
-        /// after a check that the scope's directories are writable.
+        /// Whether the command, run with <paramref name="args"/>, may change state. It then runs under
+        /// the scope's exclusive lock, after a line naming the scope; one that only shows does neither.
         /// </summary>
-        bool ChangesState { get; }
+        bool ChangesState(string[] args);
 
         /// <summary>
         /// Executes the command with the provided arguments.

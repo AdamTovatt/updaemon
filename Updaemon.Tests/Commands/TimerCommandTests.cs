@@ -38,6 +38,41 @@ namespace Updaemon.Tests.Commands
         }
 
         [Theory]
+        [InlineData(new string[0], false)]
+        [InlineData(new[] { "1h", "--keep" }, true)]
+        [InlineData(new[] { "-" }, true)]
+        public void ChangesState_OnlyWhenSetOrTurnedOff(string[] args, bool changes)
+        {
+            // Showing it takes no lock and prints no scope line.
+            Assert.Equal(changes, new TimerCommand(_timer, _serviceManager, _config, new MockOutputWriter()).ChangesState(args));
+        }
+
+        [Fact]
+        public async Task Show_OnWithAnIntervalItCannotRead_SaysSoAndHowToSetIt()
+        {
+            _timer.IsEnabled = true;
+            _timer.CurrentInterval = null;
+
+            (int exitCode, MockOutputWriter output) = await RunAsync();
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(new[] { "The update timer is on, but its interval cannot be read. Set it with 'updaemon timer <interval>'." }, output.Messages);
+        }
+
+        [Theory]
+        [InlineData("60m")]
+        [InlineData("-")]
+        public async Task Show_SaysWhatSettingOrTurningItOffSaid(string change)
+        {
+            MockOutputWriter changed = (await RunAsync(change)).Output;
+
+            (int exitCode, MockOutputWriter shown) = await RunAsync();
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(changed.Messages, shown.Messages);
+        }
+
+        [Theory]
         [InlineData("1h", "--keep")]
         [InlineData("-")]
         public async Task NoUserServiceManager_ChangesNothing(params string[] args)

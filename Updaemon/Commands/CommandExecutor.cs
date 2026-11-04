@@ -83,13 +83,14 @@ namespace Updaemon.Commands
             try
             {
                 ICommand command = _commandFactory.GetCommand(commandName);
+                string[] commandArgs = args[1..];
 
                 // An updaemon 0.x setup is converted once, before any command reads it; 'migrate' is that
                 // conversion, and its --dry-run must change nothing.
                 bool convertsFirst = command is not MigrateCommand;
-                if (!command.ChangesState && !(convertsFirst && _converter.IsPending()))
+                if (!command.ChangesState(commandArgs) && !(convertsFirst && _converter.IsPending()))
                 {
-                    return await command.ExecuteAsync(args[1..], cancellationToken);
+                    return await command.ExecuteAsync(commandArgs, cancellationToken);
                 }
 
                 // Scope is never silent where it matters: each run that may change state says whose apps it changes.
@@ -102,7 +103,7 @@ namespace Updaemon.Commands
                         await _converter.RunAsync(dryRun: false, cancellationToken);
                     }
 
-                    return await command.ExecuteAsync(args[1..], cancellationToken);
+                    return await command.ExecuteAsync(commandArgs, cancellationToken);
                 }
             }
             catch (UnknownCommandException)

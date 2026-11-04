@@ -55,7 +55,8 @@ namespace Updaemon.Interfaces
 
         /// <summary>
         /// After a change to the app's settings or arguments: regenerates its settings file, command
-        /// wrapper and service unit for its current version, and restarts the service if it is running.
+        /// wrapper and service unit for its current version, and restarts the service if it is enabled,
+        /// whether or not it runs.
         /// Returns false when the restarted service did not pass the health check, as after an update.
         /// </summary>
         Task<bool> ApplySettingsAsync(InstalledApp app, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
@@ -68,7 +69,7 @@ namespace Updaemon.Interfaces
         Task<bool> StartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Restarts the service, or starts it if it is not running, then runs the health check as
+        /// Restarts the service, also one that is stopped, failed or crash-looping, then runs the health check as
         /// <see cref="StartAsync"/> does.
         /// </summary>
         Task<bool> RestartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default);

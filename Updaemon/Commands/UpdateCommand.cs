@@ -60,7 +60,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon update [app]";
 
-        public bool ChangesState => true;
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {

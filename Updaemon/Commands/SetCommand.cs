@@ -28,7 +28,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon set <app> KEY=VALUE... [--secret]";
 
-        public bool ChangesState => true;
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
@@ -78,7 +78,9 @@ namespace Updaemon.Commands
 
                 Description:
                   Sets environment variables for an app, regenerates its service unit and
-                  command, and restarts its service if it is running. A restarted service
+                  command, and restarts its service, running or not, so a crash-looping
+                  one gets the change too: on Linux unless its unit was disabled, on
+                  macOS always. A restarted service
                   must keep running for its health-check window, as after an update; if it
                   does not, set fails and the change stays. Settings the app's
                   updaemon.json marks secret are stored in a file only the user the app

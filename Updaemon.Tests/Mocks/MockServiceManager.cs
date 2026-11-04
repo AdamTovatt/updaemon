@@ -12,6 +12,9 @@ namespace Updaemon.Tests.Mocks
         public List<string> MethodCalls { get; } = new List<string>();
         public Dictionary<string, bool> ServiceRunningStates { get; } = new Dictionary<string, bool>();
         public HashSet<string> ExistingServices { get; } = new HashSet<string>();
+
+        /// <summary>Services <see cref="EnableServiceAsync"/> enabled and nothing disabled since.</summary>
+        public HashSet<string> EnabledServices { get; } = new HashSet<string>();
         /// <summary>Thrown by <see cref="StartServiceAsync"/> when set.</summary>
         public Exception? StartFailure { get; set; }
 
@@ -50,13 +53,20 @@ namespace Updaemon.Tests.Mocks
         public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(EnableServiceAsync), serviceName));
+            EnabledServices.Add(serviceName);
             return Task.CompletedTask;
         }
 
         public Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(DisableServiceAsync), serviceName));
+            EnabledServices.Remove(serviceName);
             return Task.CompletedTask;
+        }
+
+        public Task<bool> IsEnabledAsync(string serviceName, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(EnabledServices.Contains(serviceName));
         }
 
         public Task DaemonReloadAsync(CancellationToken cancellationToken = default)

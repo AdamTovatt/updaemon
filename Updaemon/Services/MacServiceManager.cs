@@ -33,8 +33,12 @@ namespace Updaemon.Services
         public Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
             => Launchd.UnloadAsync(_scope, Label(serviceName), cancellationToken);
 
+        /// <summary>Unloads and loads the plist again, whether or not the job runs.</summary>
         public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
             => LoadAsync(serviceName, cancellationToken);
+
+        public Task<bool> IsEnabledAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult(File.Exists(_scope.GetUnitFilePath(serviceName)));
 
         /// <summary>Nothing to do: launchd loads every plist in the scope's directory at boot or login.</summary>
         public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)

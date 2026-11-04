@@ -45,17 +45,10 @@ namespace Updaemon.Services
             await ProcessRunner.RunAndCheckAsync("systemctl", Arguments("daemon-reload"), cancellationToken);
         }
 
+        /// <summary>A timer never set has no unit, so is not enabled.</summary>
         public async Task<bool> IsTimerEnabledAsync(CancellationToken cancellationToken = default)
         {
-            try
-            {
-                ProcessRunner.Result result = await ProcessRunner.RunAsync("systemctl", Arguments("is-enabled", _timerUnitName), cancellationToken);
-                return result.StdOut.Trim() == "enabled";
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                return false;
-            }
+            return await LinuxServiceManager.IsUnitEnabledAsync(_scope, _timerUnitName, cancellationToken) ?? false;
         }
 
         public async Task<TimeSpan?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default)

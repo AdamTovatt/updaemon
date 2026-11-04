@@ -29,7 +29,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon dist-list";
 
-        public bool ChangesState => false;
+        public bool ChangesState(string[] args) => false;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {

@@ -20,9 +20,16 @@ namespace Updaemon.Interfaces
         Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Restarts a managed service.
+        /// Restarts a managed service from its unit or plist as it is now: also one that is stopped,
+        /// failed, or crash-looping between automatic restarts.
         /// </summary>
         Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Whether the service starts by itself: at boot or login, and when it crashes. On systemd, its
+        /// unit is enabled; on launchd, its plist is in the scope's directory, which launchd loads.
+        /// </summary>
+        Task<bool> IsEnabledAsync(string serviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Enables a service to start at boot. On systemd this calls "systemctl enable"; on launchd

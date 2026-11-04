@@ -62,7 +62,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon install <app> --from <plugin>:<remote> [--set KEY=VALUE]... [--command <name>] [--service] [--run-as <user>]";
 
-        public bool ChangesState => true;
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {

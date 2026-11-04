@@ -28,7 +28,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon unset <app> KEY...";
 
-        public bool ChangesState => true;
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
@@ -92,8 +92,7 @@ namespace Updaemon.Commands
                 Description:
                   Removes settings from an app, so it falls back to the default in its
                   updaemon.json, if any. Regenerates its service unit and command and
-                  restarts its service if it is running, checking it keeps running as 'set'
-                  does. Required settings cannot be removed.
+                  restarts its service as 'set' does, checking it keeps running. Required settings cannot be removed.
 
                 Examples:
                   updaemon unset byteshelf BYTESHELF_LOG_LEVEL

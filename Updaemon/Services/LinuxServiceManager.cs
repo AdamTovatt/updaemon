@@ -24,8 +24,44 @@ namespace Updaemon.Services
         public Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
             => SystemctlAsync(cancellationToken, "stop", serviceName);
 
-        public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => SystemctlAsync(cancellationToken, "restart", serviceName);
+        public async Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+        {
+            // A unit that crashed too often in a row is failed and refuses to start until this clears it.
+            await ProcessRunner.RunAsync("systemctl", Arguments("reset-failed", serviceName), cancellationToken);
+            await SystemctlAsync(cancellationToken, "restart", serviceName);
+        }
+
+        public async Task<bool> IsEnabledAsync(string serviceName, CancellationToken cancellationToken = default)
+        {
+            return await IsUnitEnabledAsync(_scope, serviceName + ".service", cancellationToken)
+                ?? throw new InvalidOperationException($"systemd has no unit {serviceName}.service.");
+        }
+
+        /// <summary>
+        /// Whether systemd starts <paramref name="unit"/> by itself; null when it has no such unit. Throws
+        /// when systemctl cannot tell, as without a reachable manager: reading that as disabled would skip
+        /// a restart in silence.
+        /// </summary>
+        internal static async Task<bool?> IsUnitEnabledAsync(UpdaemonScope scope, string unit, CancellationToken cancellationToken)
+        {
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("systemctl", [.. scope.SystemdScopeArguments, "is-enabled", unit], cancellationToken);
+            return ReadIsEnabled(unit, result);
+        }
+
+        /// <summary>Reads <c>systemctl is-enabled</c>, as <see cref="IsUnitEnabledAsync"/> describes.</summary>
+        internal static bool? ReadIsEnabled(string unit, ProcessRunner.Result result)
+        {
+            string state = result.StdOut.Trim();
+            return state switch
+            {
+                "enabled" or "enabled-runtime" => true,
+                "disabled" => false,
+                // Newer systemd says so; older ones only print the error.
+                "not-found" => null,
+                "" when result.StdErr.Contains("No such file or directory", StringComparison.Ordinal) => null,
+                _ => throw new InvalidOperationException($"'systemctl is-enabled {unit}' could not tell whether it is enabled: {$"{state} {result.StdErr}".Trim()}"),
+            };
+        }
 
         public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
             => SystemctlAsync(cancellationToken, "enable", serviceName);

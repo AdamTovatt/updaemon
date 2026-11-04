@@ -25,7 +25,7 @@ namespace Updaemon.Tests.Commands
             bool heldWhileConverting = false;
             MockZeroXConverter converter = new MockZeroXConverter { Pending = true, OnRun = () => heldWhileConverting = runLock.IsHeld };
             bool convertedFirst = false;
-            factory.RegisterCommand("cmd", new MockCommand { Name = "cmd", ChangesState = changesState, OnExecute = () => convertedFirst = converter.Runs.Count == 1 });
+            factory.RegisterCommand("cmd", new MockCommand { Name = "cmd", Changes = changesState, OnExecute = () => convertedFirst = converter.Runs.Count == 1 });
             CommandExecutor executor = Executor(factory, new MockOutputWriter(), runLock, converter);
 
             await executor.ExecuteAsync(new[] { "cmd" });
@@ -43,7 +43,7 @@ namespace Updaemon.Tests.Commands
             MockCommandFactory factory = new MockCommandFactory();
             MockZeroXConverter converter = new MockZeroXConverter { Pending = true };
             MockRunLock runLock = new MockRunLock { OnAcquire = () => converter.Pending = false };
-            factory.RegisterCommand("status", new MockCommand { Name = "status", ChangesState = false });
+            factory.RegisterCommand("status", new MockCommand { Name = "status", Changes = false });
 
             int exitCode = await Executor(factory, new MockOutputWriter(), runLock, converter).ExecuteAsync(new[] { "status" });
 
@@ -55,7 +55,7 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_ConversionLeavesSomethingOut_StillRunsTheCommand()
         {
             MockCommandFactory factory = new MockCommandFactory();
-            MockCommand command = new MockCommand { Name = "status", ChangesState = false };
+            MockCommand command = new MockCommand { Name = "status", Changes = false };
             factory.RegisterCommand("status", command);
             MockZeroXConverter converter = new MockZeroXConverter { Pending = true, Result = false };
 
@@ -69,7 +69,7 @@ namespace Updaemon.Tests.Commands
         public async Task ExecuteAsync_ConversionFails_ReportsItAndDoesNotRunTheCommand()
         {
             MockCommandFactory factory = new MockCommandFactory();
-            MockCommand command = new MockCommand { Name = "status", ChangesState = false };
+            MockCommand command = new MockCommand { Name = "status", Changes = false };
             factory.RegisterCommand("status", command);
             MockOutputWriter output = new MockOutputWriter();
             MockZeroXConverter converter = new MockZeroXConverter { Pending = true, Failure = new IOException("disk full") };
@@ -194,7 +194,7 @@ namespace Updaemon.Tests.Commands
             MockCommand command = new MockCommand
             {
                 Name = "cmd",
-                ChangesState = changesState,
+                Changes = changesState,
                 OnExecute = () =>
                 {
                     heldDuringRun = runLock.IsHeld;
@@ -204,8 +204,10 @@ namespace Updaemon.Tests.Commands
             factory.RegisterCommand("cmd", command);
             CommandExecutor executor = Executor(factory, outputWriter, runLock);
 
-            await executor.ExecuteAsync(new[] { "cmd" });
+            await executor.ExecuteAsync(new[] { "cmd", "x" });
 
+            // Whether it changes state is the command's to say from its own arguments, as plain 'timer' only shows.
+            Assert.Equal(new[] { "x" }, command.ChangesStateArgs);
             Assert.Equal(expectedAcquisitions, runLock.Acquisitions);
             Assert.Equal(changesState, heldDuringRun);
             Assert.False(runLock.IsHeld);
@@ -268,14 +270,16 @@ namespace Updaemon.Tests.Commands
         [Theory]
         [InlineData("publishing")]
         [InlineData("PUBLISHING")]
-        public async Task ExecuteAsync_HelpPublishing_PrintsTheRepositorysGuideAsIs(string topic)
+        public async Task ExecuteAsync_HelpPublishing_PrintsTheRepositorysGuideFromItsTitle(string topic)
         {
             MockOutputWriter outputWriter = new MockOutputWriter();
 
             int exitCode = await Executor(new MockCommandFactory(), outputWriter).ExecuteAsync(new[] { "help", topic });
 
             Assert.Equal(0, exitCode);
-            Assert.Equal(new[] { File.ReadAllText(RepositoryFile("PublishingWithUpdaemon.md")) }, outputWriter.Messages.Select(line => line + "\n"));
+            string guide = File.ReadAllText(RepositoryFile("PublishingWithUpdaemon.md"));
+            // Its link back to the README leads nowhere in a terminal; the rest is printed as it is.
+            Assert.Equal(new[] { guide[guide.IndexOf("# Publishing with Updaemon", StringComparison.Ordinal)..] }, outputWriter.Messages.Select(line => line + "\n"));
         }
 
         private static string RepositoryFile(string name)

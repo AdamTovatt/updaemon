@@ -47,7 +47,7 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon status [app]";
 
-        public bool ChangesState => false;
+        public bool ChangesState(string[] args) => false;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
@@ -164,14 +164,20 @@ namespace Updaemon.Commands
 
         private async Task<string> DescribeTimerAsync(CancellationToken cancellationToken)
         {
-            if (!await _timerManager.IsTimerEnabledAsync(cancellationToken))
+            try
             {
-                return "off";
+                return await TimerState.ReadAsync(_timerManager, cancellationToken) switch
+                {
+                    TimerState.On { Interval: TimeSpan interval } => TimerInterval.Format(interval),
+                    TimerState.On => "on (interval unknown)",
+                    _ => "off",
+                };
             }
-
-            return await _timerManager.GetCurrentIntervalAsync(cancellationToken) is TimeSpan interval
-                ? TimerInterval.Format(interval)
-                : "on (interval unknown)";
+            catch (InvalidOperationException ex)
+            {
+                // Without a reachable service manager, say so rather than guess; the rest still shows.
+                return $"unknown ({ex.Message})";
+            }
         }
 
         /// <summary>Name, version, kind, run state, source and skipped versions. One app's broken state does not stop the others.</summary>

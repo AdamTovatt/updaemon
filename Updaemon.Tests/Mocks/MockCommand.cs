@@ -10,7 +10,17 @@ namespace Updaemon.Tests.Mocks
         public string Name { get; set; } = "mock";
         public string Description { get; set; } = "Mock command";
         public string Usage { get; set; } = "updaemon mock";
-        public bool ChangesState { get; set; }
+        /// <summary>What <see cref="ChangesState"/> answers, whatever the arguments.</summary>
+        public bool Changes { get; set; }
+
+        /// <summary>The arguments <see cref="ChangesState"/> was last asked about.</summary>
+        public string[]? ChangesStateArgs { get; private set; }
+
+        public bool ChangesState(string[] args)
+        {
+            ChangesStateArgs = args;
+            return Changes;
+        }
         public string DetailedHelp { get; set; } = "Mock command help";
         public string[]? ReceivedArgs { get; private set; }
         public int ReturnCode { get; set; } = 0;
