@@ -1,23 +1,20 @@
 namespace Updaemon.Interfaces
 {
     /// <summary>
-    /// Manages file permissions for executables and directories.
+    /// Sets modes and ownership on deployed files.
     /// </summary>
     public interface IFilePermissionManager
     {
-        /// <summary>
-        /// Makes a file executable by setting the appropriate permissions.
-        /// </summary>
-        /// <param name="executablePath">The path to the file to make executable.</param>
-        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
+        /// <summary>Makes a file executable by everyone (0755).</summary>
         Task SetExecutablePermissionsAsync(string executablePath, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Sets read and execute permissions recursively on a directory.
-        /// </summary>
-        /// <param name="directoryPath">The path to the directory.</param>
-        /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
+        /// <summary>Makes a directory tree readable by everyone (<c>chmod -R a+rX</c>).</summary>
         Task SetDirectoryPermissionsAsync(string directoryPath, CancellationToken cancellationToken = default);
+
+        /// <summary>Gives <paramref name="path"/> to <paramref name="user"/>.</summary>
+        Task SetOwnerAsync(string path, string user, CancellationToken cancellationToken = default);
+
+        /// <summary>Whether a user account with this name exists on the machine.</summary>
+        Task<bool> UserExistsAsync(string user, CancellationToken cancellationToken = default);
     }
 }
-

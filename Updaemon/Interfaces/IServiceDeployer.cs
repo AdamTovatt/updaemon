@@ -3,40 +3,84 @@ using Updaemon.Models;
 namespace Updaemon.Interfaces
 {
     /// <summary>
-    /// Handles the shared deploy pipeline: download, find executable, set permissions, create symlink.
+    /// Downloads, activates, restarts and removes apps.
     /// </summary>
     public interface IServiceDeployer
     {
-        /// <summary>
-        /// Returns the conventional symlink path for a service (e.g. /opt/{localName}/current).
-        /// </summary>
-        string GetSymlinkPath(string localName);
+        /// <summary>The version the app's <c>current</c> link points at.</summary>
+        /// <exception cref="InvalidOperationException">The app has no current version; the message says how to recover.</exception>
+        Task<Version> GetCurrentVersionAsync(string appName, CancellationToken cancellationToken = default);
+
+        /// <summary>The manifest of the app's current version.</summary>
+        /// <exception cref="InvalidOperationException">The app has no current version; the message says how to recover.</exception>
+        /// <exception cref="ManifestException">The current version's manifest is invalid.</exception>
+        Task<AppManifest> GetCurrentManifestAsync(string appName, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Reads the current symlink target for a service, or null if not initialized.
+        /// Downloads a version into its version directory and resolves its manifest: the release's own,
+        /// else the app's manifest from install flags. Deletes the directory if anything fails.
         /// </summary>
-        Task<string?> ReadCurrentTargetAsync(string localName, CancellationToken cancellationToken = default);
+        /// <exception cref="ManifestException">The release's manifest is invalid.</exception>
+        /// <exception cref="MissingManifestException">Neither the release nor the app has a manifest.</exception>
+        Task<DeployableVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Downloads a version, detects the executable, sets permissions, and creates/updates the symlink.
-        /// Returns the deploy result on success, or null if the executable was not found.
+        /// The first step of any change to an installed app, before anything is written: checks the
+        /// service manager can be reached when the app has a service (<see cref="HasService"/>) or
+        /// <paramref name="next"/>, the version about to be activated, has one. Every method below
+        /// that writes takes what this returns.
         /// </summary>
-        Task<DeployResult?> DeployVersionAsync(
-            RegisteredService service,
-            Version version,
-            IDistributionServiceClient distributionClient,
-            CancellationToken cancellationToken = default);
+        /// <exception cref="ServiceManagerUnreachableException">It cannot be reached.</exception>
+        Task<ReachableServiceManager> ReachServiceManagerAsync(string appName, AppManifest? next = null, CancellationToken cancellationToken = default);
+
+        /// <summary>Whether the app has a service now: its unit or plist is there.</summary>
+        bool HasService(string appName);
+
+        /// <summary>Deletes a staged version that will not be activated, and the app's directory if that leaves it empty.</summary>
+        void Discard(DeployableVersion staged);
+
+        /// <summary>The versions kept in the app's directory, the current one included, oldest first.</summary>
+        IReadOnlyList<Version> GetRetainedVersions(string appName);
+
+        /// <summary>A retained version with the manifest in its directory, ready to activate again.</summary>
+        /// <exception cref="InvalidOperationException">The version is not kept; the message lists the kept ones.</exception>
+        Task<DeployableVersion> OpenRetainedAsync(string appName, Version version, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Cleans up artifacts created by a deploy (version directory and symlink). Best-effort.
+        /// Makes the staged version current and regenerates the app's settings file, command wrapper and
+        /// service unit from its manifest. Does not start or restart the service. If generating fails,
+        /// the previous version is made current again before the exception propagates.
         /// </summary>
-        Task CleanupDeployAsync(DeployResult result, CancellationToken cancellationToken = default);
+        Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Removes old version directories for a service, keeping the most recent versions
-        /// and always preserving the current symlink target. Individual directory deletions
-        /// are best-effort, but the method may throw during setup (e.g. reading symlink or listing directories).
+        /// After a change to the app's settings or arguments: regenerates its settings file, command
+        /// wrapper and service unit for its current version, and restarts the service if it is enabled,
+        /// whether or not it runs.
+        /// Returns false when the restarted service did not pass the health check, as after an update.
         /// </summary>
-        Task PruneOldVersionsAsync(string localName, int retentionCount, CancellationToken cancellationToken = default);
+        Task<bool> ApplySettingsAsync(InstalledApp app, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Enables and starts a newly installed service, then runs the health check: returns whether it
+        /// came up and kept running for its current version's <see cref="ServiceSpec.HealthCheck"/>
+        /// without the service manager starting it again.
+        /// </summary>
+        Task<bool> StartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Restarts the service, also one that is stopped, failed or crash-looping, then runs the health check as
+        /// <see cref="StartAsync"/> does.
+        /// </summary>
+        Task<bool> RestartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Stops and deletes the app's unit, its command wrapper, all its versions, settings and secrets;
+        /// with <paramref name="purge"/> also its data directory. Leaves the config to the caller.
+        /// </summary>
+        Task RemoveAsync(InstalledApp app, bool purge, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+
+        /// <summary>Deletes the oldest version directories beyond <paramref name="retentionCount"/>, never the current one.</summary>
+        Task PruneOldVersionsAsync(string appName, int retentionCount, CancellationToken cancellationToken = default);
     }
 }

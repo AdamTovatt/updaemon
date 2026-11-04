@@ -1,5 +1,8 @@
+using Updaemon.Common;
 using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Tests.Mocks
 {
@@ -14,11 +17,10 @@ namespace Updaemon.Tests.Mocks
         public string? ConnectedPluginPath { get; private set; }
         public string? InitializedSecrets { get; private set; }
         public bool IsDisposed { get; private set; }
-        public bool GetServiceInformationAsyncThrows { get; set; }
         public DistributionServiceInformation? CustomServiceInformation { get; set; }
         public HashSet<string> ConnectAsyncThrowsForPluginPaths { get; } = new HashSet<string>();
 
-        public Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
+        public Task<DistributionServiceInformation> ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(ConnectAsync)}:{pluginExecutablePath}");
             if (ConnectAsyncThrowsForPluginPaths.Contains(pluginExecutablePath))
@@ -27,7 +29,14 @@ namespace Updaemon.Tests.Mocks
             }
 
             ConnectedPluginPath = pluginExecutablePath;
-            return Task.CompletedTask;
+            return Task.FromResult(CustomServiceInformation ?? new DistributionServiceInformation
+            {
+                FullName = "Mock Distribution Service",
+                DefaultAlias = "mock",
+                Description = "Mock distribution service for testing",
+                Version = "1.0.0",
+                Secrets = new List<DistributionSecretInfo>()
+            });
         }
 
         public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
@@ -37,38 +46,61 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
+        /// <summary>Remotes the plugin refuses, with the message it gives.</summary>
+        public Dictionary<string, string> RefusedRemotes { get; } = new Dictionary<string, string>();
+
+        /// <summary>Remotes readable only with this githubToken, as a private repository is.</summary>
+        public Dictionary<string, string> TokenProtectedRemotes { get; } = new Dictionary<string, string>();
+
         public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(GetLatestVersionAsync)}:{serviceName}");
+            if (RefusedRemotes.TryGetValue(serviceName, out string? message))
+            {
+                throw new PluginException(message);
+            }
+
+            if (TokenProtectedRemotes.TryGetValue(serviceName, out string? token))
+            {
+                string? given = SecretCollection.FromString(InitializedSecrets).GetValueIgnoreCase(GitHubAccess.TokenSecret);
+                if (given == null)
+                {
+                    string[] ownerAndRepo = serviceName.Split('/');
+                    throw GitHubAccess.RepositoryNotFound(ownerAndRepo[0], ownerAndRepo[1], hasToken: false);
+                }
+
+                if (given != token)
+                {
+                    throw GitHubAccess.TokenRejected();
+                }
+            }
+
             return Task.FromResult(LatestVersions.GetValueOrDefault(serviceName));
         }
 
-        public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+        /// <summary>Whether downloads report they were verified against a checksum.</summary>
+        public bool DownloadsVerified { get; set; } = true;
+
+        public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(DownloadVersionAsync)}:{serviceName}:{version}:{targetPath}");
             Downloads.Add((serviceName, version, targetPath));
-            return Task.CompletedTask;
+            if (ReleaseWriters.TryGetValue($"{serviceName}:{version}", out Action<string>? writeRelease))
+            {
+                writeRelease(targetPath);
+            }
+
+            return Task.FromResult(new DownloadResult { Verified = DownloadsVerified });
         }
 
-        public Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)
+        /// <summary>Writes a release's files into the download directory, by "remote:version".</summary>
+        public Dictionary<string, Action<string>> ReleaseWriters { get; } = new Dictionary<string, Action<string>>();
+
+        /// <summary>Publishes a release whose files <paramref name="writeRelease"/> creates; it becomes the latest version.</summary>
+        public void AddRelease(string serviceName, Version version, Action<string> writeRelease)
         {
-            MethodCalls.Add(nameof(GetServiceInformationAsync));
-            if (GetServiceInformationAsyncThrows)
-            {
-                throw new InvalidOperationException("Failed to get service information");
-            }
-            if (CustomServiceInformation != null)
-            {
-                return Task.FromResult(CustomServiceInformation);
-            }
-            return Task.FromResult(new DistributionServiceInformation
-            {
-                FullName = "Mock Distribution Service",
-                DefaultAlias = "mock",
-                Description = "Mock distribution service for testing",
-                Version = "1.0.0",
-                Secrets = new List<DistributionSecretInfo>()
-            });
+            ReleaseWriters[$"{serviceName}:{version}"] = writeRelease;
+            LatestVersions[serviceName] = version;
         }
 
         public ValueTask DisposeAsync()

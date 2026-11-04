@@ -2,182 +2,86 @@
 
 # Publishing with Updaemon
 
-This guide explains how to prepare your application for distribution via Updaemon, including how to use the `updaemon.json` configuration file to help Updaemon locate your executable.
+How to publish an app so that `updaemon install` can set it up and `updaemon update` can keep it current.
 
-To clarify, usage of the `updaemon.json` file is optional. Updaemon works for releases without it too, but if the file structure of your release is complicated so that it's hard for Updaemon to find what file is the actual executable, then using `updaemon.json` to specify which file to run could be useful.
+## Release assets
 
-## Overview
+Publish one asset per platform, named after the platform's .NET runtime identifier (RID):
 
-When Updaemon downloads and installs your application, it:
-1. Downloads the release file (typically a zip archive) to a versioned directory (e.g., `/opt/my-app/1.0.0/`)
-2. Extracts zip files automatically
-3. Unwraps single top-level directories (if the zip contains only one directory)
-4. Searches for the executable file to run
+- `<name>-<rid>.zip` or `<name>-<rid>.tar.gz`: an archive, extracted on install with its file modes. If it holds a single top-level directory, that directory becomes the release root. An archive that cannot be extracted, or has an entry that would land outside it, fails the install.
+- `<name>-<rid>`: a bare executable. It cannot carry an `updaemon.json`, so it is installed with `--command` or `--service` (see [Releases without a manifest](#releases-without-a-manifest)).
 
-## The `updaemon.json` File
+For example `byteshelf-linux-arm64.zip`, `byteshelf-linux-x64.zip` and `byteshelf-osx-arm64.zip`. Updaemon picks the asset for the machine it runs on. If a release has no asset for that RID, or several, the install fails and lists the assets; the remote can then name a pattern instead, as in `github:owner/repo/<pattern>`.
 
-You can include an `updaemon.json` file in your published output to explicitly tell Updaemon where to find your executable. This is especially useful when:
-- Your executable name doesn't match the service name
-- Your executable is in a subdirectory
-- Your zip file structure is complex
+Also publish a `SHA256SUMS` asset: one `<sha-256>  <asset name>` line per asset, as `sha256sum * > SHA256SUMS` writes it (a directory before the name, as in `dist/app-linux-x64.zip`, is ignored). Updaemon then checks the download against it before installing and refuses one that does not match. A `SHA256SUMS` without a line for the asset fails before anything is downloaded. Without a `SHA256SUMS`, `install` and `update` still install the release but say it was not verified.
 
-### File Location
+Versions come from the release tag, for example `v1.2.0`.
 
-Place `updaemon.json` at the **root of your published output** (the top-level directory that will be extracted from the zip file into the version directory). This is the same location regardless of whether the directory structure gets unwrapped or not.
+## The manifest: `updaemon.json`
 
-**Example 1: Zip with single directory (will be unwrapped)**
-
-If your zip structure is:
-```
-publish.zip
-└── publish/
-    ├── my-app
-    ├── updaemon.json
-    └── other-files...
-```
-
-After extraction and unwrapping, `updaemon.json` will be at the version directory root, and your `executablePath` should reference files relative to that root:
+Put `updaemon.json` at the release root. It says what the app is and how to run it:
 
 ```json
 {
-  "executablePath": "my-app"
+  "executable": "bin/byteshelf",
+  "command": "byteshelf",
+  "service": { "args": ["sync", "run"] },
+  "settings": {
+    "BYTESHELF_URL": { "description": "Server URL", "required": true },
+    "BYTESHELF_API_KEY": { "description": "API key", "required": true, "secret": true },
+    "BYTESHELF_LOG_LEVEL": { "description": "Log level", "default": "info" }
+  }
 }
 ```
 
-**Example 2: Zip with multiple top-level items (won't be unwrapped)**
+| Field | Meaning |
+|---|---|
+| `executable` | Required. Path to the executable, relative to the release root. |
+| `command` | Optional. The app is a command, put on PATH under this name. |
+| `service` | Optional. The app is a service, run with `args` (default: none). `healthCheckSeconds` (1 to 300, default 10) is how long it must keep running after a start or restart. |
+| `settings` | Optional. Environment variables the app reads, by name. |
 
-If your zip structure is:
-```
-publish.zip
-├── publish/
-│   └── my-app
-├── config/
-│   └── config.json
-└── updaemon.json
-```
+At least one of `command` and `service` is required; an app can be both. Each setting can have:
 
-After extraction, `updaemon.json` remains at the version directory root, and your `executablePath` should reference files relative to that root (e.g., `"publish/my-app"`).
+| Field | Meaning |
+|---|---|
+| `description` | Shown when updaemon asks for the value. |
+| `required` | `true` if the app cannot run without it. Default `false`. |
+| `secret` | `true` to store the value where only the user the app runs as can read it. Default `false`. |
+| `default` | The value when none is set. A setting with a default is never required. |
 
-```json
-{
-  "executablePath": "publish/my-app"
-}
-```
+An invalid manifest stops the install or update with a message naming the problem. No value may contain a line break or other control character.
 
-### Configuration Format
+The `executablePath` format of updaemon 0.x is not read any more: replace `executablePath` with `executable`, and add `command`, `service` or both.
 
-```json
-{
-  "executablePath": "path/to/your-executable"
-}
-```
+## What updaemon does with it
 
-The `executablePath` is a **relative path** from the version directory root to your executable file.
+- **Command**: puts a small script named after `command` on PATH. It loads the app's settings, then runs the executable with the arguments it was given, in the caller's working directory. It loads the secrets only for the user the app runs as: root for an app installed system-wide, unless it was installed with `--run-as <user>`.
+- **Service**: writes a systemd unit (Linux) or launchd plist (macOS) that starts the same kind of script with `service.args`. The script loads the app's settings and secrets with `/bin/sh`, then runs the executable; the service restarts if it stops. Its working directory is the release root, which is replaced on each update.
+- **Settings**: `updaemon install` asks for each required setting that has no value; `updaemon set` changes them later. Secrets are kept in a file only the user the app runs as can read.
+- **Data**: every app gets a directory that is kept across updates, passed in `UPDAEMON_DATA_DIR`. Store state there.
 
-## Path Resolution
+After an update restarts a service, it must keep running for `service.healthCheckSeconds` (10 seconds unless set). Give a service that takes longer to fail, or to settle, a longer window. If it does not keep running, updaemon runs the previous version again and skips the new one until a newer release appears. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`. So do `updaemon set`, `unset` and `set-args`, which restart the service whether or not it runs (on Linux, unless its unit was disabled): the change stays, and the command fails pointing to the logs.
 
-### How Updaemon Processes Downloads
+Each update reads the new release's manifest, so a release can add settings or change its arguments. If it adds a required setting the app has no value for, the update waits: the current version keeps running and updaemon names the `updaemon set` command to run.
 
-1. **Download**: The release file is downloaded to the version directory (e.g., `/opt/my-app/1.0.0/`)
-2. **Extraction**: If it's a zip file, it's automatically extracted into the same directory
-3. **Unwrapping**: If the zip contains only a single top-level directory, its contents are moved up one level and the directory is removed
-4. **Detection**: Updaemon looks for `updaemon.json` at the root of the version directory
+## Releases without a manifest
 
-### Example Scenarios
+A release without `updaemon.json` can still be installed by saying what it is:
 
-#### Scenario 1: Simple Structure (Unwrapped)
-
-If your zip contains:
-```
-publish/
-├── EasyReasy.KnowledgeBase.Web.Server
-├── appsettings.json
-└── other-files...
+```bash
+updaemon install my-tool --from github:owner/my-tool --command my-tool
+updaemon install my-api --from github:owner/my-api --service
 ```
 
-After extraction and unwrapping, the structure becomes:
-```
-/opt/my-app/1.0.0/
-├── EasyReasy.KnowledgeBase.Web.Server
-├── appsettings.json
-├── other-files...
-└── updaemon.json
-```
+Updaemon finds the executable by name: the command name, or the app name for a service. If a later release ships a manifest, that manifest is used from then on.
 
-Your `updaemon.json` should be:
-```json
-{
-  "executablePath": "EasyReasy.KnowledgeBase.Web.Server"
-}
+## Installing
+
+```bash
+updaemon install byteshelf --from github:owner/byteshelf --set BYTESHELF_URL=https://shelf.example.com
 ```
 
-#### Scenario 2: Complex Structure (Not Unwrapped)
-
-If your zip contains multiple top-level items:
-```
-publish/
-├── EasyReasy.KnowledgeBase.Web.Server
-└── other-files...
-config/
-└── config.json
-```
-
-After extraction (no unwrapping), the structure is:
-```
-/opt/my-app/1.0.0/
-├── publish/
-│   ├── EasyReasy.KnowledgeBase.Web.Server
-│   └── other-files...
-├── config/
-│   └── config.json
-└── updaemon.json
-```
-
-Your `updaemon.json` should be:
-```json
-{
-  "executablePath": "publish/EasyReasy.KnowledgeBase.Web.Server"
-}
-```
-
-#### Scenario 3: Executable in Subdirectory
-
-If your executable is in a subdirectory:
-```
-bin/
-└── my-app
-lib/
-└── dependencies...
-```
-
-Your `updaemon.json` should be:
-```json
-{
-  "executablePath": "bin/my-app"
-}
-```
-
-## Fallback Behavior
-
-If `updaemon.json` is not present, Updaemon will:
-1. First try to find an executable with an exact name match to the service name
-2. Then try a partial name match
-3. Search recursively through all subdirectories
-
-However, using `updaemon.json` is recommended for clarity and reliability.
-
-## Best Practices
-
-1. **Always include `updaemon.json`** when your executable name differs from the service name
-2. **Use relative paths** - the path is always relative to the version directory root
-3. **Test your structure** - verify that after extraction and unwrapping, the path in `updaemon.json` correctly points to your executable
-4. **Place the file at the root** - `updaemon.json` should be somewhere that ends up at the root after unwrapping
-
-## Example: Complete Publishing Workflow
-
-1. Build your application and publish it to a `publish` directory
-2. Create `updaemon.json` in the `publish` directory with the correct `executablePath`
-3. Zip the `publish` directory contents (not the directory itself)
-4. Upload the zip file to your distribution source (GitHub releases, etc.)
-5. Updaemon will download, extract, unwrap, and use your `updaemon.json` to find the executable
-
+- `--set KEY=VALUE` gives a setting's value; repeat it for more. Updaemon asks for each required setting that is still missing, without echo for secrets. Without a terminal (in a script), a missing required setting fails the install instead.
+- Run as root, updaemon installs system-wide; run as any other user, it installs for that user only. `--run-as <user>` (system-wide only) runs the service as that user instead of root.
+- On Linux, a user's services run only while that user is logged in, unless lingering is on: `loginctl enable-linger <user>`.

@@ -1,7 +1,8 @@
-using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
+using Updaemon.Services;
 
 namespace Updaemon.Commands
 {
@@ -10,47 +11,34 @@ namespace Updaemon.Commands
     /// </summary>
     public class DistInstallCommand : ICommand
     {
-        private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
-        private readonly IPluginUrlResolver _pluginUrlResolver;
-        private readonly IPluginDownloader _pluginDownloader;
-        private readonly string _pluginsDirectory;
+        private readonly IPluginInstaller _pluginInstaller;
+        private readonly IGitHubPluginReleases _gitHubPluginReleases;
+        private readonly UpdaemonVersion _updaemonVersion;
+        private readonly PluginCredentials _credentials;
 
-        public DistInstallCommand(
-            IConfigManager configManager,
-            IOutputWriter outputWriter,
-            IPluginUrlResolver pluginUrlResolver,
-            IPluginDownloader pluginDownloader)
-            : this(configManager, outputWriter, pluginUrlResolver, pluginDownloader,
-                   Path.Combine(PlatformPaths.ConfigDirectory, "plugins"))
+        /// <param name="updaemonVersion">The running updaemon's version: registry plugins come from its release.</param>
+        public DistInstallCommand(IOutputWriter outputWriter, IPluginInstaller pluginInstaller, IGitHubPluginReleases gitHubPluginReleases, UpdaemonVersion updaemonVersion, PluginCredentials credentials)
         {
-        }
-
-        public DistInstallCommand(
-            IConfigManager configManager,
-            IOutputWriter outputWriter,
-            IPluginUrlResolver pluginUrlResolver,
-            IPluginDownloader pluginDownloader,
-            string pluginsDirectory)
-        {
-            _configManager = configManager;
             _outputWriter = outputWriter;
-            _pluginUrlResolver = pluginUrlResolver;
-            _pluginDownloader = pluginDownloader;
-            _pluginsDirectory = pluginsDirectory;
+            _pluginInstaller = pluginInstaller;
+            _gitHubPluginReleases = gitHubPluginReleases;
+            _updaemonVersion = updaemonVersion;
+            _credentials = credentials;
         }
 
         public string Name => "dist-install";
 
         public string Description => "Install a distribution service plugin";
 
-        public string Usage => "updaemon dist-install [--as <alias>] <plugin-name|url>";
+        public string Usage => PluginSource.InstallUsage;
+
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
-            ArgumentParser parser = new ArgumentParser(args, _outputWriter);
+            ArgumentParser parser = new ArgumentParser(args);
 
-            // Parse --as flag
             string? alias = parser.GetFlag("--as");
             string? urlOrName = parser.GetFirstNonFlag();
 
@@ -61,126 +49,75 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            // Determine if input is a URL or a plugin name
-            string finalUrl = urlOrName;
-            string? finalAlias = alias;
-            if (!urlOrName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-                !urlOrName.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                // It's a plugin name, resolve it to a URL
-                try
-                {
-                    finalUrl = await _pluginUrlResolver.ResolveAsync(urlOrName, cancellationToken);
-                    // If no explicit alias was provided, use the plugin name as the alias
-                    if (finalAlias == null)
-                    {
-                        finalAlias = urlOrName;
-                    }
-                }
-                catch (InvalidOperationException)
-                {
-                    // Re-throw to preserve the helpful error message from the resolver
-                    throw;
-                }
-            }
-
-            // If alias is explicitly provided, check if it already exists before downloading
-            if (finalAlias != null)
-            {
-                InstalledPluginInfo? existingPlugin = await _configManager.GetPluginAsync(finalAlias, cancellationToken);
-                if (existingPlugin != null)
-                {
-                    _outputWriter.WriteError($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
-                    return 1;
-                }
-            }
-
-            _outputWriter.WriteLine($"Downloading distribution plugin from: {finalUrl}");
-
-            PluginDownloadResult downloadResult = await _pluginDownloader.DownloadAndInspectAsync(finalUrl, _pluginsDirectory, cancellationToken);
+            PluginInstallResult result;
             try
             {
-                DistributionServiceInformation serviceInfo = downloadResult.ServiceInformation;
+                PluginSource source = await PluginSource.ParseAsync(
+                    urlOrName,
+                    _updaemonVersion,
+                    (owner, repo) => WithGitHubTokenAsync(() => _gitHubPluginReleases.GetLatestTagAsync(owner, repo, cancellationToken), cancellationToken));
 
-                // Determine alias (if not already set from plugin name resolution)
-                if (finalAlias == null)
-                {
-                    finalAlias = serviceInfo.DefaultAlias;
-                }
+                _outputWriter.WriteLine(source is PluginSource.GitHub github
+                    ? $"Installing distribution plugin: {source}, release {github.Tag}"
+                    : $"Installing distribution plugin: {source}");
 
-                if (string.IsNullOrEmpty(finalAlias))
-                {
-                    _outputWriter.WriteError("Plugin does not provide a default alias and none was specified. Use --as to specify an alias.");
-                    return 1;
-                }
-
-                // Check if alias already exists (double-check in case it was set from plugin name)
-                InstalledPluginInfo? existing = await _configManager.GetPluginAsync(finalAlias, cancellationToken);
-                if (existing != null)
-                {
-                    _outputWriter.WriteError($"Plugin with alias '{finalAlias}' is already installed. Use a different alias or remove the existing plugin first.");
-                    return 1;
-                }
-
-                // Determine filename from URL
-                string filename = Path.GetFileName(new Uri(finalUrl).LocalPath);
-                if (string.IsNullOrEmpty(filename))
-                {
-                    filename = "distribution-plugin";
-                }
-
-                // Create plugin-specific directory
-                string pluginDirectory = Path.Combine(_pluginsDirectory, finalAlias);
-                Directory.CreateDirectory(pluginDirectory);
-
-                // Move plugin to final location
-                string finalPluginPath = Path.Combine(pluginDirectory, filename);
-                File.Move(downloadResult.TempFilePath, finalPluginPath, overwrite: true);
-                _outputWriter.WriteLine($"Saved plugin to: {finalPluginPath}");
-
-                // Register plugin
-                InstalledPluginInfo pluginInfo = new InstalledPluginInfo
-                {
-                    Alias = finalAlias,
-                    Path = finalPluginPath
-                };
-                await _configManager.AddOrUpdatePluginAsync(pluginInfo, cancellationToken);
-                _outputWriter.WriteLine($"Distribution plugin '{finalAlias}' installed successfully");
-                _outputWriter.WriteLine($"  Name: {serviceInfo.FullName}");
-                _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
-                _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
-                return 0;
+                result = source is PluginSource.GitHub
+                    ? await WithGitHubTokenAsync(() => _pluginInstaller.InstallAsync(source, alias, cancellationToken), cancellationToken)
+                    : await _pluginInstaller.InstallAsync(source, alias, cancellationToken);
             }
-            finally
+            catch (Exception ex) when (ex is FormatException or CredentialNeededException)
             {
-                // Clean up temp file if it wasn't moved
-                try
-                {
-                    if (File.Exists(downloadResult.TempFilePath))
-                        File.Delete(downloadResult.TempFilePath);
-                }
-                catch { }
+                return _outputWriter.Fail(ex.Message);
             }
+
+            _outputWriter.WriteLine(result.ReplacedExisting
+                ? $"Replaced the '{result.Plugin.Alias}' plugin."
+                : $"Installed the '{result.Plugin.Alias}' plugin.");
+            _outputWriter.WriteLine($"  Name: {result.ServiceInformation.FullName}");
+            _outputWriter.WriteLine($"  Version: {result.ServiceInformation.Version}");
+            _outputWriter.WriteLine($"  Description: {result.ServiceInformation.Description}");
+            return 0;
         }
+
+        /// <summary>A github: source's call, which reads the 'github' plugin's token itself; asked for here when it needs one.</summary>
+        private Task<T> WithGitHubTokenAsync<T>(Func<Task<T>> call, CancellationToken cancellationToken) =>
+            _credentials.RunAsync(GitHubPluginReleases.TokenPluginAlias, call, handOverSavedSecret: null, cancellationToken);
 
         public string GetDetailedHelp()
         {
-            return """
+            return $"""
                 Dist-Install Command
 
                 Usage:
-                  updaemon dist-install [--as <alias>] <plugin-name|url>
+                  {PluginSource.InstallUsage}
 
                 Description:
-                  Installs a distribution service plugin. The plugin can be specified as a URL
-                  or as a plugin name (e.g., "github") which will be resolved to a URL. If
-                  --as is not specified and a plugin name is used, the plugin name becomes the
-                  alias. If a URL is used without --as, the plugin's default alias is used.
+                  Installs a distribution service plugin, by registry name (e.g. "github"),
+                  from a GitHub repository's releases, or from a URL.
+
+                  A registry plugin comes from this updaemon version's own release, built for
+                  this machine, and follows updaemon's updates.
+
+                  github:<owner>/<repo> installs the one asset named *-<rid> (e.g.
+                  *-linux-arm64) from the repository's latest release. It must match its line
+                  in the release's SHA256SUMS. While self-update is on, 'updaemon update'
+                  installs the repository's latest release whenever it differs from the one
+                  installed. A release refused for its checksum, its build or its plugin
+                  protocol is skipped until another is latest; run dist-install again to
+                  retry it once it is fixed. A private repository needs the 'github'
+                  plugin's githubToken; at a terminal, dist-install asks for it.
+
+                  A URL plugin is not verified and is never updated; install it again to
+                  replace it.
+
+                  If --as is not given, a registry plugin is installed under its name and
+                  any other under its default alias. A plugin already installed under the
+                  alias is replaced; if the new one fails to start, the installed one is kept.
 
                 Examples:
                   updaemon dist-install github
+                  updaemon dist-install github:someone/updaemon-s3
                   updaemon dist-install --as github https://example.com/plugin
-                  updaemon dist-install https://example.com/plugin
                 """;
         }
     }

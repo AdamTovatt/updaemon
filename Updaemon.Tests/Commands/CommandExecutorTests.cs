@@ -1,16 +1,131 @@
 using Updaemon.Commands;
+using Updaemon.Configuration;
+using Updaemon.Models;
+using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
 {
     public class CommandExecutorTests
     {
+        private static readonly UpdaemonVersion RunningVersion = UpdaemonVersion.FromAssembly(new Version(1, 2, 0, 0));
+
+        private static readonly UpdaemonScope Scope = UpdaemonScope.ForUser(new HostPlatform(false, "linux-arm64"), 1000, "ada", "/home/ada", null, null);
+
+        private static CommandExecutor Executor(MockCommandFactory factory, MockOutputWriter outputWriter, MockRunLock? runLock = null, MockZeroXConverter? converter = null) =>
+            new CommandExecutor(factory, outputWriter, runLock ?? new MockRunLock(), RunningVersion, converter ?? new MockZeroXConverter(), Scope);
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task ExecuteAsync_ZeroXSetup_IsConvertedOnceUnderTheLockBeforeTheCommand(bool changesState)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockRunLock runLock = new MockRunLock();
+            bool heldWhileConverting = false;
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true, OnRun = () => heldWhileConverting = runLock.IsHeld };
+            bool convertedFirst = false;
+            factory.RegisterCommand("cmd", new MockCommand { Name = "cmd", Changes = changesState, OnExecute = () => convertedFirst = converter.Runs.Count == 1 });
+            CommandExecutor executor = Executor(factory, new MockOutputWriter(), runLock, converter);
+
+            await executor.ExecuteAsync(new[] { "cmd" });
+            await executor.ExecuteAsync(new[] { "cmd" });
+
+            Assert.True(convertedFirst);
+            Assert.True(heldWhileConverting);
+            Assert.Equal(new[] { false }, converter.Runs);
+            Assert.Equal(changesState ? 2 : 1, runLock.Acquisitions);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ZeroXSetupConvertedByAnotherUpdaemonWhileWaitingForTheLock_IsNotConvertedAgain()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true };
+            MockRunLock runLock = new MockRunLock { OnAcquire = () => converter.Pending = false };
+            factory.RegisterCommand("status", new MockCommand { Name = "status", Changes = false });
+
+            int exitCode = await Executor(factory, new MockOutputWriter(), runLock, converter).ExecuteAsync(new[] { "status" });
+
+            Assert.Equal(0, exitCode);
+            Assert.Empty(converter.Runs);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ConversionLeavesSomethingOut_StillRunsTheCommand()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockCommand command = new MockCommand { Name = "status", Changes = false };
+            factory.RegisterCommand("status", command);
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true, Result = false };
+
+            int exitCode = await Executor(factory, new MockOutputWriter(), converter: converter).ExecuteAsync(new[] { "status", "x" });
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(new[] { "x" }, command.ReceivedArgs);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ConversionFails_ReportsItAndDoesNotRunTheCommand()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockCommand command = new MockCommand { Name = "status", Changes = false };
+            factory.RegisterCommand("status", command);
+            MockOutputWriter output = new MockOutputWriter();
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true, Failure = new IOException("disk full") };
+
+            int exitCode = await Executor(factory, output, converter: converter).ExecuteAsync(new[] { "status" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { "Error: disk full" }, output.Errors);
+            Assert.Null(command.ReceivedArgs);
+        }
+
+        [Theory]
+        [InlineData("--version")]
+        [InlineData("help")]
+        [InlineData("migrate")]
+        public async Task ExecuteAsync_ZeroXSetup_IsNotConvertedByVersionHelpOrMigrateItself(string commandName)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            factory.RegisterCommand("migrate", new MigrateCommand(new MockZeroXConverter(), new MockOutputWriter(), TestScope.Create("/nonexistent", isSystem: true)));
+            MockZeroXConverter converter = new MockZeroXConverter { Pending = true };
+
+            await Executor(factory, new MockOutputWriter(), converter: converter).ExecuteAsync(new[] { commandName });
+
+            Assert.Empty(converter.Runs);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_VersionFlag_PrintsTheReleaseVersionOnly()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            CommandExecutor executor = Executor(factory, outputWriter);
+
+            int exitCode = await executor.ExecuteAsync(new[] { "--version" });
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(new[] { "1.2.0" }, outputWriter.Messages);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_VersionFlagWithAnArgument_ShowsItsUsage()
+        {
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(new MockCommandFactory(), outputWriter).ExecuteAsync(new[] { "--version", "x" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { "Usage: updaemon --version" }, outputWriter.Errors);
+        }
+
         [Fact]
         public async Task ExecuteAsync_NoArgs_ReturnsErrorCode()
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(Array.Empty<string>());
 
@@ -22,12 +137,33 @@ namespace Updaemon.Tests.Commands
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "unknown" });
 
             Assert.Equal(1, exitCode);
-            Assert.Contains("Unknown command: unknown", outputWriter.Errors);
+            Assert.Equal(new[] { "Unknown command 'unknown'. Run 'updaemon help' to list the commands." }, outputWriter.Errors);
+            Assert.Empty(outputWriter.Messages);
+        }
+
+        [Theory]
+        [InlineData("instal", "install")]
+        [InlineData("upadte", "update")]
+        [InlineData("Stauts", "status")]
+        public async Task ExecuteAsync_CloseToACommand_SuggestsIt(string typed, string suggested)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            foreach (string name in new[] { "install", "update", "status", "set", "unset" })
+            {
+                factory.RegisterCommand(name, new MockCommand { Name = name });
+            }
+
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(factory, outputWriter).ExecuteAsync(new[] { typed });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { $"Unknown command '{typed}'. Did you mean '{suggested}'? Run 'updaemon help' to list the commands." }, outputWriter.Errors);
         }
 
         [Fact]
@@ -37,12 +173,46 @@ namespace Updaemon.Tests.Commands
             MockCommand updateCommand = new MockCommand { Name = "update" };
             factory.RegisterCommand("update", updateCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "update", "my-app" });
 
             Assert.Equal(0, exitCode);
             Assert.Equal(new[] { "my-app" }, updateCommand.ReceivedArgs);
+        }
+
+        [Theory]
+        [InlineData(true, 1)]
+        [InlineData(false, 0)]
+        public async Task ExecuteAsync_HoldsTheLockAndNamesTheScopeOnlyForCommandsThatChangeState(bool changesState, int expectedAcquisitions)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            MockRunLock runLock = new MockRunLock();
+            MockOutputWriter outputWriter = new MockOutputWriter();
+            bool heldDuringRun = false;
+            List<string>? printedBeforeRun = null;
+            MockCommand command = new MockCommand
+            {
+                Name = "cmd",
+                Changes = changesState,
+                OnExecute = () =>
+                {
+                    heldDuringRun = runLock.IsHeld;
+                    printedBeforeRun = outputWriter.Messages.ToList();
+                },
+            };
+            factory.RegisterCommand("cmd", command);
+            CommandExecutor executor = Executor(factory, outputWriter, runLock);
+
+            await executor.ExecuteAsync(new[] { "cmd", "x" });
+
+            // Whether it changes state is the command's to say from its own arguments, as plain 'timer' only shows.
+            Assert.Equal(new[] { "x" }, command.ChangesStateArgs);
+            Assert.Equal(expectedAcquisitions, runLock.Acquisitions);
+            Assert.Equal(changesState, heldDuringRun);
+            Assert.False(runLock.IsHeld);
+            Assert.NotNull(printedBeforeRun);
+            Assert.Equal(changesState ? new[] { Scope.Announcement } : Array.Empty<string>(), printedBeforeRun);
         }
 
         [Fact]
@@ -56,12 +226,25 @@ namespace Updaemon.Tests.Commands
             };
             factory.RegisterCommand("test", failingCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "test" });
 
             Assert.Equal(1, exitCode);
             Assert.Contains("Error: Test error", outputWriter.Errors);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_NoUserServiceManager_ExitsWithItsOwnCodeForInstallSh()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            factory.RegisterCommand("timer", new MockCommand { Name = "timer", ExceptionToThrow = new ServiceManagerUnreachableException("Cannot reach it.") });
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(factory, outputWriter).ExecuteAsync(new[] { "timer" });
+
+            Assert.Equal(3, exitCode);
+            Assert.Equal(new[] { "Error: Cannot reach it." }, outputWriter.Errors);
         }
 
         [Fact]
@@ -73,7 +256,7 @@ namespace Updaemon.Tests.Commands
             factory.RegisterCommand("update", cmd1);
             factory.RegisterCommand("new", cmd2);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "help" });
 
@@ -81,6 +264,33 @@ namespace Updaemon.Tests.Commands
             Assert.Contains("Available Commands:", outputWriter.Messages);
             Assert.Contains("update", string.Join(" ", outputWriter.Messages));
             Assert.Contains("new", string.Join(" ", outputWriter.Messages));
+            Assert.Contains(outputWriter.Messages, line => line.TrimStart().StartsWith("help publishing "));
+        }
+
+        [Theory]
+        [InlineData("publishing")]
+        [InlineData("PUBLISHING")]
+        public async Task ExecuteAsync_HelpPublishing_PrintsTheRepositorysGuideFromItsTitle(string topic)
+        {
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(new MockCommandFactory(), outputWriter).ExecuteAsync(new[] { "help", topic });
+
+            Assert.Equal(0, exitCode);
+            string guide = File.ReadAllText(RepositoryFile("PublishingWithUpdaemon.md"));
+            // Its link back to the README leads nowhere in a terminal; the rest is printed as it is.
+            Assert.Equal(new[] { guide[guide.IndexOf("# Publishing with Updaemon", StringComparison.Ordinal)..] }, outputWriter.Messages.Select(line => line + "\n"));
+        }
+
+        private static string RepositoryFile(string name)
+        {
+            DirectoryInfo? directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Updaemon.sln")))
+            {
+                directory = directory.Parent;
+            }
+
+            return Path.Combine(directory?.FullName ?? throw new DirectoryNotFoundException("Updaemon.sln was not found above the test binaries."), name);
         }
 
         [Fact]
@@ -94,7 +304,7 @@ namespace Updaemon.Tests.Commands
             };
             factory.RegisterCommand("update", updateCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "help", "update" });
 
@@ -107,12 +317,23 @@ namespace Updaemon.Tests.Commands
         {
             MockCommandFactory factory = new MockCommandFactory();
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "help", "unknown" });
 
             Assert.Equal(1, exitCode);
-            Assert.Contains("Unknown command: unknown", outputWriter.Errors);
+            Assert.Equal(new[] { "Unknown command 'unknown'. Run 'updaemon help' to list the commands." }, outputWriter.Errors);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_HelpCloseToATopic_SuggestsIt()
+        {
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(new MockCommandFactory(), outputWriter).ExecuteAsync(new[] { "help", "publising" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { "Unknown command 'publising'. Did you mean 'publishing'? Run 'updaemon help' to list the commands." }, outputWriter.Errors);
         }
 
         [Fact]
@@ -122,7 +343,7 @@ namespace Updaemon.Tests.Commands
             MockCommand secretSetCommand = new MockCommand { Name = "secret-set" };
             factory.RegisterCommand("secret-set", secretSetCommand);
             MockOutputWriter outputWriter = new MockOutputWriter();
-            CommandExecutor executor = new CommandExecutor(factory, outputWriter);
+            CommandExecutor executor = Executor(factory, outputWriter);
 
             int exitCode = await executor.ExecuteAsync(new[] { "SECRET-SET", "github", "key", "value" });
 

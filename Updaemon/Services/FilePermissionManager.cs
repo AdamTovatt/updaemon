@@ -36,11 +36,10 @@ namespace Updaemon.Services
             try
             {
                 File.SetUnixFileMode(executablePath, ExecutableMode);
-                _outputWriter.WriteLine($"Set executable permissions on: {executablePath}");
             }
             catch (Exception ex)
             {
-                _outputWriter.WriteLine($"Warning: Could not set executable permissions on {executablePath}: {ex.Message}");
+                _outputWriter.WriteError($"Warning: Could not set executable permissions on {executablePath}: {ex.Message}");
             }
 
             return Task.CompletedTask;
@@ -51,14 +50,24 @@ namespace Updaemon.Services
             try
             {
                 ApplyAdditiveRead(directoryPath);
-                _outputWriter.WriteLine($"Set directory permissions on: {directoryPath}");
             }
             catch (Exception ex)
             {
-                _outputWriter.WriteLine($"Warning: Could not set directory permissions on {directoryPath}: {ex.Message}");
+                _outputWriter.WriteError($"Warning: Could not set directory permissions on {directoryPath}: {ex.Message}");
             }
 
             return Task.CompletedTask;
+        }
+
+        public async Task SetOwnerAsync(string path, string user, CancellationToken cancellationToken = default)
+        {
+            await ProcessRunner.RunAndCheckAsync("chown", new[] { user, path }, cancellationToken);
+        }
+
+        public async Task<bool> UserExistsAsync(string user, CancellationToken cancellationToken = default)
+        {
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("id", new[] { "-u", user }, cancellationToken);
+            return result.Success;
         }
 
         /// <summary>

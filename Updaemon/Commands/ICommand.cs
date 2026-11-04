@@ -21,6 +21,12 @@ namespace Updaemon.Commands
         string Usage { get; }
 
         /// <summary>
+        /// Whether the command, run with <paramref name="args"/>, may change state. It then runs under
+        /// the scope's exclusive lock, after a line naming the scope; one that only shows does neither.
+        /// </summary>
+        bool ChangesState(string[] args);
+
+        /// <summary>
         /// Executes the command with the provided arguments.
         /// </summary>
         /// <param name="args">Command arguments (excluding the command name itself).</param>

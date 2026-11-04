@@ -10,7 +10,7 @@ namespace Updaemon.GithubDistributionService.Tests
         [Fact]
         public async Task GetLatestVersionAsync_WithRealCurlRepo_ReturnsVersion()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
@@ -24,23 +24,24 @@ namespace Updaemon.GithubDistributionService.Tests
         }
 
         [Fact]
-        public async Task GetLatestVersionAsync_WithNonExistentRepo_ReturnsNull()
+        public async Task GetLatestVersionAsync_WithNonExistentRepoAndNoToken_NeedsAToken()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
 
             await service.InitializeAsync(new SecretCollection(new Dictionary<string, string>()));
-            Version? version = await service.GetLatestVersionAsync("nonexistent-user-12345/nonexistent-repo-67890");
+            CredentialNeededException ex = await Assert.ThrowsAsync<CredentialNeededException>(
+                () => service.GetLatestVersionAsync("nonexistent-user-12345/nonexistent-repo-67890"));
 
-            Assert.Null(version);
+            Assert.Equal(Common.Models.CredentialProblem.Missing, ex.Need.Problem);
         }
 
         [Fact]
         public async Task DownloadVersionAsync_WithRealRepo_DownloadsSuccessfully()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
@@ -55,8 +56,8 @@ namespace Updaemon.GithubDistributionService.Tests
 
                 if (version != null)
                 {
-                    // Download using wildcard pattern (use more specific pattern to match only one)
-                    await service.DownloadVersionAsync("adamtovatt/netlifydnsmanager/linux-arm.zip", version, targetPath);
+                    // No pattern: the release's assets follow the *-<rid>.zip convention
+                    await service.DownloadVersionAsync("adamtovatt/netlifydnsmanager", version, "linux-arm64", targetPath);
 
                     // Verify files were downloaded and extracted
                     Assert.True(Directory.Exists(targetPath));
@@ -88,7 +89,7 @@ namespace Updaemon.GithubDistributionService.Tests
         [Fact]
         public async Task FullFlow_GetVersionThenDownload_WorksCorrectly()
         {
-            GithubApiClient apiClient = new GithubApiClient();
+            GithubApiClient apiClient = new GithubApiClient(new HttpClient());
             VersionParser versionParser = new VersionParser();
             DownloadPostProcessor postProcessor = new DownloadPostProcessor();
             GithubDistributionService service = new GithubDistributionService(apiClient, versionParser, postProcessor);
@@ -104,7 +105,7 @@ namespace Updaemon.GithubDistributionService.Tests
                 if (latestVersion != null)
                 {
                     // Download using wildcard pattern to get the .zip file
-                    await service.DownloadVersionAsync("curl/curl/*.zip", latestVersion, targetPath);
+                    await service.DownloadVersionAsync("curl/curl/*.zip", latestVersion, "linux-arm64", targetPath);
 
                     Assert.True(Directory.Exists(targetPath));
 

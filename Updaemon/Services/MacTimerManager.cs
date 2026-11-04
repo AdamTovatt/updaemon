@@ -1,107 +1,95 @@
-using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Updaemon.Configuration;
+using Updaemon.Conversion;
 using Updaemon.Interfaces;
+using Updaemon.IO;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
     /// <summary>
     /// macOS implementation of <see cref="ITimerManager"/> backed by a single launchd
-    /// LaunchDaemon plist that runs <c>updaemon update</c> every <c>StartInterval</c> seconds.
+    /// LaunchDaemon (system scope) or LaunchAgent (user scope) plist that runs <c>updaemon update</c> every <c>StartInterval</c> seconds.
     /// Constructed only on macOS by Program.cs.
     /// </summary>
-    public partial class MacTimerManager : ITimerManager
+    public class MacTimerManager : ITimerManager
     {
-        [GeneratedRegex("<key>StartInterval</key>\\s*<integer>(\\d+)</integer>", RegexOptions.IgnoreCase)]
-        private static partial Regex StartIntervalRegex();
+        /// <summary>Updaemon 0.x's timer label, in the system domain.</summary>
+        private const string ZeroXLabel = "com.updaemon.timer";
 
         private readonly IOutputWriter _outputWriter;
+        private readonly UpdaemonScope _scope;
         private readonly string _plistPath;
         private readonly string _label;
-        private readonly string _updaemonExecutablePath;
 
-        public MacTimerManager(IOutputWriter outputWriter)
-            : this(
-                outputWriter,
-                Path.Combine(PlatformPaths.UnitFileDirectory, PlatformPaths.TimerUnitName + ".plist"),
-                PlatformPaths.TimerUnitName,
-                PlatformPaths.UpdaemonExecutablePath)
-        {
-        }
-
-        public MacTimerManager(IOutputWriter outputWriter, string plistPath, string label, string updaemonExecutablePath)
+        public MacTimerManager(IOutputWriter outputWriter, UpdaemonScope scope)
         {
             _outputWriter = outputWriter;
-            _plistPath = plistPath;
-            _label = label;
-            _updaemonExecutablePath = updaemonExecutablePath;
+            _scope = scope;
+            _label = scope.TimerLabel;
+            _plistPath = Path.Combine(scope.UnitDirectory, _label + ".plist");
         }
 
-        public async Task SetTimerAsync(TimeSpan interval, CancellationToken cancellationToken = default)
+        public async Task SetTimerAsync(TimeSpan interval, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             int seconds = ClampToInt(interval.TotalSeconds);
 
-            string plistContent = BuildPlist(_label, _updaemonExecutablePath, seconds);
-            await File.WriteAllTextAsync(_plistPath, plistContent, cancellationToken);
-
-            // launchd refuses plists that aren't 0644 root:wheel.
-            try
-            {
-                File.SetUnixFileMode(_plistPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
-            }
-            catch (Exception ex)
-            {
-                _outputWriter.WriteLine($"Warning: could not set permissions on {_plistPath}: {ex.Message}");
-            }
-
-            // Belt-and-suspenders: ensure root:wheel ownership. On macOS root's primary group
-            // is already wheel so this is usually a no-op, but make it explicit.
-            ProcessRunner.Result chown = await ProcessRunner.RunAsync("chown", new[] { "root:wheel", _plistPath }, cancellationToken);
-            if (!chown.Success)
-            {
-                _outputWriter.WriteLine($"Warning: chown root:wheel on {_plistPath} failed (exit {chown.ExitCode}): {chown.StdErr.Trim()}");
-            }
-
-            // Re-bootstrap to pick up changes.
-            await ProcessRunner.RunAsync("launchctl", new[] { "bootout", $"system/{_label}" }, cancellationToken);
-            await ProcessRunner.RunAndCheckAsync("launchctl", new[] { "bootstrap", "system", _plistPath }, cancellationToken);
+            // launchd refuses a plist that others can write; 0644 is what it expects.
+            await AtomicFile.WriteAsync(_plistPath, BuildPlist(_label, _scope.UpdaemonCommandPath, seconds, _scope.UpdateLogPath), AtomicFile.Readable, cancellationToken);
+            await Launchd.LoadAsync(_scope, _label, _plistPath, _outputWriter, cancellationToken);
         }
 
-        /// <summary>
-        /// Disables the timer. Mirrors systemd semantics: the underlying job is unloaded,
-        /// but the plist file is preserved on disk so its previous interval is still queryable
-        /// via <see cref="GetCurrentIntervalAsync"/> and a re-enable doesn't have to re-derive it.
-        /// </summary>
-        public async Task DisableTimerAsync(CancellationToken cancellationToken = default)
+        /// <summary>Unloads the job and deletes its plist: launchd loads any plist left in the directory at the next boot or login.</summary>
+        public async Task RemoveTimerAsync(ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
-            await ProcessRunner.RunAsync("launchctl", new[] { "bootout", $"system/{_label}" }, cancellationToken);
+            await Launchd.UnloadAsync(_scope, _label, cancellationToken);
+            File.Delete(_plistPath);
         }
 
         public async Task<bool> IsTimerEnabledAsync(CancellationToken cancellationToken = default)
         {
-            ProcessRunner.Result result = await ProcessRunner.RunAsync("launchctl", new[] { "print", $"system/{_label}" }, cancellationToken);
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("launchctl", new[] { "print", Launchd.Target(_scope, _label) }, cancellationToken);
             return result.Success;
         }
 
-        public async Task<string?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default)
+        public async Task<TimeSpan?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default)
         {
             if (!File.Exists(_plistPath))
             {
                 return null;
             }
 
-            string content = await File.ReadAllTextAsync(_plistPath, cancellationToken);
-            Match match = StartIntervalRegex().Match(content);
-            if (!match.Success)
+            int? seconds = ReadStartInterval(await File.ReadAllTextAsync(_plistPath, cancellationToken));
+            return seconds == null ? null : TimeSpan.FromSeconds(seconds.Value);
+        }
+
+        public async Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
+        {
+            string path = Path.Combine(_scope.UnitDirectory, ZeroXLabel + ".plist");
+            if (!_scope.IsSystem || !File.Exists(path))
             {
                 return null;
             }
 
-            if (!int.TryParse(match.Groups[1].Value, out int seconds))
-            {
-                return null;
-            }
+            int? seconds = ReadStartInterval(await File.ReadAllTextAsync(path, cancellationToken));
+            ProcessRunner.Result loaded = await ProcessRunner.RunAsync("launchctl", new[] { "print", Launchd.Target(_scope, ZeroXLabel) }, cancellationToken);
+            return new ZeroXTimer(new[] { path }, loaded.Success,seconds == null ? null : TimeSpan.FromSeconds(seconds.Value));
+        }
 
-            return FormatInterval(seconds);
+        public async Task RemoveZeroXTimerAsync(ZeroXTimer timer, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
+        {
+            // 0.x's label differs from this updaemon's, so its job would otherwise run beside the new one.
+            await Launchd.UnloadAsync(_scope, ZeroXLabel, cancellationToken);
+            foreach (string file in timer.Files)
+            {
+                File.Delete(file);
+            }
+        }
+
+        internal static int? ReadStartInterval(string plist)
+        {
+            XElement? interval = Launchd.ReadPlist(plist)?.GetValueOrDefault("StartInterval");
+            return interval?.Name == "integer" && int.TryParse(interval.Value, out int seconds) ? seconds : null;
         }
 
         private static int ClampToInt(double value)
@@ -111,41 +99,16 @@ namespace Updaemon.Services
             return (int)value;
         }
 
-        private static string FormatInterval(int seconds)
+        internal static string BuildPlist(string label, string updaemonPath, int intervalSeconds, string logPath)
         {
-            if (seconds % 3600 == 0)
-            {
-                return $"{seconds / 3600}h";
-            }
-            if (seconds % 60 == 0)
-            {
-                return $"{seconds / 60}m";
-            }
-            return $"{seconds}s";
-        }
-
-        internal static string BuildPlist(string label, string updaemonPath, int intervalSeconds)
-        {
-            return $"""
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-                <plist version="1.0">
-                <dict>
-                    <key>Label</key>
-                    <string>{label}</string>
-                    <key>ProgramArguments</key>
-                    <array>
-                        <string>{updaemonPath}</string>
-                        <string>update</string>
-                    </array>
-                    <key>StartInterval</key>
-                    <integer>{intervalSeconds}</integer>
-                    <key>RunAtLoad</key>
-                    <false/>
-                </dict>
-                </plist>
-
-                """;
+            return new Launchd.Plist()
+                .String("Label", label)
+                .Strings("ProgramArguments", new[] { updaemonPath }.Concat(TimerRun.Arguments))
+                .Integer("StartInterval", intervalSeconds)
+                .Boolean("RunAtLoad", false)
+                .String("StandardOutPath", logPath)
+                .String("StandardErrorPath", logPath)
+                .ToString();
         }
     }
 }

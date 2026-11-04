@@ -1,5 +1,6 @@
 using Updaemon.Configuration;
 using Updaemon.Tests.Helpers;
+using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Configuration
 {
@@ -10,7 +11,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
 
@@ -24,7 +25,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 await secretsManager.SetSecretAsync("byteshelf", "tenantId", "550e8400-e29b-41d4-a716-446655440000");
 
@@ -38,7 +39,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 string? value = await secretsManager.GetSecretAsync("github", "nonExistent");
 
@@ -51,7 +52,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 await secretsManager.SetSecretAsync("github", "apiKey", "oldValue");
                 await secretsManager.SetSecretAsync("github", "apiKey", "newValue");
@@ -66,7 +67,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
                 await secretsManager.SetSecretAsync("github", "tenantId", "550e8400");
@@ -84,7 +85,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 string? formatted = await secretsManager.GetPluginSecretsFormattedAsync("github");
 
@@ -97,7 +98,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 await secretsManager.SetSecretAsync("github", "apiKey", "abc123");
                 await secretsManager.RemoveSecretAsync("github", "apiKey");
@@ -112,7 +113,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 // Create a secrets file with malformed lines
                 string secretsFilePath = secretsManager.GetPluginSecretsPath("github");
@@ -133,14 +134,14 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 await secretsManager.SetSecretAsync("github", "key1", "value1");
                 await secretsManager.SetSecretAsync("github", "key2", "value2");
                 await secretsManager.SetSecretAsync("github", "key3", "value3");
 
                 // Create a new instance to test persistence
-                SecretsManager newInstance = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager newInstance = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 string? value1 = await newInstance.GetSecretAsync("github", "key1");
                 string? value2 = await newInstance.GetSecretAsync("github", "key2");
@@ -157,7 +158,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 await secretsManager.SetSecretAsync("github", "apiKey", "github-key");
                 await secretsManager.SetSecretAsync("byteshelf", "apiKey", "byteshelf-key");
@@ -175,12 +176,75 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 string path = secretsManager.GetPluginSecretsPath("github");
 
-                string expectedPath = Path.Combine(tempHelper.TempDirectory, "plugins", "github", "secrets.txt");
+                string expectedPath = Path.Combine(tempHelper.TempDirectory, "root", "plugins", "github", "secrets.txt");
                 Assert.Equal(expectedPath, path);
+            }
+        }
+
+        [Fact]
+        public async Task AppSecrets_RoundTripInAnOwnerOnlyFileInADirectoryOthersCanOnlyPass()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
+                MockFilePermissionManager permissions = new MockFilePermissionManager();
+                SecretsManager secretsManager = new SecretsManager(scope, permissions);
+
+                await secretsManager.SaveAppSecretsAsync("byteshelf", owner: null, new Dictionary<string, string> { ["API_KEY"] = "a\"b$c" });
+
+                Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(scope.GetSecretsFilePath("byteshelf")));
+                Assert.Equal(
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute,
+                    File.GetUnixFileMode(scope.SecretsDirectory));
+                Assert.Equal("a\"b$c", (await secretsManager.GetAppSecretsAsync("byteshelf"))["API_KEY"]);
+                // Without an owner, the file stays the scope user's.
+                Assert.Empty(permissions.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task SaveAppSecretsAsync_WithAnOwner_GivesTheNewFileToItBeforeItReplacesTheOld()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
+                MockFilePermissionManager permissions = new MockFilePermissionManager();
+                SecretsManager secretsManager = new SecretsManager(scope, permissions);
+                string path = scope.GetSecretsFilePath("api");
+                await secretsManager.SaveAppSecretsAsync("api", "shelf", new Dictionary<string, string> { ["API_KEY"] = "old" });
+                List<(string User, string Content, string? InPlace)> handovers = new List<(string, string, string?)>();
+                permissions.OnSetOwner = (file, user) => handovers.Add((user, File.ReadAllText(file), File.Exists(path) ? File.ReadAllText(path) : null));
+
+                await secretsManager.SaveAppSecretsAsync("api", "shelf", new Dictionary<string, string> { ["API_KEY"] = "new" });
+
+                (string user, string content, string? inPlace) = Assert.Single(handovers);
+                Assert.Equal("shelf", user);
+                Assert.Equal("API_KEY=\"new\"\n", content);
+                Assert.Equal("API_KEY=\"old\"\n", inPlace);
+                Assert.Equal("new", (await secretsManager.GetAppSecretsAsync("api"))["API_KEY"]);
+            }
+        }
+
+        [Fact]
+        public async Task SaveAppSecretsAsync_EmptySet_DeletesTheFileAndHandsNothingOver()
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory);
+                MockFilePermissionManager permissions = new MockFilePermissionManager();
+                SecretsManager secretsManager = new SecretsManager(scope, permissions);
+                await secretsManager.SaveAppSecretsAsync("byteshelf", "shelf", new Dictionary<string, string> { ["API_KEY"] = "k" });
+                permissions.MethodCalls.Clear();
+
+                await secretsManager.SaveAppSecretsAsync("byteshelf", "shelf", new Dictionary<string, string>());
+
+                Assert.Empty(permissions.MethodCalls);
+
+                Assert.False(File.Exists(scope.GetSecretsFilePath("byteshelf")));
             }
         }
 
@@ -189,7 +253,7 @@ namespace Updaemon.Tests.Configuration
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                SecretsManager secretsManager = new SecretsManager(tempHelper.TempDirectory);
+                SecretsManager secretsManager = new SecretsManager(TestScope.Create(tempHelper.TempDirectory), new MockFilePermissionManager());
 
                 string githubPath = secretsManager.GetPluginSecretsPath("github");
                 string byteshelfPath = secretsManager.GetPluginSecretsPath("byteshelf");

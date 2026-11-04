@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -12,12 +13,14 @@ namespace Updaemon.Commands
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
         private readonly IDistributionServiceClient _distributionClient;
+        private readonly UpdaemonVersion _updaemonVersion;
 
-        public DistListCommand(IConfigManager configManager, IOutputWriter outputWriter, IDistributionServiceClient distributionClient)
+        public DistListCommand(IConfigManager configManager, IOutputWriter outputWriter, IDistributionServiceClient distributionClient, UpdaemonVersion updaemonVersion)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
             _distributionClient = distributionClient;
+            _updaemonVersion = updaemonVersion;
         }
 
         public string Name => "dist-list";
@@ -26,9 +29,12 @@ namespace Updaemon.Commands
 
         public string Usage => "updaemon dist-list";
 
+        public bool ChangesState(string[] args) => false;
+
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
             IReadOnlyDictionary<string, InstalledPluginInfo> plugins = await _configManager.GetAllPluginsAsync(cancellationToken);
+            bool selfUpdate = (await _configManager.LoadConfigAsync(cancellationToken)).SelfUpdate;
 
             if (plugins.Count == 0)
             {
@@ -44,18 +50,21 @@ namespace Updaemon.Commands
             {
                 try
                 {
+                    // An out-of-line plugin is not run; the next install or update replaces it.
+                    if (plugin.Value.Source is PluginSource.Registry registry && registry.IsOutOfLineWith(_updaemonVersion))
+                    {
+                        WriteUnreadable(plugin.Value, $"from updaemon {registry.Release}'s release; the next install or update replaces it with this version's build");
+                        continue;
+                    }
+
                     if (!File.Exists(plugin.Value.Path))
                     {
-                        _outputWriter.WriteLine($"  Alias: {plugin.Value.Alias}");
-                        _outputWriter.WriteLine($"  Path: {plugin.Value.Path}");
-                        _outputWriter.WriteLine($"  Status: Plugin file not found");
-                        _outputWriter.WriteLine("");
+                        WriteUnreadable(plugin.Value, "Plugin file not found");
                         continue;
                     }
 
                     // Get metadata from plugin
-                    await _distributionClient.ConnectAsync(plugin.Value.Path, cancellationToken);
-                    DistributionServiceInformation serviceInfo = await _distributionClient.GetServiceInformationAsync(cancellationToken);
+                    DistributionServiceInformation serviceInfo = await _distributionClient.ConnectAsync(plugin.Value.Path, cancellationToken);
                     await _distributionClient.DisposeAsync();
 
                     _outputWriter.WriteLine($"  Alias: {plugin.Value.Alias}");
@@ -63,6 +72,7 @@ namespace Updaemon.Commands
                     _outputWriter.WriteLine($"  Version: {serviceInfo.Version}");
                     _outputWriter.WriteLine($"  Description: {serviceInfo.Description}");
                     _outputWriter.WriteLine($"  Path: {plugin.Value.Path}");
+                    _outputWriter.WriteLine($"  Updates: {UpdatesLabel(plugin.Value, selfUpdate)}");
 
                     if (serviceInfo.Secrets.Count > 0)
                     {
@@ -82,14 +92,32 @@ namespace Updaemon.Commands
                 }
                 catch (Exception ex)
                 {
-                    _outputWriter.WriteLine($"  Alias: {plugin.Value.Alias}");
-                    _outputWriter.WriteLine($"  Path: {plugin.Value.Path}");
-                    _outputWriter.WriteLine($"  Status: Error retrieving metadata - {ex.Message}");
-                    _outputWriter.WriteLine("");
+                    WriteUnreadable(plugin.Value, $"Error retrieving metadata - {ex.Message}");
                 }
             }
 
             return 0;
+        }
+
+        private static string UpdatesLabel(InstalledPluginInfo plugin, bool selfUpdate) => plugin.Source switch
+        {
+            PluginSource.GitHub github => (selfUpdate
+                    ? $"with the latest release of {github}, now {github.Tag}"
+                    : $"not while self-update is off; now {github.Tag} of {github}")
+                + (github.SkippedTag == null
+                    ? string.Empty
+                    : $"; skips {github.SkippedTag}, which was refused (retry it with 'updaemon dist-install --as {plugin.Alias} {github}')"),
+            PluginSource.Url => "not updatable: installed from a URL, so only installing it again replaces it",
+            _ => "with updaemon",
+        };
+
+        /// <summary>A plugin whose metadata is not shown, and why.</summary>
+        private void WriteUnreadable(InstalledPluginInfo plugin, string status)
+        {
+            _outputWriter.WriteLine($"  Alias: {plugin.Alias}");
+            _outputWriter.WriteLine($"  Path: {plugin.Path}");
+            _outputWriter.WriteLine($"  Status: {status}");
+            _outputWriter.WriteLine("");
         }
 
         public string GetDetailedHelp()

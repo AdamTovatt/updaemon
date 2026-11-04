@@ -10,30 +10,35 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
+        private readonly IServiceDeployer _serviceDeployer;
 
-        public SetRestartCommand(IConfigManager configManager, IOutputWriter outputWriter)
+        public SetRestartCommand(IConfigManager configManager, IOutputWriter outputWriter, IServiceDeployer serviceDeployer)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
+            _serviceDeployer = serviceDeployer;
         }
 
         public string Name => "set-restart";
 
         public string Description => "Set restart behavior after update (auto/manual)";
 
-        public string Usage => "updaemon set-restart <app-name> auto|manual";
+        public string Usage => "updaemon set-restart <app> auto|manual";
+
+        public bool ChangesState(string[] args) => true;
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
-            ArgumentParser parser = new ArgumentParser(args, _outputWriter);
-
-            if (!parser.ValidateMinimumArgs(2, Usage, out int errorCode))
+            ArgumentParser parser = new ArgumentParser(args);
+            if (parser.GetUnknownFlags() is [string unknown, ..])
             {
-                return errorCode;
+                return _outputWriter.FailUnknownOption(unknown);
             }
 
-            string localName = parser.GetPositional(0)!;
-            string mode = parser.GetPositional(1)!;
+            if (parser.Positionals is not [string appName, string mode])
+            {
+                return _outputWriter.FailUsage(this);
+            }
 
             bool autoRestart;
             switch (mode.ToLowerInvariant())
@@ -45,30 +50,24 @@ namespace Updaemon.Commands
                     autoRestart = false;
                     break;
                 default:
-                    _outputWriter.WriteError($"Error: Invalid restart mode '{mode}'. Expected 'auto' or 'manual'.");
-                    _outputWriter.WriteLine($"Usage: {Usage}");
-                    return 1;
+                    return _outputWriter.Fail($"Invalid restart mode '{mode}'. Expected 'auto' or 'manual'.");
             }
 
-            _outputWriter.WriteLine($"Setting restart behavior for '{localName}' to '{mode.ToLowerInvariant()}'");
-
-            try
+            InstalledApp? app = await _configManager.GetAppAsync(appName, cancellationToken);
+            if (app == null)
             {
-                await _configManager.SetAutoRestartAsync(localName, autoRestart, cancellationToken);
-            }
-            catch (InvalidOperationException ex)
-            {
-                _outputWriter.WriteError($"Error: {ex.Message}");
-                return 1;
+                return _outputWriter.Fail($"'{appName}' is not installed.");
             }
 
-            _outputWriter.WriteLine("Restart behavior updated successfully");
+            app.AutoRestart = autoRestart;
+            await _configManager.SaveAppAsync(app, cancellationToken);
+            _outputWriter.WriteLine($"Restart behavior of '{appName}' set to '{mode.ToLowerInvariant()}'");
 
-            // Auto-restart only affects services; CLI tools are never restarted.
-            RegisteredService? service = await _configManager.GetServiceAsync(localName, cancellationToken);
-            if (service != null && service.ServiceType == ServiceType.Cli)
+            // Auto-restart only affects services; commands are never restarted.
+            AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
+            if (!manifest.IsService)
             {
-                _outputWriter.WriteLine("Note: this setting has no effect for CLI tools, which are never restarted.");
+                _outputWriter.WriteLine("Note: this setting has no effect for an app without a service.");
             }
 
             return 0;
@@ -80,7 +79,7 @@ namespace Updaemon.Commands
                 Set-Restart Command
 
                 Usage:
-                  updaemon set-restart <app-name> auto|manual
+                  updaemon set-restart <app> auto|manual
 
                 Description:
                   Controls whether a service is restarted after 'update' deploys a new version.
@@ -91,7 +90,7 @@ namespace Updaemon.Commands
                             demand. The service keeps running the previous version until it
                             restarts.
 
-                  Only meaningful for services; CLI tools are never restarted.
+                  Only meaningful for apps with a service; commands are never restarted.
 
                 Examples:
                   updaemon set-restart my-api manual

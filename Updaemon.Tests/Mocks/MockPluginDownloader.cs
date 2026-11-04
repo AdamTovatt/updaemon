@@ -9,14 +9,22 @@ namespace Updaemon.Tests.Mocks
     /// </summary>
     public class MockPluginDownloader : IPluginDownloader
     {
+        /// <summary>
+        /// The contents of every binary this mock "downloads".
+        /// </summary>
+        public static readonly byte[] PluginBytes = { 0x7F, 0x45, 0x4C, 0x46 };
+
         public List<string> MethodCalls { get; } = new List<string>();
         public DistributionServiceInformation? ServiceInformation { get; set; }
-        public Dictionary<string, DistributionServiceInformation> LocalServiceInformationByPath { get; } = new Dictionary<string, DistributionServiceInformation>();
         public Exception? ExceptionToThrow { get; set; }
 
-        public Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, string targetDirectory, CancellationToken cancellationToken = default)
+        /// <summary>Each download as asked for.</summary>
+        public List<PluginDownload> Downloads { get; } = new List<PluginDownload>();
+
+        public Task<PluginDownloadResult> DownloadAndInspectAsync(PluginDownload download, string targetDirectory, CancellationToken cancellationToken = default)
         {
-            MethodCalls.Add($"DownloadAndInspectAsync:{downloadUrl}");
+            MethodCalls.Add($"DownloadAndInspectAsync:{download.Build}");
+            Downloads.Add(download);
 
             if (ExceptionToThrow != null)
             {
@@ -26,7 +34,7 @@ namespace Updaemon.Tests.Mocks
             // Create actual temp file so File.Move works in the command
             Directory.CreateDirectory(targetDirectory);
             string tempPath = Path.Combine(targetDirectory, $"temp_{Guid.NewGuid():N}");
-            File.WriteAllBytes(tempPath, new byte[] { 0x7F, 0x45, 0x4C, 0x46 });
+            File.WriteAllBytes(tempPath, PluginBytes);
 
             DistributionServiceInformation info = ServiceInformation ?? new DistributionServiceInformation
             {
@@ -41,25 +49,6 @@ namespace Updaemon.Tests.Mocks
             {
                 TempFilePath = tempPath,
                 ServiceInformation = info,
-            });
-        }
-
-        public Task<DistributionServiceInformation> InspectLocalAsync(string pluginPath, CancellationToken cancellationToken = default)
-        {
-            MethodCalls.Add($"InspectLocalAsync:{pluginPath}");
-
-            if (LocalServiceInformationByPath.TryGetValue(pluginPath, out DistributionServiceInformation? info))
-            {
-                return Task.FromResult(info);
-            }
-
-            return Task.FromResult(ServiceInformation ?? new DistributionServiceInformation
-            {
-                FullName = "Mock Distribution Service",
-                DefaultAlias = "mock",
-                Description = "Mock distribution service for testing",
-                Version = "1.0.0",
-                Secrets = new List<DistributionSecretInfo>(),
             });
         }
     }

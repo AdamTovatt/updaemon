@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Updaemon.Common;
 using Updaemon.Common.Models;
 using Updaemon.Common.Utilities;
@@ -33,12 +34,12 @@ namespace Updaemon.GithubDistributionService
                 FullName = "GitHub Releases",
                 DefaultAlias = "github",
                 Description = "Distribution service that uses GitHub Releases.",
-                Version = "0.2.0",
+                Version = "1.0.0",
                 Secrets = new List<DistributionSecretInfo>
                 {
                     new DistributionSecretInfo
                     {
-                        Name = "githubToken",
+                        Name = GitHubAccess.TokenSecret,
                         IsRequired = false,
                         Description = "GitHub personal access token. Required for private repositories and to avoid rate limiting."
                     }
@@ -48,7 +49,7 @@ namespace Updaemon.GithubDistributionService
 
         public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
         {
-            _githubToken = secrets.GetValueIgnoreCase("githubToken");
+            _githubToken = secrets.GetValueIgnoreCase(GitHubAccess.TokenSecret);
             return Task.CompletedTask;
         }
 
@@ -67,9 +68,10 @@ namespace Updaemon.GithubDistributionService
             return version;
         }
 
-        public async Task DownloadVersionAsync(
+        public async Task<DownloadResult> DownloadVersionAsync(
             string serviceName,
             Version version,
+            string runtimeIdentifier,
             string targetPath,
             CancellationToken cancellationToken = default)
         {
@@ -82,8 +84,8 @@ namespace Updaemon.GithubDistributionService
                 throw new InvalidOperationException($"Release not found for {owner}/{repo}");
             }
 
-            // Find the asset to download based on pattern
-            GithubAsset? asset = FindMatchingAsset(release.Assets, filenamePattern, owner, repo, release.TagName);
+            GithubAsset asset = SelectAsset(release.Assets, filenamePattern, runtimeIdentifier, owner, repo, release.TagName);
+            ExpectedSha256? expected = await ReadExpectedAsync(owner, repo, release, asset, cancellationToken);
 
             // Ensure target directory exists
             if (!Directory.Exists(targetPath))
@@ -91,13 +93,50 @@ namespace Updaemon.GithubDistributionService
                 Directory.CreateDirectory(targetPath);
             }
 
-            // Download the asset
             string targetFilePath = Path.Combine(targetPath, asset.Name);
             await _apiClient.DownloadReleaseAssetAsync(owner, repo, asset.Id, targetFilePath, _githubToken, cancellationToken);
+            if (expected != null)
+            {
+                try
+                {
+                    await expected.VerifyAsync(targetFilePath, cancellationToken);
+                }
+                catch (ChecksumException ex)
+                {
+                    throw NotInstalled(owner, repo, release, ex);
+                }
+            }
 
-            // Post-process (extract if zip)
+            // Extracts a .zip or .tar.gz; only a verified (or unverifiable) download gets this far.
             await _postProcessor.ProcessAsync(targetPath, cancellationToken);
+            return new DownloadResult { Verified = expected != null };
         }
+
+        /// <summary>
+        /// What the asset must match, from the release's <c>SHA256SUMS</c>, read before the download. Null when
+        /// the release has none; throws when it has one without a line for the asset.
+        /// </summary>
+        private async Task<ExpectedSha256?> ReadExpectedAsync(string owner, string repo, GithubRelease release, GithubAsset asset, CancellationToken cancellationToken)
+        {
+            GithubAsset? sumsAsset = release.Assets.FirstOrDefault(candidate => candidate.Name == Sha256Sums.AssetName);
+            if (sumsAsset == null)
+            {
+                return null;
+            }
+
+            string sums = await _apiClient.ReadReleaseAssetTextAsync(owner, repo, sumsAsset.Id, _githubToken, cancellationToken);
+            try
+            {
+                return Sha256Sums.Parse(sums).For(asset.Name);
+            }
+            catch (ChecksumException ex)
+            {
+                throw NotInstalled(owner, repo, release, ex);
+            }
+        }
+
+        private static InvalidOperationException NotInstalled(string owner, string repo, GithubRelease release, ChecksumException ex) =>
+            new InvalidOperationException($"The release {release.TagName} of {owner}/{repo} was not installed: {ex.Message}");
 
         /// <summary>
         /// Parses a service name into owner, repo, and optional filename pattern.
@@ -114,7 +153,7 @@ namespace Updaemon.GithubDistributionService
 
             if (parts.Length < 2)
             {
-                throw new ArgumentException($"Invalid service name format: '{serviceName}'. Expected 'owner/repo' or 'owner/repo/pattern'");
+                throw new ArgumentException($"Invalid GitHub remote '{serviceName}': expected owner/repo or owner/repo/<pattern>.");
             }
 
             string owner = parts[0];
@@ -125,63 +164,65 @@ namespace Updaemon.GithubDistributionService
         }
 
         /// <summary>
-        /// Finds a matching asset from a list based on a filename pattern.
-        /// Supports wildcards like *.zip, linux-*.zip, etc.
+        /// Picks the one asset to download. With a pattern, that is the asset matching it
+        /// (wildcards like *.zip); without one, the build for this machine, named *-&lt;rid&gt;
+        /// with one of <see cref="DownloadPostProcessor.ArchiveEndings"/> or none. The release's
+        /// SHA256SUMS is never one. Anything but exactly one match fails with the release's asset
+        /// names, one per line, and how to pick one.
         /// </summary>
-        /// <param name="assets">Array of available assets</param>
-        /// <param name="pattern">Filename pattern (null means single asset required)</param>
-        /// <param name="owner">Repository owner (for error messages)</param>
-        /// <param name="repo">Repository name (for error messages)</param>
-        /// <param name="tagName">Release tag name (for error messages)</param>
-        /// <returns>The matching asset</returns>
-        private GithubAsset FindMatchingAsset(GithubAsset[] assets, string? pattern, string owner, string repo, string tagName)
+        private static GithubAsset SelectAsset(
+            GithubAsset[] assets,
+            string? pattern,
+            string runtimeIdentifier,
+            string owner,
+            string repo,
+            string tagName)
         {
-            if (pattern == null)
+            string releaseLabel = $"release {tagName} of {owner}/{repo}";
+            if (assets.Length == 0)
             {
-                // No pattern specified - require exactly one asset
-                if (assets.Length == 0)
-                {
-                    throw new InvalidOperationException($"No assets found in release {tagName} for {owner}/{repo}");
-                }
-
-                if (assets.Length > 1)
-                {
-                    string assetNames = string.Join(", ", assets.Select(a => a.Name));
-                    throw new InvalidOperationException(
-                        $"Multiple assets found in release {tagName} for {owner}/{repo}: {assetNames}. " +
-                        $"Please specify a pattern like '{owner}/{repo}/*.zip'");
-                }
-
-                return assets[0];
+                throw new InvalidOperationException($"The {releaseLabel} has no assets.");
             }
 
-            // Convert wildcard pattern to regex
-            string regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
+            string[] buildEndings = BuildEndings(runtimeIdentifier);
+            Func<GithubAsset, bool> matches = pattern == null
+                ? asset => buildEndings.Any(ending => asset.Name.EndsWith(ending, StringComparison.OrdinalIgnoreCase))
+                : WildcardMatcher(pattern);
+            GithubAsset[] matchingAssets = assets.Where(asset => asset.Name != Sha256Sums.AssetName && matches(asset)).ToArray();
+            if (matchingAssets.Length == 1)
+            {
+                return matchingAssets[0];
+            }
+
+            string[] buildNames = buildEndings.Select(ending => $"*{ending}").ToArray();
+            string buildName = $"{string.Join(", ", buildNames[..^1])} or {buildNames[^1]}";
+            string problem = (pattern, matchingAssets.Length) switch
+            {
+                (null, 0) => $"No asset in the {releaseLabel} is named {buildName}, the build for this machine.",
+                (null, _) => $"Several assets in the {releaseLabel} are named {buildName}, the build for this machine.",
+                (_, 0) => $"No asset in the {releaseLabel} matches '{pattern}'.",
+                _ => $"Several assets in the {releaseLabel} match '{pattern}'.",
+            };
+
+            throw new InvalidOperationException(
+                $"{problem} Its assets:\n" +
+                string.Join("\n", assets.Select(asset => $"  {asset.Name}")) + "\n" +
+                $"Pick one with the remote {owner}/{repo}/<pattern>, where <pattern> is an asset name and * matches any text.");
+        }
+
+        /// <summary>How the build for <paramref name="runtimeIdentifier"/> may end: each archive, then a bare binary.</summary>
+        private static string[] BuildEndings(string runtimeIdentifier)
+        {
+            return [.. DownloadPostProcessor.ArchiveEndings.Select(ending => $"-{runtimeIdentifier}{ending}"), $"-{runtimeIdentifier}"];
+        }
+
+        private static Func<GithubAsset, bool> WildcardMatcher(string pattern)
+        {
+            string regexPattern = "^" + Regex.Escape(pattern)
                 .Replace("\\*", ".*")
                 .Replace("\\?", ".") + "$";
-            System.Text.RegularExpressions.Regex regex = new System.Text.RegularExpressions.Regex(
-                regexPattern,
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-            GithubAsset[] matchingAssets = assets.Where(a => regex.IsMatch(a.Name)).ToArray();
-
-            if (matchingAssets.Length == 0)
-            {
-                string assetNames = string.Join(", ", assets.Select(a => a.Name));
-                throw new InvalidOperationException(
-                    $"No assets matching pattern '{pattern}' found in release {tagName} for {owner}/{repo}. " +
-                    $"Available assets: {assetNames}");
-            }
-
-            if (matchingAssets.Length > 1)
-            {
-                string matchingNames = string.Join(", ", matchingAssets.Select(a => a.Name));
-                throw new InvalidOperationException(
-                    $"Multiple assets match pattern '{pattern}' in release {tagName} for {owner}/{repo}: {matchingNames}. " +
-                    $"Please use a more specific pattern.");
-            }
-
-            return matchingAssets[0];
+            Regex regex = new Regex(regexPattern, RegexOptions.IgnoreCase);
+            return asset => regex.IsMatch(asset.Name);
         }
     }
 }

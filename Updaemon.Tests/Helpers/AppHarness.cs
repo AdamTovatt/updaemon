@@ -1,0 +1,282 @@
+using Updaemon.Commands;
+using Updaemon.Configuration;
+using Updaemon.Conversion;
+using Updaemon.IO;
+using Updaemon.Models;
+using Updaemon.Services;
+using Updaemon.Tests.Mocks;
+
+namespace Updaemon.Tests.Helpers
+{
+    /// <summary>
+    /// The real config, secrets, deploy and unit code against a temp scope, with fakes for the
+    /// plugin, the service manager, file ownership and the terminal.
+    /// </summary>
+    public sealed class AppHarness : IDisposable
+    {
+        public const string ByteShelfManifest = """
+            {
+              "executable": "bin/byteshelf",
+              "command": "byteshelf",
+              "service": { "args": ["sync", "run"] },
+              "settings": {
+                "BYTESHELF_URL": { "description": "Server URL", "required": true },
+                "BYTESHELF_API_KEY": { "description": "API key", "required": true, "secret": true },
+                "BYTESHELF_LOG_LEVEL": { "description": "Log level", "default": "info" }
+              }
+            }
+            """;
+
+        private readonly TempFileHelper _temp = new TempFileHelper();
+
+        /// <summary>The health check's clock: it never waits, and records what it would have.</summary>
+        public InstantTimeProvider Time { get; } = new InstantTimeProvider();
+
+        public AppHarness(bool isSystem = false, bool isMacOS = false)
+        {
+            Scope = TestScope.Create(_temp.TempDirectory, isSystem, isMacOS);
+            OtherScope = TestScope.Create(Path.Combine(_temp.TempDirectory, "other"), !isSystem);
+            Config = new ConfigManager(Scope);
+            Secrets = new SecretsManager(Scope, Permissions);
+            SettingsStore = new AppSettingsStore(Config, Secrets);
+            Files = new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Output);
+            Deployer = new ServiceDeployer(
+                Scope,
+                new SymlinkManager(),
+                new ExecutableDetector(),
+                Permissions,
+                Files,
+                ServiceManager,
+                Secrets,
+                Output,
+                Time);
+            Rollback = new AppRollback(Deployer, SettingsStore, Config);
+            RunLog = new UpdateRunLog(Scope);
+            PluginUrlResolver = new GitHubPluginUrlResolver(new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" }, Scope.Platform);
+            PluginInstaller = new PluginInstaller(PluginUrlResolver, GitHubPlugins, PluginDownloader, Config, Scope);
+            Plugins = new PluginProvider(Config, PluginInstaller, PluginUrlResolver, RunningVersion, Output);
+        }
+
+        /// <summary>For calling the deployer directly, as a command does once it has checked the service manager.</summary>
+        public ReachableServiceManager Reachable { get; } = new ReachableServiceManager();
+
+        public MockGitHubPluginReleases GitHubPlugins { get; } = new MockGitHubPluginReleases();
+
+        public PluginInstaller PluginInstaller { get; }
+
+        public MockUpdaemonReleases Releases { get; } = new MockUpdaemonReleases();
+
+        /// <summary>
+        /// The file the updaemon under test runs from. By default not the scope's own, so update's
+        /// self-update step skips; tests of self-update point it at the scope's updaemon.
+        /// </summary>
+        public RunningExecutable Executable { get; set; } = new RunningExecutable("/nonexistent/updaemon");
+
+        public SelfUpdater SelfUpdater() => new SelfUpdater(Scope, Config, Releases, new SymlinkManager(), Output, RunningVersion, Executable);
+
+        /// <summary>Runs <paramref name="updater"/> (the default one when null) as an update run does; true when nothing failed.</summary>
+        public async Task<bool> SelfUpdateAsync(SelfUpdater? updater = null)
+        {
+            UpdateFailures failures = new UpdateFailures(Output);
+            await (updater ?? SelfUpdater()).RunAsync(failures);
+            return failures.All.Count == 0;
+        }
+
+        /// <summary>Updates the github: plugins as an update run does; true when nothing failed.</summary>
+        public async Task<bool> UpdateGitHubPluginsAsync()
+        {
+            UpdateFailures failures = new UpdateFailures(Output);
+            await GitHubPluginUpdater().RunAsync(failures);
+            return failures.All.Count == 0;
+        }
+
+        public SelfUpdater SelfUpdater(TimeSpan smokeRunTimeout) =>
+            new SelfUpdater(Scope, Config, Releases, new SymlinkManager(), Output, RunningVersion, Executable) { SmokeRunTimeout = smokeRunTimeout };
+
+        /// <summary>
+        /// Installs <see cref="RunningVersion"/> as the scope's updaemon, as install.sh does, and runs
+        /// it: self-update then replaces it.
+        /// </summary>
+        public void RunTheScopesOwnUpdaemon()
+        {
+            string binary = Scope.GetUpdaemonBinaryPath(RunningVersion);
+            Directory.CreateDirectory(Path.GetDirectoryName(binary)!);
+            File.WriteAllText(binary, $"#!/bin/sh\necho {RunningVersion}\n");
+            File.SetUnixFileMode(binary, AtomicFile.Executable);
+            Directory.CreateDirectory(Scope.BinDirectory);
+            File.CreateSymbolicLink(Scope.UpdaemonCommandPath, binary);
+            Executable = new RunningExecutable(binary);
+        }
+
+        public GitHubPluginUrlResolver PluginUrlResolver { get; }
+
+        public static UpdaemonVersion RunningVersion { get; } = UpdaemonVersion.Of(1, 0, 0);
+
+        public AppRollback Rollback { get; }
+
+        public UpdateRunLog RunLog { get; }
+
+        public PluginProvider Plugins { get; }
+
+        public MockPluginDownloader PluginDownloader { get; } = new MockPluginDownloader();
+
+        public MockTimerManager Timer { get; } = new MockTimerManager();
+
+        public UpdaemonScope Scope { get; }
+
+        /// <summary>The scope this run is not in, which install looks in for the same app name.</summary>
+        public UpdaemonScope OtherScope { get; }
+
+        public ConfigManager Config { get; }
+
+        public SecretsManager Secrets { get; }
+
+        public AppSettingsStore SettingsStore { get; }
+
+        public ServiceDeployer Deployer { get; }
+
+        public AppFileWriter Files { get; }
+
+        public MockServiceManager ServiceManager { get; } = new MockServiceManager();
+
+        public MockFilePermissionManager Permissions { get; } = new MockFilePermissionManager();
+
+        public MockDistributionServiceClient Client { get; } = new MockDistributionServiceClient();
+
+        public MockPrompter Prompter { get; } = new MockPrompter();
+
+        public MockOutputWriter Output { get; } = new MockOutputWriter();
+
+        public InstallCommand Install() => new InstallCommand(
+            Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, new OtherScopeApps(new ConfigManager(OtherScope), OtherScope.Owner), Credentials());
+
+        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, GitHubPluginUpdater(), SelfUpdater(), Credentials(), RunLog, Time);
+
+        public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output, Credentials());
+
+        public DistInstallCommand DistInstall() => new DistInstallCommand(Output, PluginInstaller, GitHubPlugins, RunningVersion, Credentials());
+
+        public PluginCredentials Credentials() => new PluginCredentials(Secrets, Prompter, Output);
+
+        public TimerCommand TimerCommand() => new TimerCommand(Timer, ServiceManager, Config, Output);
+
+        public DistListCommand DistList() => new DistListCommand(Config, Output, Client, RunningVersion);
+
+        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Deployer, Rollback, Output);
+
+        public StatusCommand Status() => new StatusCommand(Config, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion, RunLog, Time);
+
+        public LogsCommand Logs() => new LogsCommand(Config, Deployer, ServiceManager, Output);
+
+        public SetCommand Set() => new SetCommand(Config, SettingsStore, Deployer, Output);
+
+        public UnsetCommand Unset() => new UnsetCommand(Config, SettingsStore, Deployer, Output);
+
+        public SetArgsCommand SetArgs() => new SetArgsCommand(Config, Deployer, Output);
+
+        public RemoveCommand Remove() => new RemoveCommand(Config, Deployer, Output, Scope);
+
+        public ZeroXConverter Converter() => new ZeroXConverter(
+            Scope, Config, Deployer, ServiceManager, Timer, new ExecutableDetector(), new SymlinkManager(), Files, Plugins, PluginUrlResolver, Output);
+
+        public async Task AddPluginAsync(string alias = "github")
+        {
+            string path = _temp.CreateTempFile($"plugin-binaries/{alias}", "plugin");
+            await Config.AddOrUpdatePluginAsync(PluginRecords.Installed(alias, path));
+        }
+
+        /// <summary>
+        /// Publishes a release with an executable that prints the given variables and its arguments,
+        /// and, when <paramref name="manifest"/> is given, an updaemon.json.
+        /// </summary>
+        public void AddRelease(string remote, string version, string? manifest, string executable = "bin/byteshelf", params string[] printedVariables)
+        {
+            Client.AddRelease(remote, Version.Parse(version), directory =>
+            {
+                string executablePath = Path.Combine(directory, executable);
+                Directory.CreateDirectory(Path.GetDirectoryName(executablePath)!);
+                File.WriteAllText(executablePath, Shell.PrintEnvironmentScript(printedVariables));
+                File.SetUnixFileMode(executablePath, AtomicFile.Executable);
+                if (manifest != null)
+                {
+                    File.WriteAllText(Path.Combine(directory, AppManifest.FileName), manifest);
+                }
+            });
+        }
+
+        /// <summary>Runs <paramref name="fault"/> on the download directory once the release's files are written.</summary>
+        public void AfterDownloading(string remote, string version, Action<string> fault)
+        {
+            string key = $"{remote}:{version}";
+            Action<string> write = Client.ReleaseWriters[key];
+            Client.ReleaseWriters[key] = directory =>
+            {
+                write(directory);
+                fault(directory);
+            };
+        }
+
+        /// <summary>Installs ByteShelf 1.0.0 from its manifest with every required setting given.</summary>
+        public async Task<int> InstallByteShelfAsync()
+        {
+            await AddPluginAsync();
+            AddRelease("owner/byteshelf", "1.0.0", ByteShelfManifest, "bin/byteshelf", "BYTESHELF_URL", "BYTESHELF_API_KEY", "BYTESHELF_LOG_LEVEL", AppManifest.DataDirectoryVariable);
+            return await Install().ExecuteAsync(new[]
+            {
+                "byteshelf", "--from", "github:owner/byteshelf",
+                "--set", "BYTESHELF_URL=https://shelf", "--set", "BYTESHELF_API_KEY=key1",
+            });
+        }
+
+        /// <summary>
+        /// ByteShelf installed at 1.0.0; 1.1.0 failed its health check, so it was skipped and 1.0.0 ran
+        /// again; then 1.2.0 was installed. All three are kept.
+        /// </summary>
+        public async Task InstallByteShelfPastACrashingReleaseAsync()
+        {
+            await InstallByteShelfAsync();
+            AddRelease("owner/byteshelf", "1.1.0", ByteShelfManifest);
+            ServiceManager.CrashOnNextStart.Add("byteshelf");
+            await Update().ExecuteAsync(Array.Empty<string>());
+            AddRelease("owner/byteshelf", "1.2.0", ByteShelfManifest);
+            await Update().ExecuteAsync(Array.Empty<string>());
+            Output.Clear();
+        }
+
+        /// <summary>Records <paramref name="version"/> as skipped, as rolling back from it to the current version does.</summary>
+        public async Task SkipAsync(string appName, Version version)
+        {
+            InstalledApp app = (await Config.GetAppAsync(appName))!;
+            app.RecordSwitch(from: version, to: await Deployer.GetCurrentVersionAsync(appName));
+            await Config.SaveAppAsync(app);
+        }
+
+        /// <summary>
+        /// Every directory, file and link under the harness's directory, with each file's content and
+        /// each link's target. Equal snapshots mean nothing was written.
+        /// </summary>
+        public IReadOnlyList<string> Snapshot()
+        {
+            EnumerationOptions options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = 0 };
+            return Directory.EnumerateFileSystemEntries(_temp.TempDirectory, "*", options)
+                .Order(StringComparer.Ordinal)
+                .Select(path => new FileInfo(path).LinkTarget is string target ? $"{path} -> {target}"
+                    : Directory.Exists(path) ? path + "/"
+                    : $"{path}: {File.ReadAllText(path)}")
+                .ToList();
+        }
+
+        /// <summary>Fails naming what changed since <paramref name="before"/>, a <see cref="Snapshot"/>.</summary>
+        public void AssertUnchangedSince(IReadOnlyList<string> before)
+        {
+            IReadOnlyList<string> after = Snapshot();
+            List<string> changes = before.Except(after).Select(entry => "gone: " + entry).Concat(after.Except(before).Select(entry => "new: " + entry)).ToList();
+            Assert.True(changes.Count == 0, string.Join('\n', changes));
+        }
+
+        public void Dispose()
+        {
+            _temp.Dispose();
+        }
+    }
+}

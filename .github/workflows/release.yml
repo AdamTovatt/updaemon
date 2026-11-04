@@ -13,6 +13,8 @@ jobs:
         include:
           - os: ubuntu-24.04-arm
             rid: linux-arm64
+          - os: ubuntu-24.04
+            rid: linux-x64
           - os: macos-latest
             rid: osx-arm64
     runs-on: ${{ matrix.os }}
@@ -22,7 +24,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       # AOT publish on Linux needs zlib headers; macOS runners already ship Xcode CLI tools.
       - name: Install AOT prerequisites (Linux)
@@ -38,7 +40,7 @@ jobs:
               -r ${{ matrix.rid }} \
               --self-contained true \
               -p:StripSymbols=true
-            cp ./$proj/bin/Release/net8.0/${{ matrix.rid }}/native/$proj $proj-${{ matrix.rid }}
+            cp ./$proj/bin/Release/net10.0/${{ matrix.rid }}/native/$proj $proj-${{ matrix.rid }}
           done
 
       - uses: actions/upload-artifact@v4
@@ -61,6 +63,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      # updaemon, install.sh and the GitHub plugin verify every download against this.
+      - name: Write SHA256SUMS
+        run: cd dist && sha256sum * > SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

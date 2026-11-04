@@ -1,6 +1,7 @@
 using Updaemon.Common;
 using Updaemon.Common.Hosting;
 using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 
 namespace Updaemon.TestPlugin
 {
@@ -37,14 +38,46 @@ namespace Updaemon.TestPlugin
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// The remotes "fail" and "fail-silently" make the plugin fail, with and without a
+        /// message, and "rate-limited" fails for want of a token, so tests can see how plugin
+        /// errors reach updaemon.
+        /// </summary>
         public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult<Version?>(new Version(1, 0, 0));
+            switch (serviceName)
+            {
+                case "fail":
+                    throw new InvalidOperationException("Remote 'fail' does not exist. Check the remote name.");
+
+                case "fail-silently":
+                    throw new InvalidOperationException(string.Empty);
+
+                case "rate-limited":
+                    throw new CredentialNeededException(
+                        new CredentialNeed { Secret = "token", Problem = CredentialProblem.RateLimited },
+                        "The rate limit is used up.");
+
+                default:
+                    return Task.FromResult<Version?>(new Version(1, 0, 0));
+            }
         }
 
-        public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Writes one empty file named after the runtime identifier it was given, so tests can
+        /// see which identifier crossed the pipe. The remote "unverified" reports an unverified
+        /// download and "no-result" reports none, so tests can see how the result crosses it.
+        /// </summary>
+        public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
         {
-            return Task.CompletedTask;
+            Directory.CreateDirectory(targetPath);
+            File.WriteAllBytes(Path.Combine(targetPath, runtimeIdentifier), Array.Empty<byte>());
+            return Task.FromResult(serviceName switch
+            {
+                "unverified" => new DownloadResult { Verified = false },
+                "no-result" => null!,
+                _ => new DownloadResult { Verified = true },
+            });
         }
     }
 }

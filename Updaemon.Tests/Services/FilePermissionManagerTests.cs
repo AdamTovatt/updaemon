@@ -1,4 +1,6 @@
+using Updaemon.IO;
 using Updaemon.Services;
+using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Services
@@ -6,58 +8,47 @@ namespace Updaemon.Tests.Services
     public class FilePermissionManagerTests
     {
         [Fact]
-        public async Task SetExecutablePermissionsAsync_DoesNotThrowException()
+        public async Task SetExecutablePermissionsAsync_MakesItExecutableSilently()
         {
-            // Arrange
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            FilePermissionManager filePermissionManager = new FilePermissionManager(outputWriter);
-            string testPath = "/tmp/test-executable";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                string path = tempHelper.CreateTempFile("app", "x");
+                File.SetUnixFileMode(path, AtomicFile.OwnerOnly);
 
-            // Act & Assert - Should not throw
-            await filePermissionManager.SetExecutablePermissionsAsync(testPath);
+                await new FilePermissionManager(outputWriter).SetExecutablePermissionsAsync(path);
+
+                Assert.Equal(AtomicFile.Executable, File.GetUnixFileMode(path));
+                Assert.Empty(outputWriter.Messages);
+                Assert.Empty(outputWriter.Errors);
+            }
         }
 
         [Fact]
-        public async Task SetDirectoryPermissionsAsync_DoesNotThrowException()
+        public async Task SetDirectoryPermissionsAsync_MakesItReadableSilently()
         {
-            // Arrange
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            FilePermissionManager filePermissionManager = new FilePermissionManager(outputWriter);
-            string testPath = "/tmp/test-directory";
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                MockOutputWriter outputWriter = new MockOutputWriter();
+                string file = tempHelper.CreateTempFile("dir/file", "x");
+                File.SetUnixFileMode(file, AtomicFile.OwnerOnly);
 
-            // Act & Assert - Should not throw
-            await filePermissionManager.SetDirectoryPermissionsAsync(testPath);
+                await new FilePermissionManager(outputWriter).SetDirectoryPermissionsAsync(tempHelper.GetFullPath("dir"));
+
+                Assert.Equal(AtomicFile.Readable, File.GetUnixFileMode(file));
+                Assert.Empty(outputWriter.Messages);
+                Assert.Empty(outputWriter.Errors);
+            }
         }
 
         [Fact]
-        public async Task SetExecutablePermissionsAsync_WritesOutputMessage()
+        public async Task SetExecutablePermissionsAsync_MissingFile_WarnsWithoutThrowing()
         {
-            // Arrange
             MockOutputWriter outputWriter = new MockOutputWriter();
-            FilePermissionManager filePermissionManager = new FilePermissionManager(outputWriter);
-            string testPath = "/tmp/test-executable";
 
-            // Act
-            await filePermissionManager.SetExecutablePermissionsAsync(testPath);
+            await new FilePermissionManager(outputWriter).SetExecutablePermissionsAsync("/nonexistent/updaemon-test-executable");
 
-            // Assert - Should write either success or warning message
-            Assert.NotEmpty(outputWriter.Messages);
-        }
-
-        [Fact]
-        public async Task SetDirectoryPermissionsAsync_WritesOutputMessage()
-        {
-            // Arrange
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            FilePermissionManager filePermissionManager = new FilePermissionManager(outputWriter);
-            string testPath = "/tmp/test-directory";
-
-            // Act
-            await filePermissionManager.SetDirectoryPermissionsAsync(testPath);
-
-            // Assert - Should write either success or warning message
-            Assert.NotEmpty(outputWriter.Messages);
+            Assert.StartsWith("Warning: Could not set executable permissions on /nonexistent/updaemon-test-executable", Assert.Single(outputWriter.Errors));
         }
     }
 }
-

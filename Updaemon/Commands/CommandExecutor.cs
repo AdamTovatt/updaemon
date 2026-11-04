@@ -1,5 +1,6 @@
-using System.Reflection;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Commands
 {
@@ -10,18 +11,19 @@ namespace Updaemon.Commands
     {
         private readonly ICommandFactory _commandFactory;
         private readonly IOutputWriter _outputWriter;
-        private readonly string _version;
+        private readonly IRunLock _runLock;
+        private readonly UpdaemonVersion _version;
+        private readonly IZeroXConverter _converter;
+        private readonly UpdaemonScope _scope;
 
-        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter)
+        public CommandExecutor(ICommandFactory commandFactory, IOutputWriter outputWriter, IRunLock runLock, UpdaemonVersion version, IZeroXConverter converter, UpdaemonScope scope)
         {
+            _scope = scope;
             _commandFactory = commandFactory;
             _outputWriter = outputWriter;
-
-            // Get version from assembly (AOT-friendly)
-            Assembly assembly = Assembly.GetExecutingAssembly();
-            _version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                       ?? assembly.GetName().Version?.ToString()
-                       ?? "unknown";
+            _runLock = runLock;
+            _version = version;
+            _converter = converter;
         }
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
@@ -34,11 +36,30 @@ namespace Updaemon.Commands
 
             string commandName = args[0].ToLowerInvariant();
 
-            // Handle help
+            // Flags in place of a command. Just the version: install.sh and self-update smoke-run a new updaemon with it.
+            if (commandName == "--version")
+            {
+                if (args.Length > 1)
+                {
+                    _outputWriter.WriteError("Usage: updaemon --version");
+                    return 1;
+                }
+
+                _outputWriter.WriteLine(_version.ToString());
+                return 0;
+            }
+
             if (commandName == "help" || commandName == "--help" || commandName == "-h")
             {
                 if (args.Length > 1)
                 {
+                    if (HelpTopics.Find(args[1].ToLowerInvariant()) is HelpTopics.Topic topic)
+                    {
+                        // WriteLine ends the guide's last line itself.
+                        _outputWriter.WriteLine(HelpTopics.Read(topic).TrimEnd('\n'));
+                        return 0;
+                    }
+
                     // Help for specific command: updaemon help update
                     try
                     {
@@ -49,9 +70,7 @@ namespace Updaemon.Commands
                     }
                     catch (UnknownCommandException)
                     {
-                        _outputWriter.WriteError($"Unknown command: {args[1]}");
-                        PrintGeneralHelp();
-                        return 1;
+                        return FailUnknown(args[1], includeTopics: true);
                     }
                 }
                 else
@@ -64,19 +83,68 @@ namespace Updaemon.Commands
             try
             {
                 ICommand command = _commandFactory.GetCommand(commandName);
-                return await command.ExecuteAsync(args[1..], cancellationToken);
+                string[] commandArgs = args[1..];
+
+                // An updaemon 0.x setup is converted once, before any command reads it; 'migrate' is that
+                // conversion, and its --dry-run must change nothing.
+                bool convertsFirst = command is not MigrateCommand;
+                if (!command.ChangesState(commandArgs) && !(convertsFirst && _converter.IsPending()))
+                {
+                    return await command.ExecuteAsync(commandArgs, cancellationToken);
+                }
+
+                // Scope is never silent where it matters: each run that may change state says whose apps it changes.
+                _outputWriter.WriteLine(_scope.Announcement);
+                using (await _runLock.AcquireAsync(cancellationToken))
+                {
+                    // Asked again under the lock: another command may have converted it meanwhile.
+                    if (convertsFirst && _converter.IsPending())
+                    {
+                        await _converter.RunAsync(dryRun: false, cancellationToken);
+                    }
+
+                    return await command.ExecuteAsync(commandArgs, cancellationToken);
+                }
             }
             catch (UnknownCommandException)
             {
-                _outputWriter.WriteError($"Unknown command: {commandName}");
-                PrintGeneralHelp();
-                return 1;
+                return FailUnknown(args[0], includeTopics: false);
+            }
+            catch (ServiceManagerUnreachableException ex)
+            {
+                _outputWriter.WriteError($"Error: {ex.Message}");
+                return ServiceManagerUnreachableException.ExitCode;
             }
             catch (Exception ex)
             {
                 _outputWriter.WriteError($"Error: {ex.Message}");
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// One line instead of the whole help: the name, the closest command (or help topic) within
+        /// two edits if there is one, and where the list is.
+        /// </summary>
+        private int FailUnknown(string name, bool includeTopics)
+        {
+            IEnumerable<string> known = _commandFactory.GetAllCommands().Select(command => command.Name);
+            if (includeTopics)
+            {
+                known = known.Concat(HelpTopics.All.Select(topic => topic.Name));
+            }
+
+            string? closest = known
+                .Select(candidate => (Name: candidate, Distance: TextDistance.Between(name.ToLowerInvariant(), candidate)))
+                .Where(match => match.Distance <= 2)
+                .OrderBy(match => match.Distance)
+                .ThenBy(match => match.Name, StringComparer.Ordinal)
+                .Select(match => match.Name)
+                .FirstOrDefault();
+
+            string suggestion = closest == null ? string.Empty : $" Did you mean '{closest}'?";
+            _outputWriter.WriteError($"Unknown command '{name}'.{suggestion} Run 'updaemon help' to list the commands.");
+            return 1;
         }
 
         private void PrintVersionHeader()
@@ -100,6 +168,13 @@ namespace Updaemon.Commands
             foreach (ICommand command in _commandFactory.GetAllCommands())
             {
                 _outputWriter.WriteLine($"  {command.Name,-20} {command.Description}");
+            }
+
+            _outputWriter.WriteLine("");
+            _outputWriter.WriteLine("Guides:");
+            foreach (HelpTopics.Topic topic in HelpTopics.All)
+            {
+                _outputWriter.WriteLine($"  {"help " + topic.Name,-20} {topic.Description}");
             }
 
             _outputWriter.WriteLine("");

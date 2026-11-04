@@ -91,7 +91,7 @@ namespace Updaemon.Distribution.ByteShelfDistribution.Tests
             ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.DownloadVersionAsync("MyApp", new Version(1, 0, 0), "/tmp/test"));
+                () => service.DownloadVersionAsync("MyApp", new Version(1, 0, 0), "linux-arm64", "/tmp/test"));
 
             Assert.Contains("API client not initialized", exception.Message);
         }

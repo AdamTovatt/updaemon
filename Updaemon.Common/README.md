@@ -64,10 +64,11 @@ public class MyDistributionService : IDistributionService
         // Return null if service doesn't exist
     }
 
-    public Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+    public Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
     {
-        // Download the specified version to targetPath
-        // Extract/copy all necessary files
+        // Download the build of the specified version for runtimeIdentifier to targetPath
+        // Verify it against a published checksum if there is one, then extract/copy all necessary files
+        // Return new DownloadResult { Verified = <whether it was checked against a checksum> }
     }
 }
 ```
@@ -95,13 +96,21 @@ class Program
 - Creates and manages the named pipe server
 - Handles the RPC request/response loop
 - Routes calls to your `IDistributionService` implementation
-- Converts exceptions to proper RPC error responses
+- Converts exceptions to RPC error responses carrying the exception's message only
+
+Updaemon shows that message to the user as is, with no stack trace, so make it say what went wrong and what to change (e.g. `Invalid GitHub remote 'myapp': expected owner/repo or owner/repo/<pattern>.`).
+
+When a call fails for want of a secret, throw `CredentialNeededException` with a `CredentialNeed`: the secret's name and the problem (`Missing`, `Rejected` or `RateLimited`; for a rate limit, the message says when it resets). At a terminal, updaemon then asks for the secret without showing it, saves it and calls again once; a rate limit is only reported. Without a terminal, it names the `updaemon secret-set` command. For GitHub, `GitHubAccess` makes the requests and throws it for you.
+
+## Plugin Protocol Version
+
+The service information a plugin returns carries `ProtocolVersion`, the `PluginProtocol.Version` of the Updaemon.Common it was built against; plugins do not set it. Updaemon refuses a plugin whose protocol version differs from its own and tells the user to reinstall it. Rebuild your plugin against the matching Updaemon.Common when the protocol changes.
 
 ## IDistributionService Interface
 
 ### GetServiceInformation()
 
-Returns static metadata about the plugin (full name, default alias, version, description, and required/optional secrets). This should not perform network operations.
+Returns static metadata about the plugin (full name, default alias, version, description, and required/optional secrets). This should not perform network operations. Updaemon calls it each time it starts the plugin, to check the protocol version.
 
 ### InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
 
@@ -134,18 +143,23 @@ Query your distribution server for the latest available version.
 **Returns:**
 - `Version?` - The latest version available, or `null` if the service doesn't exist
 
-### DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+### DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
 
 Download a specific version to the target directory.
 
 **Parameters:**
 - `serviceName` - The remote service name
 - `version` - The specific version to download (e.g., `new Version(1, 2, 3)`)
+- `runtimeIdentifier` - The runtime identifier of the machine updaemon runs on (e.g., `linux-arm64`, `osx-arm64`), for picking the build that runs there. A source that holds one build per version can ignore it.
 - `targetPath` - The directory path where files should be downloaded (e.g., `/opt/my-app/1.2.3/`)
 - `cancellationToken` - Cancellation token to cancel the operation.
 
+**Returns:**
+- `DownloadResult` - `Verified` says whether the download was checked against a checksum its source published. Updaemon tells the user when it was not.
+
 **Behavior:**
 - Download all necessary files for the service
+- Verify the download before extracting it when the source publishes a checksum (`Sha256Sums` reads a `SHA256SUMS` file), and throw on a mismatch
 - Extract archives if needed (see `DownloadPostProcessor` utility below)
 - Preserve file permissions (especially for executables)
 - Throw exceptions on failure
@@ -155,13 +169,13 @@ Download a specific version to the target directory.
 
 ### DownloadPostProcessor
 
-A helper utility for automatically extracting and unwrapping downloaded archives. This is useful when your distribution service downloads zip files.
+A helper utility for automatically extracting and unwrapping downloaded archives. This is useful when your distribution service downloads `.zip` or `.tar.gz` files.
 
 **Features:**
-- Automatically detects and extracts `.zip` files
+- Detects and extracts a lone `.zip` or `.tar.gz` file, keeping a tar entry's file mode
 - Unwraps single-directory structures (e.g., if a zip contains only `app-1.0.0/` with files inside, moves files up one level)
 - Deletes the archive file after extraction
-- Gracefully handles errors without failing the download
+- Throws `InvalidOperationException` when the archive cannot be extracted, including when an entry or link would land outside the target directory
 
 **Usage Example:**
 
@@ -173,7 +187,7 @@ public class MyDistributionService : IDistributionService
 {
     private readonly IDownloadPostProcessor _postProcessor = new DownloadPostProcessor();
 
-    public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+    public async Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
     {
         // Download the zip file from your distribution server
         string zipPath = Path.Combine(targetPath, $"{serviceName}-{version}.zip");
@@ -182,24 +196,35 @@ public class MyDistributionService : IDistributionService
         // Automatically extract and unwrap
         await _postProcessor.ProcessAsync(targetPath, cancellationToken);
         
-        // Files are now ready for use
+        // Files are now ready for use; this source publishes no checksums
+        return new DownloadResult { Verified = false };
     }
 }
 ```
 
 **When to Use:**
-- Your distribution source provides `.zip` archives
+- Your distribution source provides `.zip` or `.tar.gz` archives
 - You want automatic extraction and directory unwrapping
 - You need consistent behavior across different archive structures
 
 **When NOT to Use:**
 - You download pre-extracted files directly
 - You need custom extraction logic
-- You use non-zip archive formats (implement your own logic)
+- You use other archive formats (implement your own logic)
+
+### Sha256Sums
+
+Reads a release's `SHA256SUMS` file, in `sha256sum`'s format, and checks a download against it.
+
+- `Sha256Sums.AssetName` - The file's name, `SHA256SUMS`
+- `Sha256Sums.Parse(text)` - Reads the file. Lines in another form are skipped, and a name is matched without its directory, so `sha256sum dist/*` output works
+- `VerifyAsync(filePath, assetName)` - Throws `ChecksumException` when there is no well-formed line for `assetName`, its lines disagree, or the file does not match
+
+Verify before extracting, so a tampered archive is never opened.
 
 ## RPC Protocol
 
-Communication between updaemon and your plugin uses JSON-RPC over named pipes. Updaemon may also invoke the plugin with a special `--get-info` mode during installation to retrieve `DistributionServiceInformation` before regular operation.
+Communication between updaemon and your plugin uses JSON-RPC over named pipes. Right after connecting, updaemon calls `GetServiceInformation` and checks the protocol version before any other call. `DistributionServiceHost` handles all of this; the format below is for reference.
 
 ### Request Format
 
@@ -207,9 +232,17 @@ Communication between updaemon and your plugin uses JSON-RPC over named pipes. U
 {
   "id": "unique-request-id",
   "method": "GetLatestVersionAsync",
-  "parameters": "{\"serviceName\":\"MyApp\"}"
+  "parameters": "\"MyApp\""
 }
 ```
+
+`parameters` is itself JSON: a string for `GetLatestVersionAsync`, a key-value object of secrets for `InitializeAsync`, and for `DownloadVersionAsync` a `DownloadVersionParameters` object:
+
+```json
+"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"
+```
+
+Its result is a `DownloadResult` object: `"{\"verified\":true}"`.
 
 ### Response Format
 
@@ -218,9 +251,12 @@ Communication between updaemon and your plugin uses JSON-RPC over named pipes. U
   "id": "unique-request-id",
   "success": true,
   "result": "\"1.2.3\"",
-  "error": null
+  "error": null,
+  "credentialNeeded": null
 }
 ```
+
+`credentialNeeded` is set beside `error` when a call failed for want of a secret, for example `{ "secret": "githubToken", "problem": "Missing" }`.
 
 ## AOT Compilation
 
@@ -238,6 +274,19 @@ Enable AOT in your plugin project:
 </PropertyGroup>
 ```
 
+## Publishing a plugin on GitHub
+
+Users install a plugin from your repository's releases with `updaemon dist-install github:<owner>/<repo>`, and while self-update is on, each `updaemon update` installs your newer releases. For that, each release must have:
+
+- One asset per platform named `<name>-<rid>`, such as `my-plugin-linux-arm64`, `my-plugin-linux-x64` and `my-plugin-osx-arm64`: the AOT binary itself, not an archive. Exactly one asset may end in `-<rid>` for each platform; a second one fails installs and updates on it.
+- A `SHA256SUMS` asset listing them, as `sha256sum * > SHA256SUMS` writes it. A release without one, or whose binary does not match its line, is refused.
+
+The repository may be private: updaemon reads it with the `github` plugin's `githubToken`, and asks for one at a terminal when it is not set.
+
+updaemon follows only the release GitHub marks Latest; drafts and pre-releases are never installed. Any Latest tag other than the installed one replaces it, so marking an older release Latest moves users back to it. A release refused for its checksum, its build or its plugin protocol is skipped until another release is Latest.
+
+Build against the `Updaemon.Common` of the updaemon release your users run: updaemon refuses a plugin that speaks another protocol version (see [Versioning](#versioning)).
+
 ## Example: ByteShelf Distribution Plugin
 
 Here's a minimal example structure for a ByteShelf distribution plugin:
@@ -252,7 +301,7 @@ MyPlugin/
 
 ## Versioning
 
-This package follows semantic versioning. Breaking changes to the contract will result in a major version bump. Plugin authors should declare which contract version they support.
+A breaking change to the contract between updaemon and its plugins raises `PluginProtocol.Version`, so updaemon refuses plugins built against the old contract instead of misreading them.
 
 ## License
 

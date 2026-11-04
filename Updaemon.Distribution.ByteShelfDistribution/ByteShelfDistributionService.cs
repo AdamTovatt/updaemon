@@ -32,7 +32,7 @@ namespace Updaemon.Distribution.ByteShelfDistribution
                 FullName = "ByteShelf",
                 DefaultAlias = "byteshelf",
                 Description = "Distribution service that uses ByteShelf storage.",
-                Version = "0.2.0",
+                Version = "1.0.0",
                 Secrets = new List<DistributionSecretInfo>
                 {
                     new DistributionSecretInfo
@@ -121,12 +121,15 @@ namespace Updaemon.Distribution.ByteShelfDistribution
             return latestVersion;
         }
 
-        public async Task DownloadVersionAsync(
+        public async Task<DownloadResult> DownloadVersionAsync(
             string serviceName,
             Version version,
+            string runtimeIdentifier,
             string targetPath,
             CancellationToken cancellationToken = default)
         {
+            // runtimeIdentifier is unused: a ByteShelf version holds the files to download, and
+            // the remote's pattern picks among them.
             if (_apiClient == null)
             {
                 throw new InvalidOperationException("API client not initialized. Call InitializeAsync first.");
@@ -167,6 +170,9 @@ namespace Updaemon.Distribution.ByteShelfDistribution
 
             // Post-process (extract if zip)
             await _postProcessor.ProcessAsync(targetPath, cancellationToken);
+
+            // ByteShelf keeps no checksums to verify against.
+            return new DownloadResult { Verified = false };
         }
 
         /// <summary>

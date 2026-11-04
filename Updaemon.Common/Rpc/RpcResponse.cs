@@ -1,3 +1,5 @@
+using Updaemon.Common.Models;
+
 namespace Updaemon.Common.Rpc
 {
     /// <summary>
@@ -19,6 +21,9 @@ namespace Updaemon.Common.Rpc
         /// Error message if the invocation failed.
         /// </summary>
         public string? Error { get; set; }
+
+        /// <summary>Set beside <see cref="Error"/> when the call failed for want of a secret.</summary>
+        public CredentialNeed? CredentialNeeded { get; set; }
 
         /// <summary>
         /// Indicates if the invocation was successful.

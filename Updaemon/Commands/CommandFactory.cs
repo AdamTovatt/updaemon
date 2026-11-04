@@ -17,18 +17,22 @@ namespace Updaemon.Commands
             // Explicit, AOT-friendly registration
             _commandTypes = new Dictionary<string, Type>
             {
-                ["new"] = typeof(NewCommand),
-                ["init"] = typeof(InitCommand),
-                ["list"] = typeof(ListCommand),
+                ["install"] = typeof(InstallCommand),
                 ["update"] = typeof(UpdateCommand),
-                ["set-remote"] = typeof(SetRemoteCommand),
-                ["set-exec-name"] = typeof(SetExecNameCommand),
+                ["set"] = typeof(SetCommand),
+                ["unset"] = typeof(UnsetCommand),
+                ["set-args"] = typeof(SetArgsCommand),
                 ["set-restart"] = typeof(SetRestartCommand),
+                ["remove"] = typeof(RemoveCommand),
+                ["rollback"] = typeof(RollbackCommand),
+                ["status"] = typeof(StatusCommand),
+                ["logs"] = typeof(LogsCommand),
                 ["dist-install"] = typeof(DistInstallCommand),
-                ["dist-update"] = typeof(DistUpdateCommand),
+                ["self-update"] = typeof(SelfUpdateCommand),
                 ["dist-list"] = typeof(DistListCommand),
                 ["secret-set"] = typeof(SecretSetCommand),
                 ["timer"] = typeof(TimerCommand),
+                ["migrate"] = typeof(MigrateCommand),
             };
         }
 

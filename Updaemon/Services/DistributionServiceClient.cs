@@ -6,7 +6,10 @@ using Updaemon.Common;
 using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
+using Updaemon.Common.Utilities;
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
@@ -21,16 +24,19 @@ namespace Updaemon.Services
     /// </remarks>
     public class DistributionServiceClient : IDistributionServiceClient
     {
+        private readonly string _runtimeIdentifier;
         private Process? _pluginProcess;
         private NamedPipeClientStream? _pipeClient;
         private StringBuilder? _stderrBuffer;
         private bool _disposed;
 
-        public DistributionServiceClient()
+        /// <param name="platform">This machine; its runtime identifier is passed to the plugin in each download.</param>
+        public DistributionServiceClient(HostPlatform platform)
         {
+            _runtimeIdentifier = platform.RuntimeIdentifier;
         }
 
-        public async Task ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
+        public async Task<DistributionServiceInformation> ConnectAsync(string pluginExecutablePath, CancellationToken cancellationToken = default)
         {
             if (!File.Exists(pluginExecutablePath))
             {
@@ -97,12 +103,54 @@ namespace Updaemon.Services
                 }
 
                 await connectTask;
+
+                string? informationJson = await InvokeMethodAsync("GetServiceInformation", null, cancellationToken);
+                return ReadServiceInformation(informationJson, pluginExecutablePath);
             }
             catch
             {
                 await CleanupExistingConnectionAsync();
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Reads a plugin's service information, refusing a plugin that speaks another protocol
+        /// version, so no call is ever made to a plugin that would misread it.
+        /// </summary>
+        internal static DistributionServiceInformation ReadServiceInformation(string? informationJson, string pluginExecutablePath)
+        {
+            if (informationJson == null)
+            {
+                throw new PluginException($"The plugin at {pluginExecutablePath} returned no service information.");
+            }
+
+            int protocolVersion = PluginProtocol.UnversionedPluginVersion;
+            string propertyName = JsonNamingPolicy.CamelCase.ConvertName(nameof(DistributionServiceInformation.ProtocolVersion));
+            using (JsonDocument document = JsonDocument.Parse(informationJson))
+            {
+                if (document.RootElement.TryGetProperty(propertyName, out JsonElement element)
+                    && element.ValueKind == JsonValueKind.Number
+                    && element.TryGetInt32(out int reportedVersion))
+                {
+                    protocolVersion = reportedVersion;
+                }
+            }
+
+            if (protocolVersion != PluginProtocol.Version)
+            {
+                throw new PluginProtocolException(
+                    $"The plugin at {pluginExecutablePath} speaks plugin protocol {protocolVersion}, but this updaemon speaks protocol {PluginProtocol.Version}. " +
+                    $"Reinstall the plugin with '{PluginSource.InstallUsage}'.");
+            }
+
+            DistributionServiceInformation? information = JsonSerializer.Deserialize(informationJson, CommonJsonContext.Default.DistributionServiceInformation);
+            if (information == null)
+            {
+                throw new PluginException($"The plugin at {pluginExecutablePath} returned no service information.");
+            }
+
+            return information;
         }
 
         private string GetCapturedStderrOrPlaceholder()
@@ -175,13 +223,20 @@ namespace Updaemon.Services
         {
             SecretCollection secretCollection = SecretCollection.FromString(secrets);
             Dictionary<string, string> secretsDictionary = secretCollection.ToDictionary();
-            await InvokeMethodAsync("InitializeAsync", secretsDictionary, cancellationToken);
+            await InvokeMethodAsync(
+                "InitializeAsync",
+                JsonSerializer.Serialize(secretsDictionary, CommonJsonContext.Default.DictionaryStringString),
+                cancellationToken);
         }
 
         public async Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            string? versionString = await InvokeMethodAsync<string?>("GetLatestVersionAsync", serviceName, cancellationToken);
+            string? resultJson = await InvokeMethodAsync(
+                "GetLatestVersionAsync",
+                JsonSerializer.Serialize(serviceName, CommonJsonContext.Default.String),
+                cancellationToken);
 
+            string? versionString = resultJson == null ? null : JsonSerializer.Deserialize(resultJson, CommonJsonContext.Default.String);
             if (string.IsNullOrEmpty(versionString))
             {
                 return null;
@@ -190,34 +245,29 @@ namespace Updaemon.Services
             return Version.Parse(versionString);
         }
 
-        public async Task DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
+        public async Task<DownloadResult> DownloadVersionAsync(string serviceName, Version version, string targetPath, CancellationToken cancellationToken = default)
         {
-            Dictionary<string, string> parameters = new Dictionary<string, string>
+            DownloadVersionParameters parameters = new DownloadVersionParameters
             {
-                { "serviceName", serviceName },
-                { "version", version.ToString() },
-                { "targetPath", targetPath },
+                ServiceName = serviceName,
+                Version = version.ToString(),
+                RuntimeIdentifier = _runtimeIdentifier,
+                TargetPath = targetPath,
             };
-            await InvokeMethodAsync("DownloadVersionAsync", parameters, cancellationToken);
+            string? resultJson = await InvokeMethodAsync(
+                "DownloadVersionAsync",
+                JsonSerializer.Serialize(parameters, CommonJsonContext.Default.DownloadVersionParameters),
+                cancellationToken);
+
+            return (resultJson == null ? null : JsonSerializer.Deserialize(resultJson, CommonJsonContext.Default.DownloadResult))
+                ?? throw new PluginException("the plugin's download reported no result, which its protocol version requires.");
         }
 
-        public async Task<DistributionServiceInformation> GetServiceInformationAsync(CancellationToken cancellationToken = default)
-        {
-            DistributionServiceInformation? info = await InvokeMethodAsync<DistributionServiceInformation>("GetServiceInformation", null, cancellationToken);
-            if (info == null)
-            {
-                throw new InvalidOperationException("Plugin returned null service information");
-            }
-
-            return info;
-        }
-
-        private async Task InvokeMethodAsync(string methodName, object? parameters, CancellationToken cancellationToken)
-        {
-            await InvokeMethodAsync<object>(methodName, parameters, cancellationToken);
-        }
-
-        private async Task<TResult?> InvokeMethodAsync<TResult>(string methodName, object? parameters, CancellationToken cancellationToken)
+        /// <summary>
+        /// Sends one request and returns the result's JSON, or null for a call without a result.
+        /// A failed call throws <see cref="PluginException"/> carrying the plugin's message.
+        /// </summary>
+        private async Task<string?> InvokeMethodAsync(string methodName, string? parametersJson, CancellationToken cancellationToken)
         {
             if (_pipeClient == null || !_pipeClient.IsConnected)
             {
@@ -230,7 +280,7 @@ namespace Updaemon.Services
             {
                 Id = requestId,
                 Method = methodName,
-                Parameters = parameters != null ? JsonSerializer.Serialize(parameters, CommonJsonContext.Default.Object) : null,
+                Parameters = parametersJson,
             };
 
             // Send request
@@ -253,41 +303,20 @@ namespace Updaemon.Services
                 throw new InvalidOperationException("Failed to deserialize response");
             }
 
+            if (!response.Success && response.CredentialNeeded != null)
+            {
+                throw new CredentialNeededException(response.CredentialNeeded, response.Error ?? $"The plugin needs its secret '{response.CredentialNeeded.Secret}'.");
+            }
+
             if (!response.Success)
             {
-                throw new InvalidOperationException($"RPC call failed: {response.Error}");
+                throw new PluginException(
+                    string.IsNullOrWhiteSpace(response.Error)
+                        ? $"The plugin failed {methodName} without saying why."
+                        : response.Error);
             }
 
-            if (typeof(TResult) == typeof(object) || response.Result == null)
-            {
-                return default;
-            }
-
-            // Handle string return types
-            if (typeof(TResult) == typeof(string))
-            {
-                object? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.String);
-                return (TResult?)result;
-            }
-
-            // Handle nullable string return type
-            Type resultType = typeof(TResult);
-            if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(Nullable<>) && resultType.GetGenericArguments()[0] == typeof(string))
-            {
-                object? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.String);
-                return (TResult?)result;
-            }
-
-            // Handle DistributionServiceInformation (and other types from CommonJsonContext)
-            if (typeof(TResult) == typeof(DistributionServiceInformation))
-            {
-                DistributionServiceInformation? result = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.DistributionServiceInformation);
-                return (TResult?)(object?)result;
-            }
-
-            // Fallback: try to deserialize as object (may not work for all types)
-            object? objResult = JsonSerializer.Deserialize(response.Result, CommonJsonContext.Default.Object);
-            return (TResult?)objResult;
+            return response.Result;
         }
 
         private static async Task<string?> ReadLineAsync(Stream stream, CancellationToken cancellationToken)

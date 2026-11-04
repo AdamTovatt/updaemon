@@ -1,0 +1,95 @@
+using Updaemon.Common.Utilities;
+using Updaemon.Configuration;
+using Updaemon.Interfaces;
+using Updaemon.Models;
+
+namespace Updaemon.Services
+{
+    /// <summary>
+    /// The only way a command gets a plugin to run. A registry plugin always comes from the running
+    /// updaemon's release: one that is missing, or from another release (after a self-update), is
+    /// installed from it first. A URL plugin is used as installed.
+    /// </summary>
+    public class PluginProvider
+    {
+        private readonly IConfigManager _configManager;
+        private readonly IPluginInstaller _pluginInstaller;
+        private readonly IPluginUrlResolver _pluginUrlResolver;
+        private readonly UpdaemonVersion _updaemonVersion;
+        private readonly IOutputWriter _outputWriter;
+
+        public PluginProvider(
+            IConfigManager configManager,
+            IPluginInstaller pluginInstaller,
+            IPluginUrlResolver pluginUrlResolver,
+            UpdaemonVersion updaemonVersion,
+            IOutputWriter outputWriter)
+        {
+            _configManager = configManager;
+            _pluginInstaller = pluginInstaller;
+            _pluginUrlResolver = pluginUrlResolver;
+            _updaemonVersion = updaemonVersion;
+            _outputWriter = outputWriter;
+        }
+
+        /// <exception cref="PluginException">
+        /// The plugin is not installed and not in the registry, or installing it from the running
+        /// release failed (an installed copy is then left as it was); the message says what to do.
+        /// </exception>
+        public async Task<InstalledPluginInfo> GetOrInstallAsync(string alias, CancellationToken cancellationToken = default)
+        {
+            InstalledPluginInfo? plugin = await _configManager.GetPluginAsync(alias, cancellationToken);
+            if (plugin != null && !plugin.Source.IsOutOfLineWith(_updaemonVersion))
+            {
+                return plugin;
+            }
+
+            if (plugin == null && !_pluginUrlResolver.PluginNames.Contains(alias))
+            {
+                throw new PluginException(
+                    $"the plugin '{alias}' is not installed and is not in the plugin registry ({string.Join(", ", _pluginUrlResolver.PluginNames)}). " +
+                    $"Install it with 'updaemon dist-install --as {alias} <url>'.");
+            }
+
+            string name = (plugin?.Source as PluginSource.Registry)?.Name ?? alias;
+            return await InstallAsync(alias, name, replacing: plugin != null, cancellationToken);
+        }
+
+        /// <summary>
+        /// The plugins an app can come from, by alias, each list sorted: the installed ones, and the
+        /// registry's others, which <see cref="GetOrInstallAsync"/> installs on first use.
+        /// </summary>
+        public async Task<(IReadOnlyList<string> Installed, IReadOnlyList<string> OnFirstUse)> GetAvailableAsync(CancellationToken cancellationToken = default)
+        {
+            List<string> installed = (await _configManager.GetAllPluginsAsync(cancellationToken)).Keys.Order(StringComparer.Ordinal).ToList();
+            List<string> onFirstUse = _pluginUrlResolver.PluginNames.Except(installed).Order(StringComparer.Ordinal).ToList();
+            return (installed, onFirstUse);
+        }
+
+        /// <summary>
+        /// Installs registry plugin <paramref name="name"/> as <paramref name="alias"/> from the running
+        /// release in place of what is installed under that alias, keeping the alias's secrets.
+        /// </summary>
+        /// <exception cref="PluginException">Installing failed; what was installed is left as it was.</exception>
+        public Task<InstalledPluginInfo> ReinstallAsync(string alias, string name, CancellationToken cancellationToken = default)
+        {
+            return InstallAsync(alias, name, replacing: true, cancellationToken);
+        }
+
+        /// <summary>Installs registry plugin <paramref name="name"/> as <paramref name="alias"/> from the running release.</summary>
+        private async Task<InstalledPluginInfo> InstallAsync(string alias, string name, bool replacing, CancellationToken cancellationToken)
+        {
+            _outputWriter.WriteLine(replacing
+                ? $"Updating the '{alias}' plugin to updaemon {_updaemonVersion}'s build..."
+                : $"Installing the '{alias}' plugin...");
+            try
+            {
+                return (await _pluginInstaller.InstallAsync(new PluginSource.Registry(name, _updaemonVersion), alias, cancellationToken)).Plugin;
+            }
+            catch (Exception ex) when (ex is PluginException or InvalidOperationException or HttpRequestException or ChecksumException)
+            {
+                throw new PluginException($"{(replacing ? "updating" : "installing")} the '{alias}' plugin failed: {ex.Message}");
+            }
+        }
+    }
+}

@@ -1,5 +1,5 @@
-using System.Net;
 using System.Text.Json;
+using Updaemon.Common.Utilities;
 using Updaemon.GithubDistributionService.Interfaces;
 using Updaemon.GithubDistributionService.Models;
 using Updaemon.GithubDistributionService.Serialization;
@@ -7,16 +7,16 @@ using Updaemon.GithubDistributionService.Serialization;
 namespace Updaemon.GithubDistributionService.Services
 {
     /// <summary>
-    /// Client for interacting with the GitHub API.
+    /// Client for the GitHub API, through <see cref="GitHubAccess"/>: a refusal for want of a token
+    /// (rejected, rate limited, or a repository not found without one) throws a <see cref="CredentialNeededException"/>.
     /// </summary>
     public class GithubApiClient : IGithubApiClient
     {
         private readonly HttpClient _httpClient;
 
-        public GithubApiClient()
+        public GithubApiClient(HttpClient httpClient)
         {
-            _httpClient = new HttpClient();
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Updaemon-GithubDistributionService");
+            _httpClient = httpClient;
         }
 
         public async Task<GithubRelease?> GetLatestReleaseAsync(
@@ -25,30 +25,16 @@ namespace Updaemon.GithubDistributionService.Services
             string? token,
             CancellationToken cancellationToken = default)
         {
-            string url = $"https://api.github.com/repos/{owner}/{repo}/releases/latest";
-
-            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
-
-            if (!string.IsNullOrWhiteSpace(token))
+            using (HttpResponseMessage? response = await GitHubAccess.GetReleaseAsync(_httpClient, owner, repo, "latest", token, cancellationToken))
             {
-                request.Headers.Add("Authorization", $"Bearer {token}");
+                if (response == null)
+                {
+                    return null;
+                }
+
+                string jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                return JsonSerializer.Deserialize(jsonContent, GithubJsonContext.Default.GithubRelease);
             }
-
-            HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
-
-            if (response.StatusCode == HttpStatusCode.NotFound)
-            {
-                return null;
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            string jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            GithubRelease? release = JsonSerializer.Deserialize(
-                jsonContent,
-                GithubJsonContext.Default.GithubRelease);
-
-            return release;
         }
 
         public async Task DownloadReleaseAssetAsync(
@@ -59,33 +45,22 @@ namespace Updaemon.GithubDistributionService.Services
             string? token,
             CancellationToken cancellationToken = default)
         {
-            string url = $"https://api.github.com/repos/{owner}/{repo}/releases/assets/{assetId}";
-
-            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Add("Accept", "application/octet-stream");
-
-            if (!string.IsNullOrWhiteSpace(token))
+            using (HttpResponseMessage response = await GitHubAccess.GetAssetAsync(_httpClient, AssetAddress(owner, repo, assetId), token, cancellationToken))
             {
-                request.Headers.Add("Authorization", $"Bearer {token}");
+                await SaveAsync(response, targetFilePath, cancellationToken);
             }
+        }
 
-            HttpResponseMessage response = await _httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-
-            response.EnsureSuccessStatusCode();
-
-            string? directory = Path.GetDirectoryName(targetFilePath);
-            if (directory != null && !Directory.Exists(directory))
+        public async Task<string> ReadReleaseAssetTextAsync(
+            string owner,
+            string repo,
+            long assetId,
+            string? token,
+            CancellationToken cancellationToken = default)
+        {
+            using (HttpResponseMessage response = await GitHubAccess.GetAssetAsync(_httpClient, AssetAddress(owner, repo, assetId), token, cancellationToken))
             {
-                Directory.CreateDirectory(directory);
-            }
-
-            using (Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
-            using (FileStream fileStream = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, useAsync: true))
-            {
-                await contentStream.CopyToAsync(fileStream, cancellationToken);
+                return await response.Content.ReadAsStringAsync(cancellationToken);
             }
         }
 
@@ -95,20 +70,17 @@ namespace Updaemon.GithubDistributionService.Services
             string? token,
             CancellationToken cancellationToken = default)
         {
-            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
-
-            if (!string.IsNullOrWhiteSpace(token))
+            using (HttpResponseMessage response = await GitHubAccess.GetAssetAsync(_httpClient, new Uri(url), token, cancellationToken))
             {
-                request.Headers.Add("Authorization", $"Bearer {token}");
+                await SaveAsync(response, targetFilePath, cancellationToken);
             }
+        }
 
-            HttpResponseMessage response = await _httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+        private static Uri AssetAddress(string owner, string repo, long assetId) =>
+            new Uri($"https://api.github.com/repos/{owner}/{repo}/releases/assets/{assetId}");
 
-            response.EnsureSuccessStatusCode();
-
+        private static async Task SaveAsync(HttpResponseMessage response, string targetFilePath, CancellationToken cancellationToken)
+        {
             string? directory = Path.GetDirectoryName(targetFilePath);
             if (directory != null && !Directory.Exists(directory))
             {
@@ -123,4 +95,3 @@ namespace Updaemon.GithubDistributionService.Services
         }
     }
 }
-

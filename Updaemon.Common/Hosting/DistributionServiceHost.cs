@@ -4,6 +4,7 @@ using System.Text.Json;
 using Updaemon.Common.Models;
 using Updaemon.Common.Rpc;
 using Updaemon.Common.Serialization;
+using Updaemon.Common.Utilities;
 
 namespace Updaemon.Common.Hosting
 {
@@ -141,13 +142,28 @@ namespace Updaemon.Common.Hosting
                         };
                 }
             }
-            catch (Exception ex)
+            catch (CredentialNeededException ex)
             {
+                // An expected refusal: no trace on stderr, and updaemon gets which secret is needed and why.
                 return new RpcResponse
                 {
                     Id = request.Id,
                     Success = false,
-                    Error = $"{ex.Message}\n{ex.StackTrace}",
+                    Error = ex.Message,
+                    CredentialNeeded = ex.Need,
+                };
+            }
+            catch (Exception ex)
+            {
+                // The message alone goes back: it is what updaemon shows the user, so it must say
+                // what to fix, and a stack trace would bury that. The full exception goes to the
+                // plugin's stderr so an unexpected failure can still be traced.
+                Console.Error.WriteLine(ex.ToString());
+                return new RpcResponse
+                {
+                    Id = request.Id,
+                    Success = false,
+                    Error = ex.Message,
                 };
             }
         }
@@ -228,27 +244,21 @@ namespace Updaemon.Common.Hosting
                 throw new ArgumentException("DownloadVersionAsync requires parameters");
             }
 
-            JsonDocument doc = JsonDocument.Parse(request.Parameters);
-            JsonElement root = doc.RootElement;
-
-            string? serviceName = root.GetProperty("serviceName").GetString();
-            string? versionString = root.GetProperty("version").GetString();
-            string? targetPath = root.GetProperty("targetPath").GetString();
-
-            if (serviceName == null || versionString == null || targetPath == null)
+            DownloadVersionParameters? parameters = JsonSerializer.Deserialize(request.Parameters, CommonJsonContext.Default.DownloadVersionParameters);
+            if (parameters == null)
             {
-                throw new ArgumentException("serviceName, version, and targetPath are required");
+                throw new ArgumentException("DownloadVersionAsync requires parameters");
             }
 
-            Version version = Version.Parse(versionString);
+            Version version = Version.Parse(parameters.Version);
 
-            await implementation.DownloadVersionAsync(serviceName, version, targetPath, cancellationToken);
+            DownloadResult result = await implementation.DownloadVersionAsync(parameters.ServiceName, version, parameters.RuntimeIdentifier, parameters.TargetPath, cancellationToken);
 
             return new RpcResponse
             {
                 Id = request.Id,
                 Success = true,
-                Result = null,
+                Result = JsonSerializer.Serialize(result, CommonJsonContext.Default.DownloadResult),
             };
         }
 

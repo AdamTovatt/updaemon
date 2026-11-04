@@ -1,6 +1,8 @@
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Updaemon.Commands;
 using Updaemon.Configuration;
+using Updaemon.Conversion;
 using Updaemon.Interfaces;
 using Updaemon.Services;
 
@@ -10,15 +12,19 @@ namespace Updaemon
     {
         public static async Task<int> Main(string[] args)
         {
-            // Setup cancellation token for Ctrl+C
-            using (CancellationTokenSource cancellationTokenSource = new CancellationTokenSource())
+            // Ctrl+C, a kill and a closed terminal all cancel the run instead of ending the process
+            // outright, so it cleans up as it would on Ctrl+C: 'logs -f' stops its journalctl or tail.
+            using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            Action<PosixSignalContext> cancel = context =>
             {
-                Console.CancelKeyPress += (sender, e) =>
-                {
-                    e.Cancel = true; // Prevent immediate termination
-                    cancellationTokenSource.Cancel();
-                };
+                context.Cancel = true;
+                cancellationTokenSource.Cancel();
+            };
 
+            using (PosixSignalRegistration interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, cancel))
+            using (PosixSignalRegistration terminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, cancel))
+            using (PosixSignalRegistration hangUp = PosixSignalRegistration.Create(PosixSignal.SIGHUP, cancel))
+            {
                 // Setup DI container
                 ServiceCollection services = new ServiceCollection();
                 ConfigureServices(services);
@@ -45,15 +51,29 @@ namespace Updaemon
 
         private static void ConfigureServices(ServiceCollection services)
         {
+            UpdaemonScope scope = UpdaemonScope.Detect();
+            if (!scope.IsSystem && !scope.Platform.IsMacOS
+                && LinuxServiceManager.UserRuntimeDirectory(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR"), scope.UserId, Directory.Exists) is string runtimeDirectory)
+            {
+                // systemctl and journalctl, run as children, inherit it and so find the user's manager.
+                Environment.SetEnvironmentVariable("XDG_RUNTIME_DIR", runtimeDirectory);
+            }
+
+            services.AddSingleton(scope);
+            services.AddSingleton(scope.Platform);
+            UpdaemonScope? otherScope = UpdaemonScope.DetectOther(scope);
+            services.AddSingleton(otherScope == null ? OtherScopeApps.None : new OtherScopeApps(new ConfigManager(otherScope), otherScope.Owner));
+
             // Output writer
             services.AddSingleton<IOutputWriter, ConsoleOutputWriter>();
+            services.AddSingleton<IRunLock, ScopeLock>();
 
-            // Configuration and Secrets — parameterless constructors read from PlatformPaths.
+            // Configuration and Secrets
             services.AddSingleton<IConfigManager, ConfigManager>();
             services.AddSingleton<ISecretsManager, SecretsManager>();
 
             // Service manager / timer manager: pick the OS-appropriate implementation.
-            if (PlatformPaths.IsMacOS)
+            if (scope.Platform.IsMacOS)
             {
                 services.AddSingleton<IServiceManager, MacServiceManager>();
                 services.AddSingleton<ITimerManager, MacTimerManager>();
@@ -64,37 +84,58 @@ namespace Updaemon
                 services.AddSingleton<ITimerManager, LinuxTimerManager>();
             }
 
-            // Other services — parameterless constructors are platform-aware.
+            // Other services
             services.AddSingleton<ISymlinkManager, SymlinkManager>();
             services.AddSingleton<IExecutableDetector, ExecutableDetector>();
-            services.AddSingleton<IVersionExtractor, VersionExtractor>();
+            services.AddSingleton<IPrompter, ConsolePrompter>();
+            services.AddSingleton<PluginCredentials>();
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
+            services.AddSingleton<AppFileWriter>();
+            services.AddSingleton<AppSettingsStore>();
+            services.AddSingleton<UpdateRunLog>();
+            services.AddSingleton(TimeProvider.System);
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
+            services.AddSingleton<AppRollback>();
+            services.AddTransient<PluginProvider>();
+
+            services.AddSingleton(UpdaemonVersion.Current);
+            services.AddSingleton(RunningExecutable.Current);
+            services.AddSingleton<IUpdaemonReleases, GitHubUpdaemonReleases>();
+            services.AddTransient<SelfUpdater>();
+            services.AddSingleton<IGitHubPluginReleases, GitHubPluginReleases>();
+            services.AddTransient<GitHubPluginUpdater>();
 
             // Distribution service client
             services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();
 
-            // HTTP client for downloading plugins
+            // HTTP client for downloading plugins, and updaemon's own builds
             services.AddSingleton<HttpClient>();
+            services.AddSingleton<IReleaseChecksums, ReleaseChecksums>();
 
-            // Plugin URL resolver and downloader
+            // Plugin resolution, download and installation
             services.AddSingleton<IPluginUrlResolver, GitHubPluginUrlResolver>();
             services.AddTransient<IPluginDownloader, PluginDownloader>();
+            services.AddTransient<IPluginInstaller, PluginInstaller>();
 
             // Commands - transient (created per invocation)
-            services.AddTransient<NewCommand>();
-            services.AddTransient<InitCommand>();
-            services.AddTransient<ListCommand>();
+            services.AddTransient<InstallCommand>();
             services.AddTransient<UpdateCommand>();
-            services.AddTransient<SetRemoteCommand>();
-            services.AddTransient<SetExecNameCommand>();
+            services.AddTransient<SetCommand>();
+            services.AddTransient<UnsetCommand>();
+            services.AddTransient<SetArgsCommand>();
             services.AddTransient<SetRestartCommand>();
+            services.AddTransient<RemoveCommand>();
+            services.AddTransient<RollbackCommand>();
+            services.AddTransient<StatusCommand>();
+            services.AddTransient<LogsCommand>();
             services.AddTransient<DistInstallCommand>();
-            services.AddTransient<DistUpdateCommand>();
+            services.AddTransient<SelfUpdateCommand>();
             services.AddTransient<DistListCommand>();
             services.AddTransient<SecretSetCommand>();
             services.AddTransient<TimerCommand>();
+            services.AddTransient<MigrateCommand>();
+            services.AddTransient<IZeroXConverter, ZeroXConverter>();
 
             // Command infrastructure
             services.AddSingleton<ICommandFactory, CommandFactory>();

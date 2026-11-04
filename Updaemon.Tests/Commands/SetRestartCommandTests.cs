@@ -1,109 +1,61 @@
 using Updaemon.Commands;
-using Updaemon.Models;
-using Updaemon.Tests.Mocks;
+using Updaemon.Tests.Helpers;
 
 namespace Updaemon.Tests.Commands
 {
     public class SetRestartCommandTests
     {
-        [Fact]
-        public async Task ExecuteAsync_Auto_SetsAutoRestartTrueViaConfigManager()
+        [Theory]
+        [InlineData("manual", false)]
+        [InlineData("AUTO", true)]
+        public async Task ExecuteAsync_StoresTheMode(string mode, bool expectedAutoRestart)
         {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetRestartCommand command = new SetRestartCommand(configManager, outputWriter);
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                SetRestartCommand command = new SetRestartCommand(h.Config, h.Output, h.Deployer);
 
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-            int exitCode = await command.ExecuteAsync(new[] { "my-api", "auto" });
+                int exitCode = await command.ExecuteAsync(new[] { "byteshelf", mode });
 
-            Assert.Equal(0, exitCode);
-            Assert.Contains(configManager.MethodCalls, call => call == "SetAutoRestartAsync:my-api:True");
+                Assert.Equal(0, exitCode);
+                Assert.Equal(expectedAutoRestart, (await h.Config.GetAppAsync("byteshelf"))!.AutoRestart);
+                Assert.DoesNotContain(h.Output.Messages, m => m.Contains("no effect"));
+            }
+        }
 
-            // A regular service should not get the CLI-only note.
-            Assert.DoesNotContain(outputWriter.Messages, m => m.Contains("no effect for CLI tools"));
+        [Theory]
+        [InlineData("byteshelf", "sometimes", "Invalid restart mode")]
+        [InlineData("missing", "manual", "not installed")]
+        [InlineData("byteshelf", null, "Usage: updaemon set-restart")]
+        public async Task ExecuteAsync_BadInput_FailsWithoutChangingAnything(string app, string? mode, string expectedError)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                SetRestartCommand command = new SetRestartCommand(h.Config, h.Output, h.Deployer);
+
+                int exitCode = await command.ExecuteAsync(mode == null ? new[] { app } : new[] { app, mode });
+
+                Assert.Equal(1, exitCode);
+                Assert.Contains(h.Output.Errors, e => e.Contains(expectedError));
+                Assert.True((await h.Config.GetAppAsync("byteshelf"))!.AutoRestart);
+            }
         }
 
         [Fact]
-        public async Task ExecuteAsync_Manual_SetsAutoRestartFalseViaConfigManager()
+        public async Task ExecuteAsync_AppWithoutService_NotesTheSettingHasNoEffect()
         {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetRestartCommand command = new SetRestartCommand(configManager, outputWriter);
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/tool", "1.0.0", """{ "executable": "tool", "command": "tool" }""", executable: "tool");
+                await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool" });
 
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-            int exitCode = await command.ExecuteAsync(new[] { "my-api", "manual" });
+                int exitCode = await new SetRestartCommand(h.Config, h.Output, h.Deployer).ExecuteAsync(new[] { "tool", "manual" });
 
-            Assert.Equal(0, exitCode);
-            Assert.Contains(configManager.MethodCalls, call => call == "SetAutoRestartAsync:my-api:False");
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_ModeIsCaseInsensitive()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetRestartCommand command = new SetRestartCommand(configManager, outputWriter);
-
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-            int exitCode = await command.ExecuteAsync(new[] { "my-api", "MANUAL" });
-
-            Assert.Equal(0, exitCode);
-            Assert.Contains(configManager.MethodCalls, call => call == "SetAutoRestartAsync:my-api:False");
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_InvalidMode_ReturnsErrorCodeAndDoesNotSet()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetRestartCommand command = new SetRestartCommand(configManager, outputWriter);
-
-            await configManager.RegisterServiceAsync("my-api", "MyApi", "github");
-            int exitCode = await command.ExecuteAsync(new[] { "my-api", "sometimes" });
-
-            Assert.Equal(1, exitCode);
-            Assert.Contains(outputWriter.Errors, e => e.Contains("Invalid restart mode"));
-            Assert.DoesNotContain(configManager.MethodCalls, call => call.StartsWith("SetAutoRestartAsync"));
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_ServiceDoesNotExist_ReturnsErrorCode()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetRestartCommand command = new SetRestartCommand(configManager, outputWriter);
-
-            int exitCode = await command.ExecuteAsync(new[] { "non-existent", "manual" });
-
-            Assert.Equal(1, exitCode);
-            Assert.Contains(outputWriter.Errors, e => e.Contains("not registered"));
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_WithoutRequiredArgs_ReturnsErrorCode()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetRestartCommand command = new SetRestartCommand(configManager, outputWriter);
-
-            int exitCode = await command.ExecuteAsync(new[] { "app-name" });
-
-            Assert.Equal(1, exitCode);
-            Assert.Contains(outputWriter.Errors, e => e.Contains("Insufficient arguments"));
-        }
-
-        [Fact]
-        public async Task ExecuteAsync_CliTool_WarnsSettingHasNoEffect()
-        {
-            MockConfigManager configManager = new MockConfigManager();
-            MockOutputWriter outputWriter = new MockOutputWriter();
-            SetRestartCommand command = new SetRestartCommand(configManager, outputWriter);
-
-            await configManager.RegisterServiceAsync("my-tool", "MyTool", "github", ServiceType.Cli);
-            int exitCode = await command.ExecuteAsync(new[] { "my-tool", "manual" });
-
-            Assert.Equal(0, exitCode);
-            Assert.Contains(outputWriter.Messages, m => m.Contains("no effect for CLI tools"));
+                Assert.Equal(0, exitCode);
+                Assert.Contains(h.Output.Messages, m => m.Contains("no effect"));
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -10,26 +11,33 @@ namespace Updaemon.Services
     public class PluginDownloader : IPluginDownloader
     {
         private readonly HttpClient _httpClient;
+        private readonly IReleaseChecksums _checksums;
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IFilePermissionManager _filePermissionManager;
-        private readonly IOutputWriter _outputWriter;
 
         public PluginDownloader(
             HttpClient httpClient,
+            IReleaseChecksums checksums,
             IDistributionServiceClient distributionClient,
-            IFilePermissionManager filePermissionManager,
-            IOutputWriter outputWriter)
+            IFilePermissionManager filePermissionManager)
         {
             _httpClient = httpClient;
+            _checksums = checksums;
             _distributionClient = distributionClient;
             _filePermissionManager = filePermissionManager;
-            _outputWriter = outputWriter;
         }
 
-        public async Task<PluginDownloadResult> DownloadAndInspectAsync(string downloadUrl, string targetDirectory, CancellationToken cancellationToken = default)
+        public async Task<PluginDownloadResult> DownloadAndInspectAsync(PluginDownload download, string targetDirectory, CancellationToken cancellationToken = default)
         {
-            byte[] pluginData = await _httpClient.GetByteArrayAsync(downloadUrl, cancellationToken);
-            _outputWriter.WriteLine($"Downloaded {pluginData.Length} bytes");
+            ExpectedSha256? expected = download.Checksums == null
+                ? null
+                : await _checksums.ReadExpectedAsync(download.Checksums, download.FileName, download.GitHub, cancellationToken);
+
+            byte[] pluginData;
+            using (HttpResponseMessage response = await ReleaseAsset.GetAsync(_httpClient, download.Build, download.GitHub, cancellationToken))
+            {
+                pluginData = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            }
 
             Directory.CreateDirectory(targetDirectory);
 
@@ -37,6 +45,12 @@ namespace Updaemon.Services
             try
             {
                 await File.WriteAllBytesAsync(tempPath, pluginData, cancellationToken);
+
+                // Before it is made executable and run to read its service information.
+                if (expected != null)
+                {
+                    await expected.VerifyAsync(tempPath, cancellationToken);
+                }
 
                 await _filePermissionManager.SetExecutablePermissionsAsync(tempPath, cancellationToken);
 
@@ -60,18 +74,11 @@ namespace Updaemon.Services
             }
         }
 
-        public async Task<DistributionServiceInformation> InspectLocalAsync(string pluginPath, CancellationToken cancellationToken = default)
-        {
-            return await ConnectAndGetInfoAsync(pluginPath, cancellationToken);
-        }
-
         private async Task<DistributionServiceInformation> ConnectAndGetInfoAsync(string pluginPath, CancellationToken cancellationToken)
         {
-            await _distributionClient.ConnectAsync(pluginPath, cancellationToken);
             try
             {
-                DistributionServiceInformation serviceInfo = await _distributionClient.GetServiceInformationAsync(cancellationToken);
-                return serviceInfo;
+                return await _distributionClient.ConnectAsync(pluginPath, cancellationToken);
             }
             finally
             {
