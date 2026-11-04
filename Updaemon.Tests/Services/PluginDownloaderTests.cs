@@ -23,6 +23,9 @@ namespace Updaemon.Tests.Services
         {
             public HttpStatusCode Status { get; init; } = HttpStatusCode.OK;
 
+            /// <summary>Serves another build than the one its SHA256SUMS lists.</summary>
+            public bool Tampered { get; init; }
+
             public List<HttpRequestMessage> Requests { get; } = new List<HttpRequestMessage>();
 
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -30,20 +33,20 @@ namespace Updaemon.Tests.Services
                 Requests.Add(request);
                 HttpContent content = request.RequestUri == Sums
                     ? new StringContent($"{Convert.ToHexStringLower(SHA256.HashData(Build))}  plugin-linux-arm64\n")
-                    : new ByteArrayContent(Build);
+                    : new ByteArrayContent(Tampered ? new byte[] { 6, 6, 6 } : Build);
                 return Task.FromResult(new HttpResponseMessage(Status) { Content = content });
             }
         }
 
-        /// <summary>Refuses every download, as for a tampered one.</summary>
+        /// <summary>Finds no line for any asset, as in a release whose SHA256SUMS leaves the build out.</summary>
         private sealed class RefusingChecksums : IReleaseChecksums
         {
             public List<string> Checked { get; } = new List<string>();
 
-            public Task VerifyAsync(Uri checksumsUrl, string assetName, string filePath, GitHubFetch? gitHub, CancellationToken cancellationToken = default)
+            public Task<ExpectedSha256> ReadExpectedAsync(Uri checksumsUrl, string assetName, GitHubFetch? gitHub, CancellationToken cancellationToken = default)
             {
                 Checked.Add(assetName);
-                throw new ChecksumException("plugin-linux-arm64 does not match its SHA-256 in SHA256SUMS.");
+                throw new ChecksumException("SHA256SUMS has no '<sha-256>  plugin-linux-arm64' line, so plugin-linux-arm64 cannot be verified.");
             }
         }
 
@@ -58,18 +61,34 @@ namespace Updaemon.Tests.Services
         {
             using (TempFileHelper temp = new TempFileHelper())
             {
-                RefusingChecksums checksums = new RefusingChecksums();
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
                 MockFilePermissionManager permissions = new MockFilePermissionManager();
                 string directory = temp.GetFullPath("plugins");
 
                 await Assert.ThrowsAsync<ChecksumException>(
-                    () => Downloader(new OnePlugin(), checksums, client, permissions).DownloadAndInspectAsync(new PluginDownload(Url, "plugin-linux-arm64", Sums, null), directory));
+                    () => Downloader(new OnePlugin { Tampered = true }, client: client, permissions: permissions).DownloadAndInspectAsync(new PluginDownload(Url, "plugin-linux-arm64", Sums, null), directory));
 
-                Assert.Equal(new[] { "plugin-linux-arm64" }, checksums.Checked);
                 Assert.Empty(client.MethodCalls);
                 Assert.Empty(permissions.MethodCalls);
                 Assert.Empty(Directory.GetFiles(directory));
+            }
+        }
+
+        [Fact]
+        public async Task DownloadAndInspectAsync_SumsHaveNoLineForTheBuild_FailsBeforeDownloadingIt()
+        {
+            using (TempFileHelper temp = new TempFileHelper())
+            {
+                OnePlugin server = new OnePlugin();
+                RefusingChecksums checksums = new RefusingChecksums();
+                string directory = temp.GetFullPath("plugins");
+
+                await Assert.ThrowsAsync<ChecksumException>(
+                    () => Downloader(server, checksums).DownloadAndInspectAsync(new PluginDownload(Url, "plugin-linux-arm64", Sums, null), directory));
+
+                Assert.Equal(new[] { "plugin-linux-arm64" }, checksums.Checked);
+                Assert.Empty(server.Requests);
+                Assert.False(Directory.Exists(directory));
             }
         }
 
@@ -83,7 +102,7 @@ namespace Updaemon.Tests.Services
 
                 await Downloader(github, client: client).DownloadAndInspectAsync(new PluginDownload(Url, "plugin-linux-arm64", Sums, new GitHubFetch("tok")), temp.GetFullPath("plugins"));
 
-                Assert.Equal(new[] { Url, Sums }, github.Requests.Select(request => request.RequestUri));
+                Assert.Equal(new[] { Sums, Url }, github.Requests.Select(request => request.RequestUri));
                 Assert.All(github.Requests, request =>
                 {
                     Assert.Equal("Bearer tok", request.Headers.Authorization?.ToString());

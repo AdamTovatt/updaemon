@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace Updaemon.Common.Utilities
@@ -32,35 +31,20 @@ namespace Updaemon.Common.Utilities
             return new Sha256Sums(hashesByName);
         }
 
-        /// <summary>Checks <paramref name="filePath"/> against this list's line for <paramref name="assetName"/>.</summary>
-        /// <exception cref="ChecksumException">
-        /// There is no well-formed line for it, lines for it disagree, or the file does not match.
-        /// </exception>
-        public async Task VerifyAsync(string filePath, string assetName, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// This list's SHA-256 for <paramref name="assetName"/>, read before the asset is fetched so a release
+        /// that cannot be verified fails without a download.
+        /// </summary>
+        /// <exception cref="ChecksumException">There is no well-formed line for it, or lines for it disagree.</exception>
+        public ExpectedSha256 For(string assetName)
         {
             string[] expected = _hashesByName[assetName].Distinct().ToArray();
-            if (expected.Length == 0)
+            return expected switch
             {
-                throw new ChecksumException($"{AssetName} has no '<sha-256>  {assetName}' line, so {assetName} cannot be verified.");
-            }
-
-            if (expected.Length > 1)
-            {
-                throw new ChecksumException($"{AssetName} has lines with different SHA-256s for {assetName}, so it cannot be verified.");
-            }
-
-            if (await HashFileAsync(filePath, cancellationToken) != expected[0])
-            {
-                throw new ChecksumException($"{assetName} does not match its SHA-256 in {AssetName}; the download is corrupt or was tampered with.");
-            }
-        }
-
-        private static async Task<string> HashFileAsync(string filePath, CancellationToken cancellationToken)
-        {
-            using (FileStream file = File.OpenRead(filePath))
-            {
-                return Convert.ToHexStringLower(await SHA256.HashDataAsync(file, cancellationToken));
-            }
+                [string hash] => new ExpectedSha256(assetName, hash),
+                [] => throw new ChecksumException($"{AssetName} has no '<sha-256>  {assetName}' line, so {assetName} cannot be verified."),
+                _ => throw new ChecksumException($"{AssetName} has lines with different SHA-256s for {assetName}, so it cannot be verified."),
+            };
         }
 
         [GeneratedRegex("^(?<hash>[0-9a-fA-F]{64}) [ *](?<name>.+)$")]

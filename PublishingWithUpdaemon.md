@@ -13,7 +13,7 @@ Publish one asset per platform, named after the platform's .NET runtime identifi
 
 For example `byteshelf-linux-arm64.zip`, `byteshelf-linux-x64.zip` and `byteshelf-osx-arm64.zip`. Updaemon picks the asset for the machine it runs on. If a release has no asset for that RID, or several, the install fails and lists the assets; the remote can then name a pattern instead, as in `github:owner/repo/<pattern>`.
 
-Also publish a `SHA256SUMS` asset: one `<sha-256>  <asset name>` line per asset, as `sha256sum * > SHA256SUMS` writes it (a directory before the name, as in `dist/app-linux-x64.zip`, is ignored). Updaemon then checks the download against it before installing and refuses one that does not match. Without it, `install` and `update` still install the release but say it was not verified.
+Also publish a `SHA256SUMS` asset: one `<sha-256>  <asset name>` line per asset, as `sha256sum * > SHA256SUMS` writes it (a directory before the name, as in `dist/app-linux-x64.zip`, is ignored). Updaemon then checks the download against it before installing and refuses one that does not match. A `SHA256SUMS` without a line for the asset fails before anything is downloaded. Without a `SHA256SUMS`, `install` and `update` still install the release but say it was not verified.
 
 Versions come from the release tag, for example `v1.2.0`.
 

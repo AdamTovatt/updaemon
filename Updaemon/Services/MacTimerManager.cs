@@ -52,7 +52,7 @@ namespace Updaemon.Services
             return result.Success;
         }
 
-        public async Task<string?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default)
+        public async Task<TimeSpan?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default)
         {
             if (!File.Exists(_plistPath))
             {
@@ -60,7 +60,7 @@ namespace Updaemon.Services
             }
 
             int? seconds = ReadStartInterval(await File.ReadAllTextAsync(_plistPath, cancellationToken));
-            return seconds == null ? null : FormatInterval(seconds.Value);
+            return seconds == null ? null : TimeSpan.FromSeconds(seconds.Value);
         }
 
         public async Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default)
@@ -73,14 +73,17 @@ namespace Updaemon.Services
 
             int? seconds = ReadStartInterval(await File.ReadAllTextAsync(path, cancellationToken));
             ProcessRunner.Result loaded = await ProcessRunner.RunAsync("launchctl", new[] { "print", Launchd.Target(_scope, ZeroXLabel) }, cancellationToken);
-            return new ZeroXTimer(path, loaded.Success, seconds == null ? null : TimeSpan.FromSeconds(seconds.Value));
+            return new ZeroXTimer(new[] { path }, loaded.Success,seconds == null ? null : TimeSpan.FromSeconds(seconds.Value));
         }
 
         public async Task RemoveZeroXTimerAsync(ZeroXTimer timer, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             // 0.x's label differs from this updaemon's, so its job would otherwise run beside the new one.
             await Launchd.UnloadAsync(_scope, ZeroXLabel, cancellationToken);
-            File.Delete(timer.FilePath);
+            foreach (string file in timer.Files)
+            {
+                File.Delete(file);
+            }
         }
 
         internal static int? ReadStartInterval(string plist)
@@ -96,24 +99,11 @@ namespace Updaemon.Services
             return (int)value;
         }
 
-        private static string FormatInterval(int seconds)
-        {
-            if (seconds % 3600 == 0)
-            {
-                return $"{seconds / 3600}h";
-            }
-            if (seconds % 60 == 0)
-            {
-                return $"{seconds / 60}m";
-            }
-            return $"{seconds}s";
-        }
-
         internal static string BuildPlist(string label, string updaemonPath, int intervalSeconds, string logPath)
         {
             return new Launchd.Plist()
                 .String("Label", label)
-                .Strings("ProgramArguments", new[] { updaemonPath, "update" })
+                .Strings("ProgramArguments", new[] { updaemonPath }.Concat(TimerRun.Arguments))
                 .Integer("StartInterval", intervalSeconds)
                 .Boolean("RunAtLoad", false)
                 .String("StandardOutPath", logPath)

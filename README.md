@@ -114,7 +114,7 @@ Re-run `install.sh` with `sudo`. The rest is automatic: the script then runs `up
 curl -fsSL https://raw.githubusercontent.com/AdamTovatt/updaemon/master/install.sh | sudo bash
 ```
 
-Each 0.x service or CLI tool becomes a system-wide app with the same name, source and restart setting. Its versions stay where they are, so nothing is downloaded again. `Environment=` lines in a service's unit (`EnvironmentVariables` in a plist) become the app's settings. A service set to `restart=manual` keeps running its old process until it next restarts. A CLI tool's command is its executable's name; the second link 0.x made under the tool's own name (`ripgrep` beside `rg`) is removed. Registry plugins are reinstalled from the new release and keep their secrets; any other plugin is reported with the `updaemon dist-install --as <alias> <url>` that installs it again. The update timer keeps its interval, and one 0.x had turned off stays off.
+Each 0.x service or CLI tool becomes a system-wide app with the same name, source and restart setting. Its versions stay where they are, so nothing is downloaded again. `Environment=` lines in a service's unit (`EnvironmentVariables` in a plist) become the app's settings. A service set to `restart=manual` keeps running its old process until it next restarts. A CLI tool's command is its executable's name; the second link 0.x made under the tool's own name (`ripgrep` beside `rg`) is removed. Registry plugins are reinstalled from the new release and keep their secrets; any other plugin is reported with the `updaemon dist-install --as <alias> <url>` that installs it again. The update timer keeps its interval, and one 0.x had turned off stays off. A timer whose interval was edited by hand into a form updaemon does not write is left running as it is on Linux, where its runs then show in `status` as started by hand, and turned off on macOS, where the report says so.
 
 An app is left out, and keeps running as before, when its unit was edited by hand in any other way, its name is not a valid app name, it has no current version, or its unit, executable or command link is not what 0.x made. The report says which and what to do. Fix it, then run `sudo updaemon migrate` to convert what was left out; this also retries a plugin or the timer that failed. `sudo updaemon migrate --dry-run` shows what would be converted without changing anything. What the conversion replaces (the old config, unit template, units and timer) is kept in `0.x-backup` beside `config.json`.
 
@@ -151,7 +151,7 @@ Downloads the latest release, reads its `updaemon.json`, asks for each required 
 
 A service must keep running for its health-check window after it starts: 10 seconds, unless its `updaemon.json` sets `service.healthCheckSeconds` (see [Publishing with Updaemon](PublishingWithUpdaemon.md)). If it does not, the app stays installed and `install` fails, pointing to `updaemon logs <app>`.
 
-A release that publishes a `SHA256SUMS` must match it, or nothing is installed. A download its plugin could not check against a published checksum is still installed, and `install` says it was not verified (see [Publishing with Updaemon](PublishingWithUpdaemon.md) for `SHA256SUMS`).
+A release that publishes a `SHA256SUMS` must match it, or nothing is installed; one without a line for the download fails before anything is downloaded. A download its plugin could not check against a published checksum is still installed, and `install` says it was not verified (see [Publishing with Updaemon](PublishingWithUpdaemon.md) for `SHA256SUMS`).
 
 ```bash
 sudo updaemon install byteshelf --from github:owner/byteshelf --set BYTESHELF_URL=https://shelf.example
@@ -172,6 +172,10 @@ After an update, old versions are deleted down to `releaseRetentionCount` in `co
 
 Without an app named, and while self-update is on, `update` ends by updating GitHub plugins and updaemon itself; see [self-update](#self-update).
 
+A full disk or an unwritable directory fails the app in question: its current version stays, nothing of the new one is left, and the error names the path that could not be written.
+
+`status` shows the last run without an app named: when it finished, whether the timer started it, and what failed and why. Each such run replaces that record. Updating one app leaves it as it is, except that a successful update clears that app's failure from it.
+
 ### rollback
 
 ```bash
@@ -182,13 +186,15 @@ Makes an earlier kept version current again: the newest one older than the curre
 
 Naming a newer kept version switches forward to it, for example to undo a rollback.
 
+If `config.json` cannot be saved, on a full disk say, the rollback is switched back and fails naming the file, so nothing changes.
+
 ### status
 
 ```bash
 updaemon status [app]
 ```
 
-Shows updaemon's version, its scope, the update timer and whether self-update is on, then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions. On Linux, in a user's own scope with at least one service, it also warns while lingering is off, since the services then stop at logout.
+Shows updaemon's version, its scope, the update timer, whether self-update is on and the last update run (for example `Last update: 2h ago by the timer, 1 failed (byteshelf: ...)`, or `never`), then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions. On Linux, in a user's own scope with at least one service, it also warns while lingering is off, since the services then stop at logout.
 
 ### logs
 
@@ -237,7 +243,7 @@ Stops and deletes the app's service, its command, all its versions, its settings
 updaemon timer [<interval> [--keep] | -]
 ```
 
-Runs `updaemon update` every `interval` (`30s`, `10m`, `1h`): a systemd timer on Linux, a launchd job on macOS. Without an interval, shows the current one; `-` turns it off and deletes its unit or plist. With `--keep`, a timer that is set keeps its interval and one turned off stays off; `install.sh` turns the timer on this way.
+Runs `updaemon update --timer` every `interval` (`30s`, `10m`, `1h`): a systemd timer on Linux, a launchd job on macOS. Without an interval, shows the current one; `-` turns it off and deletes its unit or plist. With `--keep`, a timer that is set keeps its interval and one turned off stays off; `install.sh` turns the timer on this way.
 
 ### self-update
 
@@ -301,6 +307,8 @@ Everything updaemon keeps for a scope lives under its root directory (see [Syste
 
 ```
 config.json            installed plugins and apps
+last-update.json       the last update run, for status
+updaemon.lock          held while a command changes anything, so two never do at once
 versions/<version>/    updaemon itself; the updaemon command links to one
 plugins/<alias>/       each plugin's executable and secrets.txt
 settings/<app>.env     each app's settings, readable by everyone

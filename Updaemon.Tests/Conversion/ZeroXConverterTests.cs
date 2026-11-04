@@ -12,7 +12,7 @@ namespace Updaemon.Tests.Conversion
     /// </summary>
     public class ZeroXConverterTests
     {
-        private static readonly ZeroXTimer HourlyTimer = new ZeroXTimer("/units/com.updaemon.timer.plist", IsOn: true, TimeSpan.FromHours(1));
+        private static readonly ZeroXTimer HourlyTimer = new ZeroXTimer(new[] { "/units/com.updaemon.timer.plist" }, IsOn: true, TimeSpan.FromHours(1));
 
         private static AppHarness ZeroXSetup(string serviceLines = ZeroXLayout.Settings)
         {
@@ -23,12 +23,17 @@ namespace Updaemon.Tests.Conversion
 
         private static string Backup(AppHarness h, string fileName) => Path.Combine(h.Scope.ZeroXBackupDirectory, fileName);
 
+        /// <summary>A 0.x timer of two files, as on Linux: each is kept in the backup.</summary>
         private static ZeroXTimer TimerIn(AppHarness h, bool isOn, TimeSpan? interval)
         {
             Directory.CreateDirectory(h.Scope.UnitDirectory);
-            string path = Path.Combine(h.Scope.UnitDirectory, "com.updaemon.timer.plist");
-            File.WriteAllText(path, "0.x timer");
-            return new ZeroXTimer(path, isOn, interval);
+            string[] files = [Path.Combine(h.Scope.UnitDirectory, "updaemon.timer"), Path.Combine(h.Scope.UnitDirectory, "updaemon.service")];
+            foreach (string file in files)
+            {
+                File.WriteAllText(file, $"0.x {Path.GetFileName(file)}");
+            }
+
+            return new ZeroXTimer(files, isOn, interval);
         }
 
         [Fact]
@@ -205,7 +210,8 @@ namespace Updaemon.Tests.Conversion
                 Assert.Contains(preview, h.Output.Messages);
                 Assert.Contains(done, h.Output.Messages);
                 Assert.Equal(isOn && seconds != null ? TimeSpan.FromSeconds(seconds.Value) : (TimeSpan?)null, h.Timer.LastSetInterval);
-                Assert.Equal("0.x timer", File.ReadAllText(Backup(h, "com.updaemon.timer.plist")));
+                Assert.Equal("0.x updaemon.timer", File.ReadAllText(Backup(h, "updaemon.timer")));
+                Assert.Equal("0.x updaemon.service", File.ReadAllText(Backup(h, "updaemon.service")));
                 Assert.Null(h.Timer.ZeroX);
 
                 // A timer left off is recorded so, and install.sh's 'timer 1h --keep' then leaves it off.

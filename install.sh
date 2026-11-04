@@ -79,6 +79,19 @@ discard() {
   rmdir "$version_dir" 2>/dev/null || true
 }
 
+# Install only a build that matches its line in the release's SHA256SUMS, read before anything is
+# downloaded or written.
+if ! sums=$(curl -fsSL "$REPO/releases/download/v$VERSION/SHA256SUMS"); then
+  echo "updaemon $VERSION was not installed: its release has no SHA256SUMS to verify it against." >&2
+  exit 1
+fi
+# release.yml writes it with plain `sha256sum *`: lowercase hashes, bare names, no '*'.
+expected=$(awk -v name="Updaemon-$RID" '$2 == name { print $1; exit }' <<<"$sums")
+if [ -z "$expected" ]; then
+  echo "updaemon $VERSION was not installed: SHA256SUMS has no line for Updaemon-$RID." >&2
+  exit 1
+fi
+
 mkdir -p "$version_dir" "$BIN_DIR"
 if ! curl -fsSL -o "$download" "$asset"; then
   discard
@@ -86,19 +99,6 @@ if ! curl -fsSL -o "$download" "$asset"; then
   exit 1
 fi
 
-# Install only a build that matches its line in the release's SHA256SUMS.
-if ! sums=$(curl -fsSL "$REPO/releases/download/v$VERSION/SHA256SUMS"); then
-  discard
-  echo "updaemon $VERSION was not installed: its release has no SHA256SUMS to verify it against." >&2
-  exit 1
-fi
-# release.yml writes it with plain `sha256sum *`: lowercase hashes, bare names, no '*'.
-expected=$(awk -v name="Updaemon-$RID" '$2 == name { print $1; exit }' <<<"$sums")
-if [ -z "$expected" ]; then
-  discard
-  echo "updaemon $VERSION was not installed: SHA256SUMS has no line for Updaemon-$RID." >&2
-  exit 1
-fi
 case "$RID" in
   osx-*) actual=$(shasum -a 256 "$download" | cut -d' ' -f1) ;;
   *)     actual=$(sha256sum "$download" | cut -d' ' -f1) ;;

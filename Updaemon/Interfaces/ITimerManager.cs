@@ -25,16 +25,19 @@ namespace Updaemon.Interfaces
         Task<bool> IsTimerEnabledAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Gets a human-readable representation of the interval in the timer's file, or null when there is none.
+        /// The interval in the timer's file, or null when there is none or it cannot be read.
         /// </summary>
-        Task<string?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default);
+        Task<TimeSpan?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Updaemon 0.x's update timer where it is not this updaemon's own, or null. Changes nothing.
         /// </summary>
         Task<ZeroXTimer?> FindZeroXTimerAsync(CancellationToken cancellationToken = default);
 
-        /// <summary>Stops a timer from <see cref="FindZeroXTimerAsync"/> and deletes its file.</summary>
+        /// <summary>
+        /// Stops a timer from <see cref="FindZeroXTimerAsync"/> and deletes its file, unless setting this
+        /// updaemon's timer already replaced it in place.
+        /// </summary>
         Task RemoveZeroXTimerAsync(ZeroXTimer timer, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
     }
 }

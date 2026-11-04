@@ -16,7 +16,7 @@ namespace Updaemon.Tests.Mocks
         public List<UpdaemonVersion> Downloads { get; } = new List<UpdaemonVersion>();
 
         /// <summary>Thrown when reading the latest release, as when GitHub cannot be reached.</summary>
-        public HttpRequestException? LatestFailure { get; set; }
+        public Exception? LatestFailure { get; set; }
 
         /// <summary>Thrown when downloading, as when the release has no build for this machine or it fails its checksum.</summary>
         public Exception? DownloadFailure { get; set; }
@@ -48,6 +48,8 @@ namespace Updaemon.Tests.Mocks
         {
             if (DownloadFailure != null)
             {
+                // As a download cut short, by a full disk say: part of the file is already there.
+                File.WriteAllText(destinationPath, "partial");
                 throw DownloadFailure;
             }
 

@@ -26,6 +26,13 @@ namespace Updaemon.IO
         /// </summary>
         public static async Task WriteAsync(string path, string content, UnixFileMode mode, Func<string, Task>? beforeReplace, CancellationToken cancellationToken = default)
         {
+            // Writing what is there already changes nothing, so it must not fail on a full disk or an
+            // unwritable directory: putting back an app's files after a failed update relies on this.
+            if (beforeReplace == null && await HoldsAsync(path, content, mode, cancellationToken))
+            {
+                return;
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             string temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
 
@@ -52,10 +59,30 @@ namespace Updaemon.IO
 
                 File.Move(temporaryPath, path, overwrite: true);
             }
-            catch
+            catch (Exception ex)
             {
                 File.Delete(temporaryPath);
+                if (ex is IOException or UnauthorizedAccessException)
+                {
+                    // The temporary file's name means little to the reader; the file being written does.
+                    throw new IOException($"Could not write {path}: {ex.Message}", ex);
+                }
+
                 throw;
+            }
+        }
+
+        private static async Task<bool> HoldsAsync(string path, string content, UnixFileMode mode, CancellationToken cancellationToken)
+        {
+            try
+            {
+                return File.Exists(path)
+                    && File.GetUnixFileMode(path) == mode
+                    && await File.ReadAllTextAsync(path, cancellationToken) == content;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return false;
             }
         }
     }

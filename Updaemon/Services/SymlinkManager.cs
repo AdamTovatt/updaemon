@@ -21,7 +21,14 @@ namespace Updaemon.Services
             }
 
             string temporaryLink = $"{linkPath}.{Guid.NewGuid():N}.tmp";
-            File.CreateSymbolicLink(temporaryLink, targetPath);
+            try
+            {
+                File.CreateSymbolicLink(temporaryLink, targetPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw CouldNotPoint(linkPath, targetPath, ex);
+            }
 
             // rename(2) itself: File.Move refuses a link to a directory, such as an app's 'current'.
             try
@@ -31,11 +38,14 @@ namespace Updaemon.Services
             catch (IOException ex)
             {
                 File.Delete(temporaryLink);
-                throw new IOException($"Could not point '{linkPath}' at '{targetPath}': {ex.Message}");
+                throw CouldNotPoint(linkPath, targetPath, ex);
             }
 
             return Task.CompletedTask;
         }
+
+        private static IOException CouldNotPoint(string linkPath, string targetPath, Exception ex) =>
+            new IOException($"Could not point '{linkPath}' at '{targetPath}': {ex.Message}", ex);
 
         public Task<string?> ReadSymlinkAsync(string linkPath, CancellationToken cancellationToken = default)
         {

@@ -28,25 +28,22 @@ namespace Updaemon.Services
             _credentials = credentials;
         }
 
-        /// <summary>Returns false when a plugin could not be checked or updated; each failure is reported, and the others still run.</summary>
-        public async Task<bool> RunAsync(CancellationToken cancellationToken = default)
+        /// <summary>Each plugin that could not be checked or updated goes to <paramref name="failures"/>; the others still run.</summary>
+        public async Task RunAsync(UpdateFailures failures, CancellationToken cancellationToken = default)
         {
             UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
             if (!config.SelfUpdate)
             {
-                return true;
+                return;
             }
 
-            bool allSucceeded = true;
             foreach (InstalledPluginInfo plugin in config.InstalledPlugins.Values)
             {
                 if (plugin.Source is PluginSource.GitHub installed)
                 {
-                    allSucceeded &= await UpdateAsync(plugin, installed, cancellationToken);
+                    await UpdateAsync(plugin, installed, failures, cancellationToken);
                 }
             }
-
-            return allSucceeded;
         }
 
         /// <summary>
@@ -55,14 +52,14 @@ namespace Updaemon.Services
         /// </summary>
         private static bool RefusesTheRelease(Exception ex) => ex is ChecksumException or ReleaseBuildException or PluginProtocolException;
 
-        private async Task<bool> UpdateAsync(InstalledPluginInfo plugin, PluginSource.GitHub installed, CancellationToken cancellationToken)
+        private async Task UpdateAsync(InstalledPluginInfo plugin, PluginSource.GitHub installed, UpdateFailures failures, CancellationToken cancellationToken)
         {
             string alias = plugin.Alias;
             string? latestTag = null;
             try
             {
                 // The releases are read with the 'github' plugin's token, asked for at a terminal when one is needed.
-                return await _credentials.RunAsync(
+                await _credentials.RunAsync(
                     GitHubPluginReleases.TokenPluginAlias,
                     async () =>
                     {
@@ -96,8 +93,7 @@ namespace Updaemon.Services
                     skip = await TrySkipAsync(plugin, installed, latestTag, cancellationToken);
                 }
 
-                _outputWriter.WriteError($"Error: the '{alias}' plugin ({installed}) could not {attempt}: {ex.Message.TrimEnd('.')}. {installed.Tag} stays.{skip}");
-                return false;
+                failures.Report($"the '{alias}' plugin ({installed})", $"could not {attempt}: {ex.Message.TrimEnd('.')}. {installed.Tag} stays.{skip}");
             }
         }
 

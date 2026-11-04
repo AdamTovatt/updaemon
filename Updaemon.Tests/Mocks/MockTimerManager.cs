@@ -11,7 +11,7 @@ namespace Updaemon.Tests.Mocks
     {
         public List<string> MethodCalls { get; } = new List<string>();
         public bool IsEnabled { get; set; } = false;
-        public string? CurrentInterval { get; set; } = null;
+        public TimeSpan? CurrentInterval { get; set; } = null;
         public TimeSpan? LastSetInterval { get; set; } = null;
 
         public Task SetTimerAsync(TimeSpan interval, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
@@ -24,7 +24,7 @@ namespace Updaemon.Tests.Mocks
 
             LastSetInterval = interval;
             IsEnabled = true;
-            CurrentInterval = ConvertToDisplayFormat(interval);
+            CurrentInterval = interval;
             return Task.CompletedTask;
         }
 
@@ -47,7 +47,7 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult(IsEnabled);
         }
 
-        public Task<string?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default)
+        public Task<TimeSpan?> GetCurrentIntervalAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(GetCurrentIntervalAsync));
             return Task.FromResult(CurrentInterval);
@@ -72,22 +72,6 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add(nameof(RemoveZeroXTimerAsync));
             ZeroX = null;
             return Task.CompletedTask;
-        }
-
-        private static string ConvertToDisplayFormat(TimeSpan interval)
-        {
-            if (interval.TotalMinutes < 1)
-            {
-                return $"{(int)interval.TotalSeconds}s";
-            }
-            else if (interval.TotalHours < 1)
-            {
-                return $"{(int)interval.TotalMinutes}m";
-            }
-            else
-            {
-                return $"{(int)interval.TotalHours}h";
-            }
         }
     }
 }

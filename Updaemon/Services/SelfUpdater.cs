@@ -44,20 +44,29 @@ namespace Updaemon.Services
         /// <summary>How long the new version's <c>--version</c> may take; a build that hangs is not installed.</summary>
         internal TimeSpan SmokeRunTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
-        /// <summary>Returns false when updating failed; the old version then stays and the reason is reported.</summary>
-        public async Task<bool> RunAsync(CancellationToken cancellationToken = default)
+        /// <summary>When updating fails, the old version stays and the reason goes to <paramref name="failures"/>.</summary>
+        public async Task RunAsync(UpdateFailures failures, CancellationToken cancellationToken = default)
+        {
+            if (await UpdateAsync(cancellationToken) is string problem)
+            {
+                failures.Report("updaemon", problem);
+            }
+        }
+
+        /// <summary>Returns why updating failed, or null.</summary>
+        private async Task<string?> UpdateAsync(CancellationToken cancellationToken)
         {
             UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
             if (!config.SelfUpdate)
             {
-                return true;
+                return null;
             }
 
             if (!_runningExecutable.IsReachedThrough(_scope.UpdaemonCommandPath))
             {
                 _outputWriter.WriteLine(
                     $"Self-update skipped: it replaces {_scope.UpdaemonCommandPath}, and this updaemon is {_runningExecutable.Path}.");
-                return true;
+                return null;
             }
 
             UpdaemonVersion current = _runningVersion;
@@ -66,27 +75,27 @@ namespace Updaemon.Services
             {
                 latest = await _releases.GetLatestVersionAsync(cancellationToken);
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex) when (IsRequestFailure(ex, cancellationToken))
             {
-                return Fail($"could not read updaemon's latest release: {ex.Message}");
+                return $"could not read its latest release: {ex.Message}";
             }
 
             if (latest == null)
             {
-                return Fail("could not read updaemon's latest release: its tag is not v<x.y.z>");
+                return "could not read its latest release: its tag is not v<x.y.z>";
             }
 
             if (latest <= current)
             {
                 _outputWriter.WriteLine($"updaemon is up to date ({current}).");
-                return true;
+                return null;
             }
 
             string binary = _scope.GetUpdaemonBinaryPath(latest);
             string? problem = await InstallAsync(latest, binary, cancellationToken);
             if (problem != null)
             {
-                return Fail($"updating updaemon to {latest} failed: {problem}. {current} stays.");
+                return $"updating to {latest} failed: {problem}. {current} stays.";
             }
 
             try
@@ -94,9 +103,11 @@ namespace Updaemon.Services
                 Directory.CreateDirectory(_scope.BinDirectory);
                 await _symlinkManager.CreateOrUpdateSymlinkAsync(_scope.UpdaemonCommandPath, binary, cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                return Fail($"updating updaemon to {latest} failed: {ex.Message.TrimEnd('.')}. {current} stays.");
+                // Never linked, so nothing runs it: no copy is left beside the version that stays.
+                TryDelete(() => Directory.Delete(Path.GetDirectoryName(binary)!, recursive: true));
+                return $"updating to {latest} failed: {ex.Message.TrimEnd('.')}. {current} stays.";
             }
 
             _outputWriter.WriteLine($"Updated updaemon from {current} to {latest}.");
@@ -109,7 +120,13 @@ namespace Updaemon.Services
             }
 
             PruneVersions(keep: new[] { latest, current });
-            return true;
+            return null;
+        }
+
+        /// <summary>A failed request, or one that timed out: a cancellation this run did not ask for.</summary>
+        private static bool IsRequestFailure(Exception ex, CancellationToken cancellationToken)
+        {
+            return ex is HttpRequestException || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested);
         }
 
         /// <summary>
@@ -132,7 +149,7 @@ namespace Updaemon.Services
 
                 return problem;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 return ex.Message.TrimEnd('.');
             }
@@ -149,7 +166,7 @@ namespace Updaemon.Services
             {
                 await _releases.DownloadAsync(release, file, cancellationToken);
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex) when (IsRequestFailure(ex, cancellationToken))
             {
                 return $"the download failed: {ex.Message.TrimEnd('.')}";
             }
@@ -202,12 +219,6 @@ namespace Updaemon.Services
                     TryDelete(() => Directory.Delete(directory, recursive: true));
                 }
             }
-        }
-
-        private bool Fail(string message)
-        {
-            _outputWriter.WriteError($"Error: {message}");
-            return false;
         }
 
         /// <summary>Best effort: a leftover is replaced or pruned on a later run.</summary>

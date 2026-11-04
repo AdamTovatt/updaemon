@@ -53,6 +53,9 @@ namespace Updaemon.Configuration
 
         public string LockFilePath => Path.Combine(RootDirectory, "updaemon.lock");
 
+        /// <summary>The last <c>update</c> run, as <c>status</c> shows it.</summary>
+        public string LastUpdateFilePath => Path.Combine(RootDirectory, "last-update.json");
+
         public string PluginsDirectory => Path.Combine(RootDirectory, "plugins");
 
         /// <summary>What converting an updaemon 0.x setup replaced: its config, units, template and timer.</summary>

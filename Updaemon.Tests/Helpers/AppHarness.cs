@@ -51,6 +51,7 @@ namespace Updaemon.Tests.Helpers
                 Output,
                 Time);
             Rollback = new AppRollback(Deployer, SettingsStore, Config);
+            RunLog = new UpdateRunLog(Scope);
             PluginUrlResolver = new GitHubPluginUrlResolver(new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" }, Scope.Platform);
             PluginInstaller = new PluginInstaller(PluginUrlResolver, GitHubPlugins, PluginDownloader, Config, Scope);
             Plugins = new PluginProvider(Config, PluginInstaller, PluginUrlResolver, RunningVersion, Output);
@@ -72,6 +73,22 @@ namespace Updaemon.Tests.Helpers
         public RunningExecutable Executable { get; set; } = new RunningExecutable("/nonexistent/updaemon");
 
         public SelfUpdater SelfUpdater() => new SelfUpdater(Scope, Config, Releases, new SymlinkManager(), Output, RunningVersion, Executable);
+
+        /// <summary>Runs <paramref name="updater"/> (the default one when null) as an update run does; true when nothing failed.</summary>
+        public async Task<bool> SelfUpdateAsync(SelfUpdater? updater = null)
+        {
+            UpdateFailures failures = new UpdateFailures(Output);
+            await (updater ?? SelfUpdater()).RunAsync(failures);
+            return failures.All.Count == 0;
+        }
+
+        /// <summary>Updates the github: plugins as an update run does; true when nothing failed.</summary>
+        public async Task<bool> UpdateGitHubPluginsAsync()
+        {
+            UpdateFailures failures = new UpdateFailures(Output);
+            await GitHubPluginUpdater().RunAsync(failures);
+            return failures.All.Count == 0;
+        }
 
         public SelfUpdater SelfUpdater(TimeSpan smokeRunTimeout) =>
             new SelfUpdater(Scope, Config, Releases, new SymlinkManager(), Output, RunningVersion, Executable) { SmokeRunTimeout = smokeRunTimeout };
@@ -96,6 +113,8 @@ namespace Updaemon.Tests.Helpers
         public static UpdaemonVersion RunningVersion { get; } = UpdaemonVersion.Of(1, 0, 0);
 
         public AppRollback Rollback { get; }
+
+        public UpdateRunLog RunLog { get; }
 
         public PluginProvider Plugins { get; }
 
@@ -131,7 +150,7 @@ namespace Updaemon.Tests.Helpers
         public InstallCommand Install() => new InstallCommand(
             Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, new OtherScopeApps(new ConfigManager(OtherScope), OtherScope.Owner), Credentials());
 
-        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, GitHubPluginUpdater(), SelfUpdater(), Credentials());
+        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, GitHubPluginUpdater(), SelfUpdater(), Credentials(), RunLog, Time);
 
         public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output, Credentials());
 
@@ -145,7 +164,7 @@ namespace Updaemon.Tests.Helpers
 
         public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Deployer, Rollback, Output);
 
-        public StatusCommand Status() => new StatusCommand(Config, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion);
+        public StatusCommand Status() => new StatusCommand(Config, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion, RunLog, Time);
 
         public LogsCommand Logs() => new LogsCommand(Config, Deployer, ServiceManager, Output);
 
@@ -183,6 +202,18 @@ namespace Updaemon.Tests.Helpers
                     File.WriteAllText(Path.Combine(directory, AppManifest.FileName), manifest);
                 }
             });
+        }
+
+        /// <summary>Runs <paramref name="fault"/> on the download directory once the release's files are written.</summary>
+        public void AfterDownloading(string remote, string version, Action<string> fault)
+        {
+            string key = $"{remote}:{version}";
+            Action<string> write = Client.ReleaseWriters[key];
+            Client.ReleaseWriters[key] = directory =>
+            {
+                write(directory);
+                fault(directory);
+            };
         }
 
         /// <summary>Installs ByteShelf 1.0.0 from its manifest with every required setting given.</summary>

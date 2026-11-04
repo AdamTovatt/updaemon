@@ -21,6 +21,8 @@ namespace Updaemon.GithubDistributionService.Tests
             private readonly Dictionary<long, string> _contents = new Dictionary<long, string>();
             private readonly List<GithubAsset> _assets = new List<GithubAsset>();
 
+            public List<long> Downloaded { get; } = new List<long>();
+
             public FakeGithub With(string name, string content)
             {
                 long id = _assets.Count + 1;
@@ -35,8 +37,11 @@ namespace Updaemon.GithubDistributionService.Tests
             public Task<GithubRelease?> GetLatestReleaseAsync(string owner, string repo, string? token, CancellationToken cancellationToken = default) =>
                 Task.FromResult<GithubRelease?>(new GithubRelease { TagName = "v1.2.3", Assets = _assets.ToArray() });
 
-            public Task DownloadReleaseAssetAsync(string owner, string repo, long assetId, string targetFilePath, string? token, CancellationToken cancellationToken = default) =>
-                File.WriteAllTextAsync(targetFilePath, _contents[assetId], cancellationToken);
+            public Task DownloadReleaseAssetAsync(string owner, string repo, long assetId, string targetFilePath, string? token, CancellationToken cancellationToken = default)
+            {
+                Downloaded.Add(assetId);
+                return File.WriteAllTextAsync(targetFilePath, _contents[assetId], cancellationToken);
+            }
 
             public Task<string> ReadReleaseAssetTextAsync(string owner, string repo, long assetId, string? token, CancellationToken cancellationToken = default) =>
                 Task.FromResult(_contents[assetId]);
@@ -104,23 +109,24 @@ namespace Updaemon.GithubDistributionService.Tests
             await _postProcessor.Received(1).ProcessAsync(_targetPath, Arg.Any<CancellationToken>());
         }
 
-        /// <summary>The release's SHA256SUMS, and why the build "build" is refused against it.</summary>
-        public static TheoryData<string, string> UnverifiableSums => new TheoryData<string, string>
+        /// <summary>The release's SHA256SUMS, why the build "build" is refused against it, and whether it was downloaded first.</summary>
+        public static TheoryData<string, string, bool> UnverifiableSums => new TheoryData<string, string, bool>
         {
-            { SumsOf(("app-linux-arm64.zip", "tampered")), "app-linux-arm64.zip does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with." },
-            { SumsOf(("app-osx-arm64.zip", "build")), "SHA256SUMS has no '<sha-256>  app-linux-arm64.zip' line, so app-linux-arm64.zip cannot be verified." },
-            { $"{Sha256("build")} app-linux-arm64.zip\n", "SHA256SUMS has no '<sha-256>  app-linux-arm64.zip' line, so app-linux-arm64.zip cannot be verified." },
+            { SumsOf(("app-linux-arm64.zip", "tampered")), "app-linux-arm64.zip does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with.", true },
+            { SumsOf(("app-osx-arm64.zip", "build")), "SHA256SUMS has no '<sha-256>  app-linux-arm64.zip' line, so app-linux-arm64.zip cannot be verified.", false },
+            { $"{Sha256("build")} app-linux-arm64.zip\n", "SHA256SUMS has no '<sha-256>  app-linux-arm64.zip' line, so app-linux-arm64.zip cannot be verified.", false },
         };
 
         [Theory]
         [MemberData(nameof(UnverifiableSums))]
-        public async Task DownloadVersionAsync_AssetThatCannotBeVerified_FailsBeforeExtracting(string sums, string problem)
+        public async Task DownloadVersionAsync_AssetThatCannotBeVerified_FailsBeforeExtracting(string sums, string problem, bool downloaded)
         {
             FakeGithub github = new FakeGithub().With("app-linux-arm64.zip", "build").With(Sha256Sums.AssetName, sums);
 
             InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() => DownloadAsync(github));
 
             Assert.Equal($"The release v1.2.3 of owner/repo was not installed: {problem}", exception.Message);
+            Assert.Equal(downloaded, github.Downloaded.Count > 0);
             await _postProcessor.DidNotReceive().ProcessAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         }
 

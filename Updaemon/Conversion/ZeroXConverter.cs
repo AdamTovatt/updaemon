@@ -494,7 +494,11 @@ namespace Updaemon.Conversion
             try
             {
                 // The new timer first: if it cannot be set, the 0.x one keeps running and a later run tries again.
-                ZeroXBackup.Keep(timer.FilePath, _scope.ZeroXBackupDirectory);
+                foreach (string file in timer.Files)
+                {
+                    ZeroXBackup.Keep(file, _scope.ZeroXBackupDirectory);
+                }
+
                 ReachableServiceManager reachable = await _serviceManager.EnsureReachableAsync(cancellationToken);
                 if (timer.IsOn && timer.Interval is TimeSpan interval)
                 {

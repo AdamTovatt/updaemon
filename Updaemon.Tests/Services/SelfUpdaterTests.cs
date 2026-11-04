@@ -30,7 +30,7 @@ namespace Updaemon.Tests.Services
         {
             Assert.Equal(h.Scope.GetUpdaemonBinaryPath(Running), LinkTarget(h));
             Assert.False(Directory.Exists(NextDirectory(h)));
-            Assert.Equal(new[] { $"Error: updating updaemon to 1.1.0 failed: {problem}. 1.0.0 stays." }, h.Output.Errors);
+            Assert.Equal(new[] { $"Error: updaemon: updating to 1.1.0 failed: {problem}. 1.0.0 stays." }, h.Output.Errors);
         }
 
         [Fact]
@@ -40,7 +40,7 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.Publish(Next);
 
-                bool succeeded = await h.SelfUpdater().RunAsync();
+                bool succeeded = await h.SelfUpdateAsync();
 
                 Assert.True(succeeded);
                 Assert.Equal(h.Scope.GetUpdaemonBinaryPath(Next), LinkTarget(h));
@@ -59,7 +59,7 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.Publish(Next);
 
-                await h.SelfUpdater().RunAsync();
+                await h.SelfUpdateAsync();
 
                 Assert.Equal(AtomicFile.Executable, File.GetUnixFileMode(NextDirectory(h)));
                 Assert.Equal(AtomicFile.Executable, File.GetUnixFileMode(h.Scope.UpdaemonVersionsDirectory));
@@ -77,7 +77,7 @@ namespace Updaemon.Tests.Services
                 Directory.CreateDirectory(notAVersion);
                 h.Releases.Publish(Next);
 
-                await h.SelfUpdater().RunAsync();
+                await h.SelfUpdateAsync();
 
                 Assert.False(Directory.Exists(older));
                 Assert.False(Directory.Exists(notAVersion));
@@ -92,7 +92,7 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.Publish(Next, printedVersion: "1.0.9");
 
-                Assert.False(await h.SelfUpdater().RunAsync());
+                Assert.False(await h.SelfUpdateAsync());
 
                 AssertKeptTheOldOne(h, "'updaemon --version' exited 0 printing '1.0.9' instead of '1.1.0'");
             }
@@ -105,7 +105,7 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.Publish(Next, exitCode: 3);
 
-                Assert.False(await h.SelfUpdater().RunAsync());
+                Assert.False(await h.SelfUpdateAsync());
 
                 AssertKeptTheOldOne(h, "'updaemon --version' exited 3 printing '1.1.0' instead of '1.1.0'");
             }
@@ -118,11 +118,11 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.PublishBuild(Next, "not a program");
 
-                Assert.False(await h.SelfUpdater().RunAsync());
+                Assert.False(await h.SelfUpdateAsync());
 
                 Assert.Equal(h.Scope.GetUpdaemonBinaryPath(Running), LinkTarget(h));
                 Assert.False(Directory.Exists(NextDirectory(h)));
-                Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: updating updaemon to 1.1.0 failed: it does not run: "));
+                Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: updaemon: updating to 1.1.0 failed: it does not run: "));
             }
         }
 
@@ -133,7 +133,7 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.PublishBuild(Next, "#!/bin/sh\nsleep 30\n");
 
-                Assert.False(await h.SelfUpdater(smokeRunTimeout: TimeSpan.FromMilliseconds(200)).RunAsync());
+                Assert.False(await h.SelfUpdateAsync(h.SelfUpdater(smokeRunTimeout: TimeSpan.FromMilliseconds(200))));
 
                 AssertKeptTheOldOne(h, "'updaemon --version' did not finish within 0.2 seconds");
             }
@@ -147,9 +147,42 @@ namespace Updaemon.Tests.Services
                 h.Releases.Publish(Next);
                 h.Releases.DownloadFailure = new HttpRequestException("404 (Not Found).");
 
-                Assert.False(await h.SelfUpdater().RunAsync());
+                Assert.False(await h.SelfUpdateAsync());
 
                 AssertKeptTheOldOne(h, "the download failed: 404 (Not Found)");
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_DiskFullWhileDownloading_KeepsTheOldOne()
+        {
+            using (AppHarness h = ScopeRunningItsOwnUpdaemon())
+            {
+                h.Releases.Publish(Next);
+                string download = h.Scope.GetUpdaemonBinaryPath(Next) + ".download";
+                h.Releases.DownloadFailure = new IOException($"No space left on device : '{download}'");
+
+                Assert.False(await h.SelfUpdateAsync());
+
+                AssertKeptTheOldOne(h, $"No space left on device : '{download}'");
+            }
+        }
+
+        [SkippableFact]
+        public async Task RunAsync_CommandCannotBeSwitched_KeepsTheOldOneAndNoCopyOfTheNew()
+        {
+            Unwritable.SkipUnderRoot();
+            using (AppHarness h = ScopeRunningItsOwnUpdaemon())
+            {
+                h.Releases.Publish(Next);
+
+                Assert.False(await Unwritable.WhileAsync(h.Scope.BinDirectory, () => h.SelfUpdateAsync()));
+
+                Assert.Equal(h.Scope.GetUpdaemonBinaryPath(Running), LinkTarget(h));
+                Assert.False(Directory.Exists(NextDirectory(h)));
+                Assert.StartsWith(
+                    $"Error: updaemon: updating to 1.1.0 failed: Could not point '{h.Scope.UpdaemonCommandPath}' at '{h.Scope.GetUpdaemonBinaryPath(Next)}': ",
+                    Assert.Single(h.Output.Errors));
             }
         }
 
@@ -161,7 +194,7 @@ namespace Updaemon.Tests.Services
                 h.Releases.Publish(Next);
                 h.Releases.DownloadFailure = new ChecksumException("Updaemon-linux-arm64 does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with.");
 
-                Assert.False(await h.SelfUpdater().RunAsync());
+                Assert.False(await h.SelfUpdateAsync());
 
                 AssertKeptTheOldOne(h, "Updaemon-linux-arm64 does not match its SHA-256 in SHA256SUMS; the download is corrupt or was tampered with");
             }
@@ -174,7 +207,7 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.Publish(Running);
 
-                Assert.True(await h.SelfUpdater().RunAsync());
+                Assert.True(await h.SelfUpdateAsync());
 
                 Assert.Empty(h.Releases.Downloads);
                 Assert.Contains("updaemon is up to date (1.0.0).", h.Output.Messages);
@@ -188,7 +221,7 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.Publish(UpdaemonVersion.Of(0, 9, 0));
 
-                Assert.True(await h.SelfUpdater().RunAsync());
+                Assert.True(await h.SelfUpdateAsync());
 
                 Assert.Empty(h.Releases.Downloads);
                 Assert.Contains("updaemon is up to date (1.0.0).", h.Output.Messages);
@@ -202,9 +235,9 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.Latest = null;
 
-                Assert.False(await h.SelfUpdater().RunAsync());
+                Assert.False(await h.SelfUpdateAsync());
 
-                Assert.Equal(new[] { "Error: could not read updaemon's latest release: its tag is not v<x.y.z>" }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: updaemon: could not read its latest release: its tag is not v<x.y.z>" }, h.Output.Errors);
             }
         }
 
@@ -218,7 +251,7 @@ namespace Updaemon.Tests.Services
                 await h.Config.SaveConfigAsync(config);
                 h.Releases.Publish(Next);
 
-                Assert.True(await h.SelfUpdater().RunAsync());
+                Assert.True(await h.SelfUpdateAsync());
 
                 Assert.Empty(h.Releases.Downloads);
                 Assert.Empty(h.Output.Messages);
@@ -235,7 +268,7 @@ namespace Updaemon.Tests.Services
                 h.Executable = new RunningExecutable(other);
                 h.Releases.Publish(Next);
 
-                Assert.True(await h.SelfUpdater().RunAsync());
+                Assert.True(await h.SelfUpdateAsync());
 
                 Assert.Empty(h.Releases.Downloads);
                 Assert.Equal(
@@ -255,7 +288,7 @@ namespace Updaemon.Tests.Services
                 h.Executable = new RunningExecutable(h.Scope.UpdaemonCommandPath);
                 h.Releases.Publish(Next);
 
-                Assert.True(await h.SelfUpdater().RunAsync());
+                Assert.True(await h.SelfUpdateAsync());
 
                 Assert.Equal(h.Scope.GetUpdaemonBinaryPath(Next), LinkTarget(h));
             }
@@ -269,7 +302,7 @@ namespace Updaemon.Tests.Services
                 await h.Config.AddOrUpdatePluginAsync(PluginRecords.FromUrl("mine", "/p"));
                 h.Releases.Publish(Next);
 
-                await h.SelfUpdater().RunAsync();
+                await h.SelfUpdateAsync();
 
                 Assert.Contains(h.Output.Messages, m => m.StartsWith("The 'mine' plugin was installed from a URL, so it is not updated with updaemon."));
             }
@@ -282,10 +315,10 @@ namespace Updaemon.Tests.Services
             {
                 h.Releases.LatestFailure = new HttpRequestException("no network");
 
-                Assert.False(await h.SelfUpdater().RunAsync());
+                Assert.False(await h.SelfUpdateAsync());
 
                 Assert.Equal(h.Scope.GetUpdaemonBinaryPath(Running), LinkTarget(h));
-                Assert.Equal(new[] { "Error: could not read updaemon's latest release: no network" }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: updaemon: could not read its latest release: no network" }, h.Output.Errors);
             }
         }
     }

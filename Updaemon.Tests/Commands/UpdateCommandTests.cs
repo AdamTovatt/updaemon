@@ -179,7 +179,139 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(1, exitCode);
-                Assert.Equal(new[] { "Error: could not read updaemon's latest release: no network" }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: updaemon: could not read its latest release: no network" }, h.Output.Errors);
+            }
+        }
+
+        [Theory]
+        [InlineData(new string[0], UpdateStarter.Person)]
+        [InlineData(new[] { "--timer" }, UpdateStarter.Timer)]
+        public async Task Update_EachRun_IsRecordedWithWhatStartedItAndEveryFailureItReported(string[] args, UpdateStarter startedBy)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "1.1.0", """{ "executablePath": "bin/byteshelf" }""");
+                await h.Config.SaveAppAsync(new InstalledApp { Name = "orphan", Plugin = "gone", Remote = "x/y" });
+                await h.Config.SaveAppAsync(new InstalledApp { Name = "stray", Plugin = "gone", Remote = "x/z" });
+                await h.Config.AddOrUpdatePluginAsync(PluginRecords.FromGitHub("s3", "/plugins/s3/old", "someone", "updaemon-s3", "v1.0.0"));
+                h.GitHubPlugins.NextFailures.Enqueue(new HttpRequestException("rate limited"));
+                h.RunTheScopesOwnUpdaemon();
+                h.Releases.LatestFailure = new HttpRequestException("no network");
+
+                await h.Update().ExecuteAsync(args);
+
+                UpdateRun run = (await h.RunLog.LoadAsync())!;
+                Assert.Equal(h.Time.GetUtcNow(), run.FinishedAt);
+                Assert.Equal(startedBy, run.StartedBy);
+                const string oldManifest = "Invalid updaemon.json: it uses the old format ('executablePath'). Use 'executable' plus 'command' and/or 'service'; see PublishingWithUpdaemon.md.";
+                const string missingPlugin = "the plugin 'gone' is not installed and is not in the plugin registry (github). Install it with 'updaemon dist-install --as gone <url>'.";
+                Assert.Equal(
+                    new[]
+                    {
+                        new UpdateFailure("byteshelf", oldManifest),
+                        new UpdateFailure("orphan", missingPlugin),
+                        new UpdateFailure("stray", missingPlugin),
+                        new UpdateFailure("the 's3' plugin (github:someone/updaemon-s3)", "could not check for a newer release: rate limited. v1.0.0 stays."),
+                        new UpdateFailure("updaemon", "could not read its latest release: no network"),
+                    },
+                    run.Failures);
+                // The two apps of the missing plugin share one line.
+                Assert.Equal(
+                    new[]
+                    {
+                        $"Error: byteshelf: {oldManifest}",
+                        $"Error: orphan, stray: {missingPlugin}",
+                        "Error: the 's3' plugin (github:someone/updaemon-s3): could not check for a newer release: rate limited. v1.0.0 stays.",
+                        "Error: updaemon: could not read its latest release: no network",
+                    },
+                    h.Output.Errors);
+            }
+        }
+
+        /// <summary>What reading updaemon's latest release throws, and the failure the run's record keeps.</summary>
+        public static TheoryData<Exception, string> UnforeseenFailures => new TheoryData<Exception, string>
+        {
+            // HttpClient's timeout: a cancellation the run did not ask for.
+            { new TaskCanceledException("The request timed out."), "could not read its latest release: The request timed out." },
+            // Anything no step reports itself still fails the run on its record.
+            { new InvalidOperationException("Something unforeseen."), "Something unforeseen." },
+        };
+
+        [Theory]
+        [MemberData(nameof(UnforeseenFailures))]
+        public async Task Update_StepThrows_IsRecordedAsAFailure(Exception thrown, string reason)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.RunTheScopesOwnUpdaemon();
+                h.Releases.LatestFailure = thrown;
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(new[] { $"Error: updaemon: {reason}" }, h.Output.Errors);
+                Assert.Equal(new UpdateFailure("updaemon", reason), Assert.Single((await h.RunLog.LoadAsync())!.Failures));
+            }
+        }
+
+        /// <summary>A full run where byteshelf's 1.1.0 and updaemon's update fail.</summary>
+        private static async Task<UpdateRun> FailedFullRunAsync(AppHarness h)
+        {
+            await h.InstallByteShelfAsync();
+            h.AddRelease("owner/byteshelf", "1.1.0", """{ "executablePath": "bin/byteshelf" }""");
+            h.RunTheScopesOwnUpdaemon();
+            h.Releases.LatestFailure = new HttpRequestException("no network");
+            Assert.Equal(1, await h.Update().ExecuteAsync(new[] { TimerRun.Option }));
+            h.Output.Clear();
+            return (await h.RunLog.LoadAsync())!;
+        }
+
+        [Fact]
+        public async Task Update_OneAppSucceeds_ClearsOnlyItsFailureFromTheRecord()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                UpdateRun full = await FailedFullRunAsync(h);
+                h.AddRelease("owner/byteshelf", "1.2.0", AppHarness.ByteShelfManifest);
+
+                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "byteshelf" }));
+
+                // The health check's wait moved the clock on; the record keeps the full run's time.
+                Assert.NotEqual(full.FinishedAt, h.Time.GetUtcNow());
+                UpdateRun run = (await h.RunLog.LoadAsync())!;
+                Assert.Equal((full.FinishedAt, UpdateStarter.Timer), (run.FinishedAt, run.StartedBy));
+                Assert.Equal(new[] { "updaemon" }, run.Failures.Select(failure => failure.Subject));
+            }
+        }
+
+        [Fact]
+        public async Task Update_OneAppFails_LeavesTheRecord()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await FailedFullRunAsync(h);
+                string record = File.ReadAllText(h.Scope.LastUpdateFilePath);
+
+                Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "byteshelf" }));
+
+                Assert.Equal(record, File.ReadAllText(h.Scope.LastUpdateFilePath));
+            }
+        }
+
+        [Fact]
+        public async Task Update_RunCannotBeRecorded_WarnsAndKeepsItsOutcome()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                Directory.CreateDirectory(h.Scope.LastUpdateFilePath);
+
+                int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(0, exitCode);
+                Assert.StartsWith("Warning: this run could not be recorded for 'updaemon status': ", Assert.Single(h.Output.Errors));
             }
         }
 

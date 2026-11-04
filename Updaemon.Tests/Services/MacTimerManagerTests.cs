@@ -22,7 +22,7 @@ namespace Updaemon.Tests.Services
             Assert.Contains("<string>com.updaemon</string>", plist);
             Assert.Contains("<key>ProgramArguments</key>", plist);
             Assert.Contains("<string>/usr/local/bin/updaemon</string>", plist);
-            Assert.Contains("<string>update</string>", plist);
+            Assert.Contains("<string>update</string>\n        <string>--timer</string>", plist);
             Assert.Contains("<key>StartInterval</key>", plist);
             Assert.Contains("<integer>600</integer>", plist);
             Assert.Contains("<key>RunAtLoad</key>", plist);
@@ -41,18 +41,15 @@ namespace Updaemon.Tests.Services
 
             MacTimerManager manager = new MacTimerManager(new MockOutputWriter(), scope);
 
-            string? interval = await manager.GetCurrentIntervalAsync();
+            TimeSpan? interval = await manager.GetCurrentIntervalAsync();
 
             Assert.Null(interval);
         }
 
         [Theory]
-        [InlineData(30, "30s")]
-        [InlineData(300, "5m")]
-        [InlineData(3600, "1h")]
-        [InlineData(7200, "2h")]
-        [InlineData(45, "45s")]
-        public async Task GetCurrentIntervalAsync_FormatsHumanReadable(int seconds, string expected)
+        [InlineData(45)]
+        [InlineData(7200)]
+        public async Task GetCurrentIntervalAsync_ReadsThePlist(int seconds)
         {
             using TempFileHelper tempHelper = new TempFileHelper();
             UpdaemonScope scope = TestScope.Create(tempHelper.TempDirectory, isMacOS: true);
@@ -64,9 +61,9 @@ namespace Updaemon.Tests.Services
 
             MacTimerManager manager = new MacTimerManager(new MockOutputWriter(), scope);
 
-            string? interval = await manager.GetCurrentIntervalAsync();
+            TimeSpan? interval = await manager.GetCurrentIntervalAsync();
 
-            Assert.Equal(expected, interval);
+            Assert.Equal(TimeSpan.FromSeconds(seconds), interval);
         }
 
         [Fact]
@@ -80,7 +77,7 @@ namespace Updaemon.Tests.Services
 
             MacTimerManager manager = new MacTimerManager(new MockOutputWriter(), scope);
 
-            string? interval = await manager.GetCurrentIntervalAsync();
+            TimeSpan? interval = await manager.GetCurrentIntervalAsync();
 
             Assert.Null(interval);
         }

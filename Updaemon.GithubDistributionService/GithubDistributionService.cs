@@ -85,6 +85,7 @@ namespace Updaemon.GithubDistributionService
             }
 
             GithubAsset asset = SelectAsset(release.Assets, filenamePattern, runtimeIdentifier, owner, repo, release.TagName);
+            ExpectedSha256? expected = await ReadExpectedAsync(owner, repo, release, asset, cancellationToken);
 
             // Ensure target directory exists
             if (!Directory.Exists(targetPath))
@@ -94,36 +95,48 @@ namespace Updaemon.GithubDistributionService
 
             string targetFilePath = Path.Combine(targetPath, asset.Name);
             await _apiClient.DownloadReleaseAssetAsync(owner, repo, asset.Id, targetFilePath, _githubToken, cancellationToken);
-            bool verified = await VerifyAsync(owner, repo, release, asset, targetFilePath, cancellationToken);
+            if (expected != null)
+            {
+                try
+                {
+                    await expected.VerifyAsync(targetFilePath, cancellationToken);
+                }
+                catch (ChecksumException ex)
+                {
+                    throw NotInstalled(owner, repo, release, ex);
+                }
+            }
 
             // Extracts a .zip or .tar.gz; only a verified (or unverifiable) download gets this far.
             await _postProcessor.ProcessAsync(targetPath, cancellationToken);
-            return new DownloadResult { Verified = verified };
+            return new DownloadResult { Verified = expected != null };
         }
 
         /// <summary>
-        /// Checks the downloaded asset against the release's <c>SHA256SUMS</c>. False when the release
-        /// has none; throws when it has one without a matching line for the asset.
+        /// What the asset must match, from the release's <c>SHA256SUMS</c>, read before the download. Null when
+        /// the release has none; throws when it has one without a line for the asset.
         /// </summary>
-        private async Task<bool> VerifyAsync(string owner, string repo, GithubRelease release, GithubAsset asset, string downloadedFile, CancellationToken cancellationToken)
+        private async Task<ExpectedSha256?> ReadExpectedAsync(string owner, string repo, GithubRelease release, GithubAsset asset, CancellationToken cancellationToken)
         {
             GithubAsset? sumsAsset = release.Assets.FirstOrDefault(candidate => candidate.Name == Sha256Sums.AssetName);
             if (sumsAsset == null)
             {
-                return false;
+                return null;
             }
 
             string sums = await _apiClient.ReadReleaseAssetTextAsync(owner, repo, sumsAsset.Id, _githubToken, cancellationToken);
             try
             {
-                await Sha256Sums.Parse(sums).VerifyAsync(downloadedFile, asset.Name, cancellationToken);
-                return true;
+                return Sha256Sums.Parse(sums).For(asset.Name);
             }
             catch (ChecksumException ex)
             {
-                throw new InvalidOperationException($"The release {release.TagName} of {owner}/{repo} was not installed: {ex.Message}");
+                throw NotInstalled(owner, repo, release, ex);
             }
         }
+
+        private static InvalidOperationException NotInstalled(string owner, string repo, GithubRelease release, ChecksumException ex) =>
+            new InvalidOperationException($"The release {release.TagName} of {owner}/{repo} was not installed: {ex.Message}");
 
         /// <summary>
         /// Parses a service name into owner, repo, and optional filename pattern.

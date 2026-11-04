@@ -10,6 +10,7 @@ namespace Updaemon.Serialization
     [JsonSerializable(typeof(UpdaemonConfig))]
     [JsonSerializable(typeof(AppManifest))]
     [JsonSerializable(typeof(Dictionary<string, string>))]
+    [JsonSerializable(typeof(UpdateRun))]
     [JsonSourceGenerationOptions(
         WriteIndented = true,
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

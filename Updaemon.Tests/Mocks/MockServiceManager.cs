@@ -27,7 +27,7 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add(Call(nameof(StartServiceAsync), serviceName));
             if (StartFailure != null)
                 throw StartFailure;
-            ServiceRunningStates[serviceName] = !CrashOnNextStart.Remove(serviceName);
+            ServiceRunningStates[serviceName] = !Crashes(serviceName);
             return Task.CompletedTask;
         }
 
@@ -43,7 +43,7 @@ namespace Updaemon.Tests.Mocks
             MethodCalls.Add(Call(nameof(RestartServiceAsync), serviceName));
             if (RestartFailure != null)
                 throw RestartFailure;
-            ServiceRunningStates[serviceName] = !CrashOnNextStart.Remove(serviceName);
+            ServiceRunningStates[serviceName] = !Crashes(serviceName);
             return Task.CompletedTask;
         }
 
@@ -90,6 +90,20 @@ namespace Updaemon.Tests.Mocks
         /// fails. A later start runs again, as the version rolled back to does.
         /// </summary>
         public HashSet<string> CrashOnNextStart { get; } = new HashSet<string>();
+
+        /// <summary>Called when a start or restart crashes: to break something just before the rollback that follows.</summary>
+        public Action? OnCrash { get; set; }
+
+        private bool Crashes(string serviceName)
+        {
+            if (!CrashOnNextStart.Remove(serviceName))
+            {
+                return false;
+            }
+
+            OnCrash?.Invoke();
+            return true;
+        }
 
         /// <summary>Services the service manager keeps restarting: active, but started again at every look.</summary>
         public HashSet<string> RestartingServices { get; } = new HashSet<string>();

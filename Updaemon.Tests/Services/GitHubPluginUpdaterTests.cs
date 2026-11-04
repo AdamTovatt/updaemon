@@ -24,7 +24,7 @@ namespace Updaemon.Tests.Services
             {
                 h.GitHubPlugins.LatestTags["someone/updaemon-s3"] = "v1.1.0";
 
-                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+                Assert.True(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Equal(new Uri(MockGitHubPluginReleases.BuildUrl("someone", "updaemon-s3", "v1.1.0")), Assert.Single(h.PluginDownloader.Downloads).Build);
                 Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v1.1.0"), await SourceOfAsync(h));
@@ -41,7 +41,7 @@ namespace Updaemon.Tests.Services
                 h.GitHubPlugins.NextFailures.Enqueue(GitHubAccess.RepositoryNotFound("someone", "updaemon-s3", hasToken: false));
                 h.Prompter.Answers.Enqueue("tok");
 
-                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+                Assert.True(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Equal(new[] { ("githubToken for the 'github' plugin (not shown): ", true) }, h.Prompter.Asked);
                 Assert.Equal("tok", await h.Secrets.GetSecretAsync("github", "githubToken"));
@@ -57,12 +57,12 @@ namespace Updaemon.Tests.Services
                 h.GitHubPlugins.NextFailures.Enqueue(GitHubAccess.RepositoryNotFound("someone", "updaemon-s3", hasToken: false));
                 h.Prompter.IsInteractive = false;
 
-                Assert.False(await h.GitHubPluginUpdater().RunAsync());
+                Assert.False(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Equal(
                     new[]
                     {
-                        "Error: the 's3' plugin (github:someone/updaemon-s3) could not check for a newer release: " +
+                        "Error: the 's3' plugin (github:someone/updaemon-s3): could not check for a newer release: " +
                         "someone/updaemon-s3 was not found on GitHub: it does not exist, or it is private and needs a githubToken. " +
                         "Set it with 'updaemon secret-set github githubToken'. v1.0.0 stays.",
                     },
@@ -78,7 +78,7 @@ namespace Updaemon.Tests.Services
             {
                 h.GitHubPlugins.LatestTags["someone/updaemon-s3"] = "v1.0.0";
 
-                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+                Assert.True(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Empty(h.PluginDownloader.Downloads);
                 Assert.Equal(new[] { "The 's3' plugin is up to date (v1.0.0)." }, h.Output.Messages);
@@ -101,13 +101,13 @@ namespace Updaemon.Tests.Services
                 h.GitHubPlugins.LatestTags["someone/updaemon-s3"] = "v2.0.0";
                 h.PluginDownloader.ExceptionToThrow = refusal;
 
-                Assert.False(await h.GitHubPluginUpdater().RunAsync());
+                Assert.False(await h.UpdateGitHubPluginsAsync());
 
                 InstalledPluginInfo kept = (await h.Config.GetPluginAsync("s3"))!;
                 Assert.Equal("/plugins/s3/old", kept.Path);
                 Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v1.0.0") { SkippedTag = "v2.0.0" }, kept.Source);
                 Assert.Equal(
-                    $"Error: the 's3' plugin (github:someone/updaemon-s3) could not update to v2.0.0: {refusal.Message.TrimEnd('.')}. " +
+                    $"Error: the 's3' plugin (github:someone/updaemon-s3): could not update to v2.0.0: {refusal.Message.TrimEnd('.')}. " +
                     "v1.0.0 stays. Later updates skip v2.0.0 until another release is latest.",
                     Assert.Single(h.Output.Errors));
             }
@@ -126,7 +126,7 @@ namespace Updaemon.Tests.Services
                 });
                 h.GitHubPlugins.LatestTags["someone/updaemon-s3"] = "v2.0.0";
 
-                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+                Assert.True(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Empty(h.PluginDownloader.Downloads);
                 Assert.Equal(new[] { "The 's3' plugin skips v2.0.0, which was refused; v1.0.0 stays." }, h.Output.Messages);
@@ -146,7 +146,7 @@ namespace Updaemon.Tests.Services
                 });
                 h.GitHubPlugins.LatestTags["someone/updaemon-s3"] = "v2.0.1";
 
-                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+                Assert.True(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v2.0.1"), await SourceOfAsync(h));
             }
@@ -170,11 +170,11 @@ namespace Updaemon.Tests.Services
                 h.GitHubPlugins.LatestTags["someone/other"] = "v1";
                 h.PluginDownloader.ExceptionToThrow = failure;
 
-                Assert.False(await h.GitHubPluginUpdater().RunAsync());
+                Assert.False(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Equal(new PluginSource.GitHub("someone", "updaemon-s3", "v1.0.0"), await SourceOfAsync(h));
                 Assert.Equal(
-                    $"Error: the 's3' plugin (github:someone/updaemon-s3) could not update to v2.0.0: {failure.Message.TrimEnd('.')}. v1.0.0 stays.",
+                    $"Error: the 's3' plugin (github:someone/updaemon-s3): could not update to v2.0.0: {failure.Message.TrimEnd('.')}. v1.0.0 stays.",
                     Assert.Single(h.Output.Errors));
                 Assert.Contains("The 'other' plugin is up to date (v1).", h.Output.Messages);
             }
@@ -187,9 +187,9 @@ namespace Updaemon.Tests.Services
             {
                 h.GitHubPlugins.Failure = new HttpRequestException("offline");
 
-                Assert.False(await h.GitHubPluginUpdater().RunAsync());
+                Assert.False(await h.UpdateGitHubPluginsAsync());
 
-                Assert.Equal("Error: the 's3' plugin (github:someone/updaemon-s3) could not check for a newer release: offline. v1.0.0 stays.", Assert.Single(h.Output.Errors));
+                Assert.Equal("Error: the 's3' plugin (github:someone/updaemon-s3): could not check for a newer release: offline. v1.0.0 stays.", Assert.Single(h.Output.Errors));
             }
         }
 
@@ -203,7 +203,7 @@ namespace Updaemon.Tests.Services
                 await h.Config.SaveConfigAsync(config);
                 h.GitHubPlugins.Failure = new HttpRequestException("must not be asked");
 
-                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+                Assert.True(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Empty(h.Output.Messages);
                 Assert.Empty(h.Output.Errors);
@@ -219,7 +219,7 @@ namespace Updaemon.Tests.Services
                 await h.Config.AddOrUpdatePluginAsync(PluginRecords.FromUrl("mine", "/p"));
                 h.GitHubPlugins.Failure = new HttpRequestException("must not be asked");
 
-                Assert.True(await h.GitHubPluginUpdater().RunAsync());
+                Assert.True(await h.UpdateGitHubPluginsAsync());
 
                 Assert.Empty(h.PluginDownloader.Downloads);
                 Assert.Empty(h.Output.Errors);

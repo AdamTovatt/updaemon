@@ -122,6 +122,15 @@ namespace Updaemon.Services
 
         public void Discard(DeployableVersion staged)
         {
+            // An activation whose switch back failed leaves it current: it is then all the app has.
+            string appDirectory = Path.GetDirectoryName(staged.Directory)!;
+            string currentLink = _scope.GetCurrentLinkPath(Path.GetFileName(appDirectory));
+            if (new FileInfo(currentLink).LinkTarget is string target
+                && Path.GetFullPath(target, appDirectory) == Path.GetFullPath(staged.Directory))
+            {
+                return;
+            }
+
             DeleteStaged(staged.Directory);
         }
 
@@ -157,7 +166,7 @@ namespace Updaemon.Services
                 ?? throw new InvalidOperationException(
                     $"{appName} {version} is not kept. Kept versions: {string.Join(", ", GetRetainedVersions(appName))}.");
 
-            return new DeployableVersion { Version = version, Directory = directory, Manifest = manifest, ManifestInDirectory = true };
+            return new DeployableVersion { Version = version,Directory = directory, Manifest = manifest, ManifestInDirectory = true };
         }
 
         public async Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, CancellationToken cancellationToken = default)

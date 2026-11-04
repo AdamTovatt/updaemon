@@ -1,4 +1,5 @@
 using Updaemon.Common.Models;
+using Updaemon.Common.Utilities;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 
@@ -28,6 +29,10 @@ namespace Updaemon.Services
 
         public async Task<PluginDownloadResult> DownloadAndInspectAsync(PluginDownload download, string targetDirectory, CancellationToken cancellationToken = default)
         {
+            ExpectedSha256? expected = download.Checksums == null
+                ? null
+                : await _checksums.ReadExpectedAsync(download.Checksums, download.FileName, download.GitHub, cancellationToken);
+
             byte[] pluginData;
             using (HttpResponseMessage response = await ReleaseAsset.GetAsync(_httpClient, download.Build, download.GitHub, cancellationToken))
             {
@@ -42,9 +47,9 @@ namespace Updaemon.Services
                 await File.WriteAllBytesAsync(tempPath, pluginData, cancellationToken);
 
                 // Before it is made executable and run to read its service information.
-                if (download.Checksums != null)
+                if (expected != null)
                 {
-                    await _checksums.VerifyAsync(download.Checksums, download.FileName, tempPath, download.GitHub, cancellationToken);
+                    await expected.VerifyAsync(tempPath, cancellationToken);
                 }
 
                 await _filePermissionManager.SetExecutablePermissionsAsync(tempPath, cancellationToken);

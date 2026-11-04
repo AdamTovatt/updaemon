@@ -1,3 +1,4 @@
+using Updaemon.Common.Utilities;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 
@@ -40,17 +41,24 @@ namespace Updaemon.Services
         public async Task DownloadAsync(UpdaemonVersion release, string destinationPath, CancellationToken cancellationToken = default)
         {
             string url = AssetUrl(release, UpdaemonAssetName, _platform.RuntimeIdentifier);
+            Uri asset = new Uri(url);
+            ExpectedSha256 expected = await _checksums.ReadExpectedAsync(ReleaseChecksums.BesideAsset(asset), Path.GetFileName(asset.LocalPath), gitHub: null, cancellationToken);
+
             using (HttpResponseMessage response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
             {
                 response.EnsureSuccessStatusCode();
-                await using (FileStream file = File.Create(destinationPath))
+                // Stream to stream, not HttpContent.CopyToAsync: that hides a failed write, on a full disk
+                // say, and the path it names, inside "Error while copying content to a stream".
+                await using (Stream body = await response.Content.ReadAsStreamAsync(cancellationToken))
                 {
-                    await response.Content.CopyToAsync(file, cancellationToken);
+                    await using (FileStream file = File.Create(destinationPath))
+                    {
+                        await body.CopyToAsync(file, cancellationToken);
+                    }
                 }
             }
 
-            Uri asset = new Uri(url);
-            await _checksums.VerifyAsync(ReleaseChecksums.BesideAsset(asset), Path.GetFileName(asset.LocalPath), destinationPath, gitHub: null, cancellationToken);
+            await expected.VerifyAsync(destinationPath, cancellationToken);
         }
 
         /// <summary>The version a release tag names: <c>v1.2.0</c>. Any other tag names no release updaemon can install.</summary>

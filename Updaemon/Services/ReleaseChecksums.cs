@@ -6,7 +6,7 @@ using Updaemon.Models;
 namespace Updaemon.Services
 {
     /// <summary>
-    /// Checks a downloaded release asset against its release's <c>SHA256SUMS</c>.
+    /// Reads what a release asset must match from its release's <c>SHA256SUMS</c>.
     /// </summary>
     public class ReleaseChecksums : IReleaseChecksums
     {
@@ -23,7 +23,7 @@ namespace Updaemon.Services
         /// </summary>
         public static Uri BesideAsset(Uri assetUrl) => new Uri(assetUrl, Sha256Sums.AssetName);
 
-        public async Task VerifyAsync(Uri checksumsUrl, string assetName, string filePath, GitHubFetch? gitHub, CancellationToken cancellationToken = default)
+        public async Task<ExpectedSha256> ReadExpectedAsync(Uri checksumsUrl, string assetName, GitHubFetch? gitHub, CancellationToken cancellationToken = default)
         {
             string sums;
             try
@@ -38,7 +38,7 @@ namespace Updaemon.Services
                 throw new ChecksumException($"{assetName} cannot be verified: its release has no {Sha256Sums.AssetName}.");
             }
 
-            await Sha256Sums.Parse(sums).VerifyAsync(filePath, assetName, cancellationToken);
+            return Sha256Sums.Parse(sums).For(assetName);
         }
     }
 }

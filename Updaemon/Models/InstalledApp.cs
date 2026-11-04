@@ -65,12 +65,30 @@ namespace Updaemon.Models
         /// </summary>
         public void RecordSwitch(Version from, Version to)
         {
-            _skippedVersions.Remove(to);
-            if (to < from && !_skippedVersions.Contains(from))
+            _skippedVersions = SkipsAfterSwitch(from, to);
+        }
+
+        /// <summary>
+        /// This app as <see cref="RecordSwitch"/> would leave it, this one unchanged: to save before
+        /// recording the switch here.
+        /// </summary>
+        public InstalledApp AfterSwitch(Version from, Version to)
+        {
+            InstalledApp switched = (InstalledApp)MemberwiseClone();
+            switched._skippedVersions = SkipsAfterSwitch(from, to);
+            return switched;
+        }
+
+        private List<Version> SkipsAfterSwitch(Version from, Version to)
+        {
+            List<Version> skipped = _skippedVersions.Where(version => version != to).ToList();
+            if (to < from && !skipped.Contains(from))
             {
-                _skippedVersions.Add(from);
-                _skippedVersions.Sort();
+                skipped.Add(from);
+                skipped.Sort();
             }
+
+            return skipped;
         }
 
         /// <summary>

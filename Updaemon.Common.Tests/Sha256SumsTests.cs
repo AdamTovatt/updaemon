@@ -13,7 +13,7 @@ namespace Updaemon.Common.Tests
             using (TempFileHelper temp = new TempFileHelper())
             {
                 string file = temp.CreateTempFile("download", content);
-                await Sha256Sums.Parse(sums).VerifyAsync(file, assetName);
+                await Sha256Sums.Parse(sums).For(assetName).VerifyAsync(file);
             }
         }
 
@@ -47,19 +47,19 @@ namespace Updaemon.Common.Tests
         [InlineData($"{HelloHash} app-linux-arm64\n")]
         [InlineData("zz91b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  app-linux-arm64\n")]
         [InlineData("5891b5b522  app-linux-arm64\n")]
-        public async Task VerifyAsync_NoWellFormedLineForTheAsset_IsRefused(string sums)
+        public void For_NoWellFormedLineForTheAsset_IsRefused(string sums)
         {
-            ChecksumException exception = await Assert.ThrowsAsync<ChecksumException>(() => VerifyAsync(sums, "hello\n"));
+            ChecksumException exception = Assert.Throws<ChecksumException>(() => Sha256Sums.Parse(sums).For("app-linux-arm64"));
 
             Assert.Equal("SHA256SUMS has no '<sha-256>  app-linux-arm64' line, so app-linux-arm64 cannot be verified.", exception.Message);
         }
 
         [Fact]
-        public async Task VerifyAsync_LinesThatDisagreeAboutTheAsset_AreRefused()
+        public void For_LinesThatDisagreeAboutTheAsset_AreRefused()
         {
             string sums = $"{HelloHash}  linux/app-linux-arm64\n{new string('0', 64)}  other/app-linux-arm64\n";
 
-            ChecksumException exception = await Assert.ThrowsAsync<ChecksumException>(() => VerifyAsync(sums, "hello\n"));
+            ChecksumException exception = Assert.Throws<ChecksumException>(() => Sha256Sums.Parse(sums).For("app-linux-arm64"));
 
             Assert.Equal("SHA256SUMS has lines with different SHA-256s for app-linux-arm64, so it cannot be verified.", exception.Message);
         }

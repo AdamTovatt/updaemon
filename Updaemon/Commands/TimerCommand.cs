@@ -80,8 +80,8 @@ namespace Updaemon.Commands
 
             if (isEnabled)
             {
-                string? interval = await _timerManager.GetCurrentIntervalAsync(cancellationToken);
-                _outputWriter.WriteLine($"Timer is enabled with interval: {interval ?? "unknown"}");
+                TimeSpan? interval = await _timerManager.GetCurrentIntervalAsync(cancellationToken);
+                _outputWriter.WriteLine($"Timer is enabled with interval: {(interval is TimeSpan known ? TimerInterval.Format(known) : "unknown")}");
             }
             else
             {
@@ -101,8 +101,8 @@ namespace Updaemon.Commands
                 return "The update timer stays off, as it was turned off. Turn it on with 'updaemon timer 1h'.";
             }
 
-            return await _timerManager.GetCurrentIntervalAsync(cancellationToken) is string existing
-                ? $"The update timer stays as it was ({existing}). Turn it off with 'updaemon timer -'."
+            return await _timerManager.GetCurrentIntervalAsync(cancellationToken) is TimeSpan existing
+                ? $"The update timer stays as it was ({TimerInterval.Format(existing)}). Turn it off with 'updaemon timer -'."
                 : null;
         }
 
@@ -127,7 +127,7 @@ namespace Updaemon.Commands
         private async Task<int> SetTimerAsync(string interval, ReachableServiceManager reachable, CancellationToken cancellationToken)
         {
             // Parse the interval
-            TimeSpan? parsedInterval = ParseInterval(interval);
+            TimeSpan? parsedInterval = TimerInterval.Parse(interval);
             if (parsedInterval == null)
             {
                 _outputWriter.WriteError($"Error: Invalid interval format '{interval}'");
@@ -140,32 +140,6 @@ namespace Updaemon.Commands
             await _timerManager.SetTimerAsync(parsedInterval.Value, reachable, cancellationToken);
             _outputWriter.WriteLine($"The update timer runs 'updaemon update' every {interval}. Turn it off with 'updaemon timer -'.");
             return 0;
-        }
-
-        private static TimeSpan? ParseInterval(string interval)
-        {
-            if (string.IsNullOrEmpty(interval))
-                return null;
-
-            interval = interval.Trim().ToLowerInvariant();
-
-            // Parse format like "30s", "5m", "1h"
-            if (interval.Length < 2)
-                return null;
-
-            string numberPart = interval[..^1];
-            char unit = interval[^1];
-
-            if (!int.TryParse(numberPart, out int value) || value <= 0)
-                return null;
-
-            return unit switch
-            {
-                's' => TimeSpan.FromSeconds(value),
-                'm' => TimeSpan.FromMinutes(value),
-                'h' => TimeSpan.FromHours(value),
-                _ => null
-            };
         }
 
         public string GetDetailedHelp()

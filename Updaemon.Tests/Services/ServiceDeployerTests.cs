@@ -1,5 +1,6 @@
 using Updaemon.Interfaces;
 using Updaemon.Models;
+using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -36,6 +37,38 @@ namespace Updaemon.Tests.Services
 
                 Assert.False(File.Exists(leftover));
                 Assert.True(File.Exists(Path.Combine(staged.Directory, "bin", "byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task Discard_VersionLeftCurrentByAFailedSwitchBack_IsKept()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "2.0.0", AppHarness.ByteShelfManifest);
+                DeployableVersion staged = await h.Deployer.StageAsync(App(), new Version(2, 0, 0), h.Client);
+                await new SymlinkManager().CreateOrUpdateSymlinkAsync(h.Scope.GetCurrentLinkPath("byteshelf"), staged.Directory);
+
+                h.Deployer.Discard(staged);
+
+                Assert.True(File.Exists(Path.Combine(staged.Directory, "bin", "byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task Discard_StagedVersion_IsDeletedAndTheCurrentOneKept()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                h.AddRelease("owner/byteshelf", "2.0.0", AppHarness.ByteShelfManifest);
+                DeployableVersion staged = await h.Deployer.StageAsync(App(), new Version(2, 0, 0), h.Client);
+
+                h.Deployer.Discard(staged);
+
+                Assert.False(Directory.Exists(staged.Directory));
+                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
             }
         }
 

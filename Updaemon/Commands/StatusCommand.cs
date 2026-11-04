@@ -16,6 +16,8 @@ namespace Updaemon.Commands
         private readonly IOutputWriter _outputWriter;
         private readonly UpdaemonScope _scope;
         private readonly UpdaemonVersion _updaemonVersion;
+        private readonly UpdateRunLog _runLog;
+        private readonly TimeProvider _time;
 
         public StatusCommand(
             IConfigManager configManager,
@@ -24,7 +26,9 @@ namespace Updaemon.Commands
             ITimerManager timerManager,
             IOutputWriter outputWriter,
             UpdaemonScope scope,
-            UpdaemonVersion updaemonVersion)
+            UpdaemonVersion updaemonVersion,
+            UpdateRunLog runLog,
+            TimeProvider time)
         {
             _configManager = configManager;
             _serviceDeployer = serviceDeployer;
@@ -33,6 +37,8 @@ namespace Updaemon.Commands
             _outputWriter = outputWriter;
             _scope = scope;
             _updaemonVersion = updaemonVersion;
+            _runLog = runLog;
+            _time = time;
         }
 
         public string Name => "status";
@@ -61,6 +67,7 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine($"Update timer: {await DescribeTimerAsync(cancellationToken)}");
             UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
             _outputWriter.WriteLine($"Self-update: {(config.SelfUpdate ? "on" : "off")}");
+            _outputWriter.WriteLine($"Last update: {await DescribeLastRunAsync(cancellationToken)}");
             // Only a service stops at logout; with none in this scope, there is nothing to warn about.
             IReadOnlyList<InstalledApp> allApps = await _configManager.GetAllAppsAsync(cancellationToken);
             if (allApps.Any(app => _serviceDeployer.HasService(app.Name)))
@@ -100,16 +107,59 @@ namespace Updaemon.Commands
                   updaemon status [app]
 
                 Description:
-                  Shows updaemon's version, its scope (system-wide or this user's) and the
-                  update timer, then for each app: its version, what it is, whether its
-                  service runs, where it comes from, and any version update skips. On Linux,
-                  for your own services, it warns when lingering is off, since they then stop
-                  when you log out.
+                  Shows updaemon's version, its scope (system-wide or this user's), the
+                  update timer and the last update run without an app named (when, whether
+                  the timer or a person started it, and what failed), then for each app: its
+                  version, what it is, whether its service runs, where it comes from, and any
+                  version update skips. On Linux, for your own services, it warns when
+                  lingering is off, since they then stop when you log out.
 
                 Examples:
                   updaemon status
                   updaemon status byteshelf
                 """;
+        }
+
+        private async Task<string> DescribeLastRunAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                return DescribeRun(await _runLog.LoadAsync(cancellationToken), _time.GetUtcNow());
+            }
+            catch (InvalidOperationException ex)
+            {
+                return $"unknown ({ex.Message})";
+            }
+        }
+
+        /// <summary>"2h ago by the timer, 1 failed (byteshelf: ...)", each reason to its first sentence; or "never".</summary>
+        internal static string DescribeRun(UpdateRun? run, DateTimeOffset now)
+        {
+            if (run == null)
+            {
+                return "never";
+            }
+
+            string started = run.StartedBy == UpdateStarter.Timer ? "by the timer" : "by hand";
+            string outcome = run.Failures.Count == 0
+                ? "nothing failed"
+                : $"{run.Failures.Count} failed ({string.Join("; ", run.Failures.Select(failure => $"{failure.Subject}: {FirstSentence(failure.Reason)}"))})";
+            return $"{Ago(now - run.FinishedAt)} {started}, {outcome}";
+        }
+
+        private static string Ago(TimeSpan elapsed) => elapsed switch
+        {
+            { TotalMinutes: < 1 } => "just now",
+            { TotalHours: < 1 } => $"{(int)elapsed.TotalMinutes}m ago",
+            { TotalDays: < 1 } => $"{(int)elapsed.TotalHours}h ago",
+            _ => $"{(int)elapsed.TotalDays}d ago",
+        };
+
+        private static string FirstSentence(string reason)
+        {
+            string line = reason.Split('\n')[0];
+            int end = line.IndexOf(". ", StringComparison.Ordinal);
+            return (end < 0 ? line : line[..end]).TrimEnd('.');
         }
 
         private async Task<string> DescribeTimerAsync(CancellationToken cancellationToken)
@@ -119,7 +169,9 @@ namespace Updaemon.Commands
                 return "off";
             }
 
-            return await _timerManager.GetCurrentIntervalAsync(cancellationToken) ?? "on (interval unknown)";
+            return await _timerManager.GetCurrentIntervalAsync(cancellationToken) is TimeSpan interval
+                ? TimerInterval.Format(interval)
+                : "on (interval unknown)";
         }
 
         /// <summary>Name, version, kind, run state, source and skipped versions. One app's broken state does not stop the others.</summary>

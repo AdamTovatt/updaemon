@@ -1,3 +1,4 @@
+using Updaemon.Commands;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 using Updaemon.Tests.Helpers;
@@ -20,7 +21,8 @@ namespace Updaemon.Tests.Commands
                 await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool" });
                 await h.SkipAsync("tool", new Version(2, 1, 0));
                 h.Timer.IsEnabled = true;
-                h.Timer.CurrentInterval = "1h";
+                h.Timer.CurrentInterval = TimeSpan.FromHours(1);
+                await h.RunLog.SaveAsync(new UpdateRun(h.Time.GetUtcNow() - TimeSpan.FromMinutes(150), UpdateStarter.Timer, new[] { new UpdateFailure("tool", "checksum mismatch. 2.0.0 stays.") }));
                 h.Output.Clear();
 
                 int exitCode = await h.Status().ExecuteAsync(Array.Empty<string>());
@@ -32,11 +34,55 @@ namespace Updaemon.Tests.Commands
                         "updaemon 1.0.0, user scope",
                         "Update timer: 1h",
                         "Self-update: on",
+                        "Last update: 2h ago by the timer, 1 failed (tool: checksum mismatch)",
                         "",
                         "byteshelf  1.0.0  command + service  running  github:owner/byteshelf",
                         "tool       2.0.0  command            -        github:owner/tool       skips 2.1.0",
                     },
                     h.Output.Messages);
+            }
+        }
+
+        private static readonly DateTimeOffset Now = new DateTimeOffset(2026, 5, 1, 12, 0, 0, TimeSpan.Zero);
+
+        public static TheoryData<UpdateRun?, string> Runs => new TheoryData<UpdateRun?, string>
+        {
+            { null, "never" },
+            { new UpdateRun(Now.AddSeconds(-30), UpdateStarter.Person, Array.Empty<UpdateFailure>()), "just now by hand, nothing failed" },
+            { new UpdateRun(Now.AddMinutes(-59), UpdateStarter.Timer, Array.Empty<UpdateFailure>()), "59m ago by the timer, nothing failed" },
+            {
+                new UpdateRun(Now.AddDays(-3), UpdateStarter.Timer, new[]
+                {
+                    new UpdateFailure("byteshelf", "app.zip does not match its SHA-256 in SHA256SUMS; the download is corrupt."),
+                    new UpdateFailure("updaemon", "updating to 1.2.0 failed: no space left on device. 1.1.0 stays."),
+                    new UpdateFailure("tool", "Invalid updaemon.json:\n  'executable' is missing"),
+                }),
+                "3d ago by the timer, 3 failed (byteshelf: app.zip does not match its SHA-256 in SHA256SUMS; the download is corrupt; " +
+                "updaemon: updating to 1.2.0 failed: no space left on device; tool: Invalid updaemon.json:)"
+            },
+        };
+
+        [Theory]
+        [MemberData(nameof(Runs))]
+        public void DescribeRun_SaysWhenWhoAndWhatFailed(UpdateRun? run, string expected)
+        {
+            Assert.Equal(expected, StatusCommand.DescribeRun(run, Now));
+        }
+
+        [Fact]
+        public async Task Status_RunRecordUnreadable_SaysSoAndShowsTheRest()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                File.WriteAllText(h.Scope.LastUpdateFilePath, "{ not json");
+                h.Output.Clear();
+
+                int exitCode = await h.Status().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains(h.Output.Messages, line => line.StartsWith($"Last update: unknown ({h.Scope.LastUpdateFilePath} cannot be read: "));
+                Assert.StartsWith("byteshelf", h.Output.Messages[^1]);
             }
         }
 

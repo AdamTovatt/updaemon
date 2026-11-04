@@ -67,7 +67,7 @@ namespace Updaemon.Tests.Commands
         [Fact]
         public async Task Keep_TimerFileThereButNotEnabled_IsLeftAsItIs()
         {
-            _timer.CurrentInterval = "2h";
+            _timer.CurrentInterval = TimeSpan.FromHours(2);
             _timer.IsEnabled = false;
 
             (int exitCode, MockOutputWriter output) = await RunAsync("1h", "--keep");
