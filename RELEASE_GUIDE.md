@@ -157,6 +157,7 @@ A registry plugin is reinstalled from the running updaemon's release the first t
 
 | Release | Updaemon | GithubDist | ByteShelfDist |
 |---------|----------|------------|---------------|
+| v1.0.0 | 1.0.0 | 1.0.0 | 1.0.0 |
 | v0.10.0 | 0.10.0 | 0.4.0 | 0.2.1 |
 | v0.9.0 | 0.9.0 | 0.4.0 | 0.2.1 |
 | v0.8.1 | 0.8.1 | 0.4.0 | 0.2.1 |
