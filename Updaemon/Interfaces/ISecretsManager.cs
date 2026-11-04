@@ -1,7 +1,8 @@
 namespace Updaemon.Interfaces
 {
     /// <summary>
-    /// Stores plugin and app secrets, readable by the scope owner only.
+    /// Stores plugin and app secrets in mode 0600 files: a plugin's owned by the scope's user, an
+    /// app's by the user the app runs as.
     /// </summary>
     public interface ISecretsManager
     {
@@ -20,7 +21,8 @@ namespace Updaemon.Interfaces
         Task<Dictionary<string, string>> GetAppSecretsAsync(string appName, CancellationToken cancellationToken = default);
 
         /// <summary>Replaces the app's secret settings. An empty set deletes the app's secrets file.</summary>
-        Task SaveAppSecretsAsync(string appName, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default);
+        /// <param name="owner">The user the app runs as, who gets the file; null leaves it to the scope's user.</param>
+        Task SaveAppSecretsAsync(string appName, string? owner, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default);
 
         void DeleteAppSecrets(string appName);
     }

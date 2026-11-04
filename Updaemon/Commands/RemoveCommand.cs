@@ -49,8 +49,9 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"'{appName}' is not installed.");
             }
 
+            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
             bool purge = parser.HasFlag("--purge");
-            await _serviceDeployer.RemoveAsync(app, purge, cancellationToken);
+            await _serviceDeployer.RemoveAsync(app, purge, reachable, cancellationToken);
             await _configManager.RemoveAppAsync(appName, cancellationToken);
             _outputWriter.WriteLine(purge
                 ? $"Removed {appName} and its data."
@@ -69,7 +70,7 @@ namespace Updaemon.Commands
                 Description:
                   Stops the app's service and deletes its unit, its command, all its versions,
                   its settings and its secrets. Its data directory is kept, so a reinstall picks
-                  up where it left off; --purge deletes that too.
+                  up where it left off; --purge deletes that too, and on macOS its log files.
 
                 Examples:
                   updaemon remove byteshelf

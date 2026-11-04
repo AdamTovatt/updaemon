@@ -1,6 +1,7 @@
 using Updaemon.Common.Models;
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
+using Updaemon.IO;
 using Updaemon.Models;
 
 namespace Updaemon.Services
@@ -104,14 +105,44 @@ namespace Updaemon.Services
             }
             catch
             {
-                TryDeleteDirectory(versionDirectory);
+                DeleteStaged(versionDirectory);
                 throw;
             }
         }
 
+        public async Task<ReachableServiceManager> ReachServiceManagerAsync(string appName, AppManifest? next = null, CancellationToken cancellationToken = default)
+        {
+            // An app without a service, now or next, never touches the service manager: nothing to check.
+            return next?.IsService == true || HasService(appName)
+                ? await _serviceManager.EnsureReachableAsync(cancellationToken)
+                : new ReachableServiceManager();
+        }
+
+        public bool HasService(string appName) => File.Exists(_scope.GetUnitFilePath(appName));
+
         public void Discard(DeployableVersion staged)
         {
-            TryDeleteDirectory(staged.Directory);
+            DeleteStaged(staged.Directory);
+        }
+
+        /// <summary>Deletes a version directory that was never activated, and the app's directory if that leaves it empty.</summary>
+        private static void DeleteStaged(string versionDirectory)
+        {
+            TryDeleteDirectory(versionDirectory);
+
+            // A first install's version was all there was: leave no empty directory behind.
+            string appDirectory = Path.GetDirectoryName(versionDirectory)!;
+            try
+            {
+                if (Directory.Exists(appDirectory) && !Directory.EnumerateFileSystemEntries(appDirectory).Any())
+                {
+                    Directory.Delete(appDirectory);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Best effort, as for the version itself.
+            }
         }
 
         public IReadOnlyList<Version> GetRetainedVersions(string appName)
@@ -129,7 +160,7 @@ namespace Updaemon.Services
             return new DeployableVersion { Version = version, Directory = directory, Manifest = manifest, ManifestInDirectory = true };
         }
 
-        public async Task ActivateAsync(InstalledApp app, DeployableVersion version, CancellationToken cancellationToken = default)
+        public async Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             AppManifest manifest = version.Manifest;
             if (manifest.Command != null)
@@ -172,18 +203,21 @@ namespace Updaemon.Services
             }
         }
 
-        public async Task ApplySettingsAsync(InstalledApp app, CancellationToken cancellationToken = default)
+        public async Task<bool> ApplySettingsAsync(InstalledApp app, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             AppManifest manifest = await GetCurrentManifestAsync(app.Name, cancellationToken);
             await _appFileWriter.WriteAsync(app, manifest, manifest, cancellationToken);
 
-            if (manifest.IsService && await RestartIfRunningAsync(app.Name, cancellationToken))
+            if (!manifest.IsService || !await RestartIfRunningAsync(app.Name, cancellationToken))
             {
-                _outputWriter.WriteLine($"Restarted {app.Name}.");
+                return true;
             }
+
+            _outputWriter.WriteLine($"Restarted {app.Name}.");
+            return await StaysRunningAsync(app.Name, cancellationToken);
         }
 
-        public async Task<bool> StartAsync(string appName, CancellationToken cancellationToken = default)
+        public async Task<bool> StartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             await _serviceManager.EnableServiceAsync(appName, cancellationToken);
             await _serviceManager.StartServiceAsync(appName, cancellationToken);
@@ -197,7 +231,7 @@ namespace Updaemon.Services
         public static string NotRunning(string appName, Version version, string consequence = "") =>
             $"{version} did not stay running{consequence}. See 'updaemon logs {appName}'.";
 
-        public async Task<bool> RestartAsync(string appName, CancellationToken cancellationToken = default)
+        public async Task<bool> RestartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             if (await IsRunningAsync(appName, cancellationToken))
             {
@@ -211,7 +245,8 @@ namespace Updaemon.Services
             return await StaysRunningAsync(appName, cancellationToken);
         }
 
-        public async Task<bool> RestartIfRunningAsync(string appName, CancellationToken cancellationToken = default)
+        /// <summary>Restarts the service if it is running. Returns whether it did.</summary>
+        private async Task<bool> RestartIfRunningAsync(string appName, CancellationToken cancellationToken)
         {
             if (!await IsRunningAsync(appName, cancellationToken))
             {
@@ -222,7 +257,7 @@ namespace Updaemon.Services
             return true;
         }
 
-        public async Task RemoveAsync(InstalledApp app, bool purge, CancellationToken cancellationToken = default)
+        public async Task RemoveAsync(InstalledApp app, bool purge, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             AppManifest? manifest = null;
             try
@@ -240,6 +275,12 @@ namespace Updaemon.Services
             if (purge)
             {
                 DeleteDirectoryIfExists(_scope.GetDataDirectory(app.Name));
+                if (_scope.Platform.IsMacOS)
+                {
+                    // launchd's log files; on Linux the journal keeps its own and is left alone.
+                    Files.DeleteIfExists(_scope.GetOutputLogPath(app.Name));
+                    Files.DeleteIfExists(_scope.GetErrorLogPath(app.Name));
+                }
             }
         }
 
@@ -268,7 +309,6 @@ namespace Updaemon.Services
                 try
                 {
                     Directory.Delete(directory, recursive: true);
-                    _outputWriter.WriteLine($"Pruned old version: {Path.GetFileName(directory)}");
                 }
                 catch (Exception ex)
                 {

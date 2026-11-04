@@ -3,6 +3,7 @@ using Updaemon.Configuration;
 using Updaemon.Conversion;
 using Updaemon.Interfaces;
 using Updaemon.IO;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
@@ -29,17 +30,17 @@ namespace Updaemon.Services
             _plistPath = Path.Combine(scope.UnitDirectory, _label + ".plist");
         }
 
-        public async Task SetTimerAsync(TimeSpan interval, CancellationToken cancellationToken = default)
+        public async Task SetTimerAsync(TimeSpan interval, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             int seconds = ClampToInt(interval.TotalSeconds);
 
             // launchd refuses a plist that others can write; 0644 is what it expects.
-            await AtomicFile.WriteAsync(_plistPath, BuildPlist(_label, _scope.UpdaemonCommandPath, seconds), AtomicFile.Readable, cancellationToken);
+            await AtomicFile.WriteAsync(_plistPath, BuildPlist(_label, _scope.UpdaemonCommandPath, seconds, _scope.UpdateLogPath), AtomicFile.Readable, cancellationToken);
             await Launchd.LoadAsync(_scope, _label, _plistPath, _outputWriter, cancellationToken);
         }
 
         /// <summary>Unloads the job and deletes its plist: launchd loads any plist left in the directory at the next boot or login.</summary>
-        public async Task RemoveTimerAsync(CancellationToken cancellationToken = default)
+        public async Task RemoveTimerAsync(ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             await Launchd.UnloadAsync(_scope, _label, cancellationToken);
             File.Delete(_plistPath);
@@ -75,7 +76,7 @@ namespace Updaemon.Services
             return new ZeroXTimer(path, loaded.Success, seconds == null ? null : TimeSpan.FromSeconds(seconds.Value));
         }
 
-        public async Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default)
+        public async Task RemoveZeroXTimerAsync(ZeroXTimer timer, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             // 0.x's label differs from this updaemon's, so its job would otherwise run beside the new one.
             await Launchd.UnloadAsync(_scope, ZeroXLabel, cancellationToken);
@@ -108,13 +109,15 @@ namespace Updaemon.Services
             return $"{seconds}s";
         }
 
-        internal static string BuildPlist(string label, string updaemonPath, int intervalSeconds)
+        internal static string BuildPlist(string label, string updaemonPath, int intervalSeconds, string logPath)
         {
             return new Launchd.Plist()
                 .String("Label", label)
                 .Strings("ProgramArguments", new[] { updaemonPath, "update" })
                 .Integer("StartInterval", intervalSeconds)
                 .Boolean("RunAtLoad", false)
+                .String("StandardOutPath", logPath)
+                .String("StandardErrorPath", logPath)
                 .ToString();
         }
     }

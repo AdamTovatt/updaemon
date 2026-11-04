@@ -4,20 +4,26 @@ using Updaemon.IO;
 namespace Updaemon.Configuration
 {
     /// <summary>
-    /// Stores secrets, readable by the scope owner only: each plugin's in
+    /// Stores secrets, each file mode 0600: each plugin's in
     /// &lt;scope root&gt;/plugins/&lt;alias&gt;/secrets.txt (key=value lines, passed to the plugin as is),
     /// and each app's in &lt;scope root&gt;/secrets/&lt;app&gt;.env (an <see cref="EnvFile"/> that
-    /// units and command wrappers load directly).
+    /// the app's wrappers load), owned by the user the app runs as. Who may read an app's secrets is
+    /// decided here alone.
     /// </summary>
     public class SecretsManager : ISecretsManager
     {
         private const string SecretsFileName = "secrets.txt";
 
-        private readonly UpdaemonScope _scope;
+        private const UnixFileMode SecretsDirectoryMode =
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
 
-        public SecretsManager(UpdaemonScope scope)
+        private readonly UpdaemonScope _scope;
+        private readonly IFilePermissionManager _filePermissionManager;
+
+        public SecretsManager(UpdaemonScope scope, IFilePermissionManager filePermissionManager)
         {
             _scope = scope;
+            _filePermissionManager = filePermissionManager;
         }
 
         public string GetPluginSecretsPath(string pluginAlias)
@@ -62,7 +68,7 @@ namespace Updaemon.Configuration
             return EnvFile.ReadAsync(_scope.GetSecretsFilePath(appName), cancellationToken);
         }
 
-        public async Task SaveAppSecretsAsync(string appName, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default)
+        public async Task SaveAppSecretsAsync(string appName, string? owner, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default)
         {
             if (secrets.Count == 0)
             {
@@ -70,17 +76,27 @@ namespace Updaemon.Configuration
                 return;
             }
 
-            Directory.CreateDirectory(_scope.SecretsDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            await EnvFile.WriteAsync(_scope.GetSecretsFilePath(appName), secrets, AtomicFile.OwnerOnly, cancellationToken);
+            if (!Directory.Exists(_scope.SecretsDirectory))
+            {
+                // 0711, whatever the umask: a service running as another user opens its own file by
+                // name, but no one can list the directory.
+                Directory.CreateDirectory(_scope.SecretsDirectory);
+                File.SetUnixFileMode(_scope.SecretsDirectory, SecretsDirectoryMode);
+            }
+
+            // Given to its owner before it replaces the old file, so a service restarting meanwhile
+            // never finds a file it cannot read.
+            await EnvFile.WriteAsync(
+                _scope.GetSecretsFilePath(appName),
+                secrets,
+                AtomicFile.OwnerOnly,
+                newFile => owner == null ? Task.CompletedTask : _filePermissionManager.SetOwnerAsync(newFile, owner, cancellationToken),
+                cancellationToken);
         }
 
         public void DeleteAppSecrets(string appName)
         {
-            string path = _scope.GetSecretsFilePath(appName);
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
+            Files.DeleteIfExists(_scope.GetSecretsFilePath(appName));
         }
 
         private async Task<Dictionary<string, string>> LoadPluginSecretsAsync(string pluginAlias, CancellationToken cancellationToken = default)

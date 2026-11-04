@@ -56,6 +56,17 @@ namespace Updaemon.Services
         }
 
         /// <summary>
+        /// The plugins an app can come from, by alias, each list sorted: the installed ones, and the
+        /// registry's others, which <see cref="GetOrInstallAsync"/> installs on first use.
+        /// </summary>
+        public async Task<(IReadOnlyList<string> Installed, IReadOnlyList<string> OnFirstUse)> GetAvailableAsync(CancellationToken cancellationToken = default)
+        {
+            List<string> installed = (await _configManager.GetAllPluginsAsync(cancellationToken)).Keys.Order(StringComparer.Ordinal).ToList();
+            List<string> onFirstUse = _pluginUrlResolver.PluginNames.Except(installed).Order(StringComparer.Ordinal).ToList();
+            return (installed, onFirstUse);
+        }
+
+        /// <summary>
         /// Installs registry plugin <paramref name="name"/> as <paramref name="alias"/> from the running
         /// release in place of what is installed under that alias, keeping the alias's secrets.
         /// </summary>

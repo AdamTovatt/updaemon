@@ -51,8 +51,8 @@ namespace Updaemon.Services
 
         /// <summary>
         /// Runs a command on updaemon's own terminal (stdin, stdout and stderr inherited) and returns
-        /// its exit code. Cancellation (Ctrl+C, which the terminal also sends the command) ends it
-        /// normally: that is how a followed log is stopped.
+        /// its exit code. Cancellation (Ctrl+C, SIGTERM or SIGHUP to updaemon) kills the command and
+        /// ends normally: that is how a followed log is stopped.
         /// </summary>
         public static async Task<int> RunAttachedAsync(string command, string[] arguments, CancellationToken cancellationToken)
         {

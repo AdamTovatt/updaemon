@@ -135,14 +135,16 @@ if [ "$SCOPE" = user ]; then
     *":$BIN_DIR:"*) ;;
     *) echo "Add $BIN_DIR to your PATH to run 'updaemon'." ;;
   esac
-  if [ "$RID" != osx-arm64 ]; then
-    echo "Your services run only while you are logged in, unless lingering is on: sudo loginctl enable-linger $(id -un)"
-  fi
 fi
 
 # Last, so a timer that cannot be set leaves nothing above unsaid. On by default; one that is set
-# keeps its interval, and one turned off stays off.
-if ! "$binary" timer 1h --keep; then
+# keeps its interval, and one turned off stays off. Exit 3: this user's service manager cannot be
+# reached (updaemon has said why); updaemon itself is installed, so that is only a warning.
+timer_status=0
+"$binary" timer 1h --keep || timer_status=$?
+if [ "$timer_status" -eq 3 ]; then
+  echo "Warning: updaemon is installed, but the update timer is not on. Once the above is fixed, turn it on with 'updaemon timer 1h'." >&2
+elif [ "$timer_status" -ne 0 ]; then
   echo "updaemon is installed, but the update timer was not turned on. Turn it on with 'updaemon timer 1h'." >&2
   exit 1
 fi

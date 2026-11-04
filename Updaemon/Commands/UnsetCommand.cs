@@ -49,6 +49,7 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"'{appName}' is not installed.");
             }
 
+            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
             AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
             AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
             bool removedAny = false;
@@ -75,9 +76,9 @@ namespace Updaemon.Commands
             }
 
             await _settingsStore.SaveAsync(values, cancellationToken);
-            await _serviceDeployer.ApplySettingsAsync(app, cancellationToken);
+            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(app, reachable, cancellationToken);
             _outputWriter.WriteLine($"Updated the settings of {appName}.");
-            return 0;
+            return _outputWriter.FinishSettingsChange(appName, staysRunning);
         }
 
         public string GetDetailedHelp()
@@ -91,7 +92,8 @@ namespace Updaemon.Commands
                 Description:
                   Removes settings from an app, so it falls back to the default in its
                   updaemon.json, if any. Regenerates its service unit and command and
-                  restarts its service if it is running. Required settings cannot be removed.
+                  restarts its service if it is running, checking it keeps running as 'set'
+                  does. Required settings cannot be removed.
 
                 Examples:
                   updaemon unset byteshelf BYTESHELF_LOG_LEVEL

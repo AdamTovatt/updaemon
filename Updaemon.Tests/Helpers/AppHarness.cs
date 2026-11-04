@@ -32,14 +32,14 @@ namespace Updaemon.Tests.Helpers
         /// <summary>The health check's clock: it never waits, and records what it would have.</summary>
         public InstantTimeProvider Time { get; } = new InstantTimeProvider();
 
-        public AppHarness(bool isSystem = false)
+        public AppHarness(bool isSystem = false, bool isMacOS = false)
         {
-            Scope = TestScope.Create(_temp.TempDirectory, isSystem);
+            Scope = TestScope.Create(_temp.TempDirectory, isSystem, isMacOS);
             OtherScope = TestScope.Create(Path.Combine(_temp.TempDirectory, "other"), !isSystem);
             Config = new ConfigManager(Scope);
-            Secrets = new SecretsManager(Scope);
+            Secrets = new SecretsManager(Scope, Permissions);
             SettingsStore = new AppSettingsStore(Config, Secrets);
-            Files = new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Secrets, Output);
+            Files = new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Output);
             Deployer = new ServiceDeployer(
                 Scope,
                 new SymlinkManager(),
@@ -55,6 +55,9 @@ namespace Updaemon.Tests.Helpers
             PluginInstaller = new PluginInstaller(PluginUrlResolver, GitHubPlugins, PluginDownloader, Config, Scope);
             Plugins = new PluginProvider(Config, PluginInstaller, PluginUrlResolver, RunningVersion, Output);
         }
+
+        /// <summary>For calling the deployer directly, as a command does once it has checked the service manager.</summary>
+        public ReachableServiceManager Reachable { get; } = new ReachableServiceManager();
 
         public MockGitHubPluginReleases GitHubPlugins { get; } = new MockGitHubPluginReleases();
 
@@ -136,7 +139,7 @@ namespace Updaemon.Tests.Helpers
 
         public PluginCredentials Credentials() => new PluginCredentials(Secrets, Prompter, Output);
 
-        public TimerCommand TimerCommand() => new TimerCommand(Timer, Config, Output);
+        public TimerCommand TimerCommand() => new TimerCommand(Timer, ServiceManager, Config, Output);
 
         public DistListCommand DistList() => new DistListCommand(Config, Output, Client, RunningVersion);
 
@@ -215,6 +218,29 @@ namespace Updaemon.Tests.Helpers
             InstalledApp app = (await Config.GetAppAsync(appName))!;
             app.RecordSwitch(from: version, to: await Deployer.GetCurrentVersionAsync(appName));
             await Config.SaveAppAsync(app);
+        }
+
+        /// <summary>
+        /// Every directory, file and link under the harness's directory, with each file's content and
+        /// each link's target. Equal snapshots mean nothing was written.
+        /// </summary>
+        public IReadOnlyList<string> Snapshot()
+        {
+            EnumerationOptions options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = 0 };
+            return Directory.EnumerateFileSystemEntries(_temp.TempDirectory, "*", options)
+                .Order(StringComparer.Ordinal)
+                .Select(path => new FileInfo(path).LinkTarget is string target ? $"{path} -> {target}"
+                    : Directory.Exists(path) ? path + "/"
+                    : $"{path}: {File.ReadAllText(path)}")
+                .ToList();
+        }
+
+        /// <summary>Fails naming what changed since <paramref name="before"/>, a <see cref="Snapshot"/>.</summary>
+        public void AssertUnchangedSince(IReadOnlyList<string> before)
+        {
+            IReadOnlyList<string> after = Snapshot();
+            List<string> changes = before.Except(after).Select(entry => "gone: " + entry).Concat(after.Except(before).Select(entry => "new: " + entry)).ToList();
+            Assert.True(changes.Count == 0, string.Join('\n', changes));
         }
 
         public void Dispose()

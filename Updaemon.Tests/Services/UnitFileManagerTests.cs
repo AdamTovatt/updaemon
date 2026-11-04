@@ -11,16 +11,13 @@ namespace Updaemon.Tests.Services
         {
             AppName = "byteshelf",
             WorkingDirectory = "/apps/byteshelf/current",
-            ExecutablePath = "/apps/byteshelf/current/bin/byteshelf",
+            WrapperPath = "/apps/byteshelf/run",
             Arguments = new[] { "sync", "run", "50% $HOME \"q\"" },
             RunAs = runAs,
-            SettingsFilePath = "/root/settings/byteshelf.env",
-            SecretsFilePath = "/root/secrets/byteshelf.env",
-            Environment = new Dictionary<string, string> { ["URL"] = "https://x?a=1&b=<2>", ["TOKEN"] = "s3cret" },
         };
 
         [Fact]
-        public void Render_SystemdSystemScope_RunsAsUserWithEnvironmentFilesAndQuotedArguments()
+        public void Render_SystemdSystemScope_RunsTheWrapperAsUserWithQuotedArgumentsAndNoEnvironment()
         {
             UnitFileManager manager = new UnitFileManager(TestScope.Create("/t", isSystem: true));
 
@@ -28,11 +25,9 @@ namespace Updaemon.Tests.Services
 
             Assert.Contains("User=shelf\n", unit);
             Assert.Contains("WorkingDirectory=/apps/byteshelf/current\n", unit);
-            Assert.Contains("EnvironmentFile=/root/settings/byteshelf.env\n", unit);
-            Assert.Contains("EnvironmentFile=-/root/secrets/byteshelf.env\n", unit);
-            Assert.Contains("ExecStart=\"/apps/byteshelf/current/bin/byteshelf\" \"sync\" \"run\" \"50%% $$HOME \\\"q\\\"\"\n", unit);
+            Assert.Contains("ExecStart=\"/apps/byteshelf/run\" \"sync\" \"run\" \"50%% $$HOME \\\"q\\\"\"\n", unit);
             Assert.Contains("WantedBy=multi-user.target", unit);
-            Assert.DoesNotContain("s3cret", unit);
+            Assert.DoesNotContain("Environment", unit);
         }
 
         [Fact]
@@ -48,24 +43,23 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public void Render_Launchd_CarriesArgumentsEnvironmentAndUserEscaped()
+        public void Render_Launchd_RunsTheWrapperWithArgumentsAndUserAndNoEnvironment()
         {
             UnitFileManager manager = new UnitFileManager(TestScope.Create("/t", isSystem: true, isMacOS: true));
 
-            string plist = manager.Render(Unit(runAs: "shelf"));
+            string plist = manager.Render(Unit(runAs: "shelf") with { Arguments = new[] { "a&b" } });
 
             Assert.Contains("<string>com.updaemon.byteshelf</string>", plist);
             Assert.Contains("<key>UserName</key>\n    <string>shelf</string>", plist);
-            Assert.Contains("<string>/apps/byteshelf/current/bin/byteshelf</string>\n        <string>sync</string>\n        <string>run</string>", plist);
-            Assert.Contains("<key>URL</key>\n        <string>https://x?a=1&amp;b=&lt;2&gt;</string>", plist);
-            Assert.Contains("<key>TOKEN</key>\n        <string>s3cret</string>", plist);
+            Assert.Contains("<string>/apps/byteshelf/run</string>\n        <string>a&amp;b</string>\n    </array>", plist);
+            Assert.DoesNotContain("EnvironmentVariables", plist);
             Assert.Contains("<string>/t/logs/byteshelf.log</string>", plist);
         }
 
         [Theory]
-        [InlineData(false, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead)]
-        [InlineData(true, UnixFileMode.UserRead | UnixFileMode.UserWrite)]
-        public async Task WriteUnitFileAsync_PlistWithSecretsIsOwnerOnly(bool isMacOS, UnixFileMode expectedMode)
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task WriteUnitFileAsync_WritesTheRenderedFileReadableByAll(bool isMacOS)
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
@@ -76,7 +70,7 @@ namespace Updaemon.Tests.Services
 
                 string path = scope.GetUnitFilePath("byteshelf");
                 Assert.Equal(manager.Render(Unit()), await File.ReadAllTextAsync(path));
-                Assert.Equal(expectedMode, File.GetUnixFileMode(path));
+                Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead, File.GetUnixFileMode(path));
             }
         }
     }

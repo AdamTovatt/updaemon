@@ -18,7 +18,7 @@
 
 - **Updates on a schedule**: `updaemon timer 1h` checks for new releases every hour, of your apps and of updaemon itself.
 - **Health check and rollback**: a service that does not keep running after an update goes back to the previous version, and the failed version is skipped. `updaemon rollback` goes back by hand.
-- **Settings and secrets**: a release declares the settings it needs; updaemon asks for them and keeps secrets in a file only the owner can read.
+- **Settings and secrets**: a release declares the settings it needs; updaemon asks for them and keeps secrets in a file only the user the app runs as can read.
 - **Any release source**: GitHub releases out of the box; distribution plugins add other sources.
 - **System-wide or per user**: run as root for system services, or as yourself for your own.
 - **One native binary**: nothing else to install.
@@ -102,6 +102,10 @@ On Linux, `$XDG_DATA_HOME` and `$XDG_CONFIG_HOME` move the user paths when set.
 
 A system-wide service runs as root unless installed with `--run-as <user>`. A user's services run as that user. On Linux they run only while the user is logged in, unless lingering is on for that user (`sudo loginctl enable-linger <user>`). updaemon does not turn it on for you, but `install` of a service and `status` warn while it is off.
 
+A user's services and update timer need that user's service manager. On Linux, systemd's user manager runs while the user is logged in, and always once lingering is on; updaemon finds it from a `su` or `sudo -u` shell too. On macOS, the user's launchd session exists only while the user is logged in to the Mac's desktop. Without it, `timer`, and `install`, `set`, `unset`, `set-args`, `remove` and `rollback` of an app with a service, change nothing and say how to fix it. `update` fails only the apps with a service and updates the others. `install.sh` still installs updaemon, and says to turn the timer on once that is fixed. Apps without a service never need it.
+
+The macOS update timer logs to `updaemon.log` in the service log directory above.
+
 ### Upgrading from 0.x
 
 Re-run `install.sh` with `sudo`. The rest is automatic: the script then runs `updaemon timer`, which converts the 0.x setup before it does anything else and says what it converted. Any other `updaemon` command run as root (the update timer's included) converts it the same way.
@@ -184,7 +188,7 @@ Naming a newer kept version switches forward to it, for example to undo a rollba
 updaemon status [app]
 ```
 
-Shows updaemon's version, its scope, the update timer and whether self-update is on, then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions. On Linux, in a user's own scope, it also warns while lingering is off, since the services then stop at logout.
+Shows updaemon's version, its scope, the update timer and whether self-update is on, then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions. On Linux, in a user's own scope with at least one service, it also warns while lingering is off, since the services then stop at logout.
 
 ### logs
 
@@ -201,7 +205,7 @@ updaemon set <app> KEY=VALUE... [--secret]
 updaemon unset <app> KEY...
 ```
 
-Changes the app's settings and restarts its service if it runs. A setting the app's `updaemon.json` declares secret is stored as a secret; `--secret` does the same for one it does not declare. A required setting cannot be unset.
+Changes the app's settings and restarts its service if it runs. The restarted service must keep running for its health-check window, as after an update; if it does not, the command fails pointing to `updaemon logs <app>`, and the change stays. A setting the app's `updaemon.json` declares secret is stored as a secret; `--secret` does the same for one it does not declare. A required setting cannot be unset.
 
 ### set-args
 
@@ -209,7 +213,7 @@ Changes the app's settings and restarts its service if it runs. A setting the ap
 updaemon set-args <app> [-- args...]
 ```
 
-Sets the arguments the service runs with, in place of the ones in its `updaemon.json`. Without `--`, goes back to those.
+Sets the arguments the service runs with, in place of the ones in its `updaemon.json`. Without `--`, goes back to those. A running service is restarted and checked as `set` does.
 
 ### set-restart
 
@@ -225,7 +229,7 @@ With `manual`, `update` installs a new version but leaves the running service al
 updaemon remove <app> [--purge]
 ```
 
-Stops and deletes the app's service, its command, all its versions, its settings and its secrets. Its data directory is kept unless `--purge` is given.
+Stops and deletes the app's service, its command, all its versions, its settings and its secrets. Its data directory is kept unless `--purge` is given, which on macOS also deletes its log files.
 
 ### timer
 
@@ -300,18 +304,19 @@ config.json            installed plugins and apps
 versions/<version>/    updaemon itself; the updaemon command links to one
 plugins/<alias>/       each plugin's executable and secrets.txt
 settings/<app>.env     each app's settings, readable by everyone
-secrets/<app>.env      each app's secrets, readable by the owner only
+secrets/<app>.env      each app's secrets, readable only by the user it runs as
 data/<app>/            each app's data, kept across updates; passed as UPDAEMON_DATA_DIR
 0.x-backup/            what converting an updaemon 0.x setup replaced (system scope only)
 ```
 
-Each app's versions sit next to a `current` link to the one that runs:
+Each app's versions sit next to a `current` link to the one that runs. A service also gets a `run` script there, which its unit or plist starts: it loads the app's settings and secrets, then runs the executable. A command on PATH is the same kind of script, so no secret is ever written into a unit or plist.
 
 ```
 /opt/my-api/
 ├── 1.0.0/
 ├── 1.1.0/
-└── current -> 1.1.0
+├── current -> 1.1.0
+└── run
 ```
 
 ### config.json

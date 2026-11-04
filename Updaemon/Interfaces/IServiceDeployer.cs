@@ -24,7 +24,19 @@ namespace Updaemon.Interfaces
         /// <exception cref="MissingManifestException">Neither the release nor the app has a manifest.</exception>
         Task<DeployableVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default);
 
-        /// <summary>Deletes a staged version that will not be activated.</summary>
+        /// <summary>
+        /// The first step of any change to an installed app, before anything is written: checks the
+        /// service manager can be reached when the app has a service (<see cref="HasService"/>) or
+        /// <paramref name="next"/>, the version about to be activated, has one. Every method below
+        /// that writes takes what this returns.
+        /// </summary>
+        /// <exception cref="ServiceManagerUnreachableException">It cannot be reached.</exception>
+        Task<ReachableServiceManager> ReachServiceManagerAsync(string appName, AppManifest? next = null, CancellationToken cancellationToken = default);
+
+        /// <summary>Whether the app has a service now: its unit or plist is there.</summary>
+        bool HasService(string appName);
+
+        /// <summary>Deletes a staged version that will not be activated, and the app's directory if that leaves it empty.</summary>
         void Discard(DeployableVersion staged);
 
         /// <summary>The versions kept in the app's directory, the current one included, oldest first.</summary>
@@ -39,35 +51,33 @@ namespace Updaemon.Interfaces
         /// service unit from its manifest. Does not start or restart the service. If generating fails,
         /// the previous version is made current again before the exception propagates.
         /// </summary>
-        Task ActivateAsync(InstalledApp app, DeployableVersion version, CancellationToken cancellationToken = default);
+        Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// After a change to the app's settings or arguments: regenerates its settings file, command
         /// wrapper and service unit for its current version, and restarts the service if it is running.
+        /// Returns false when the restarted service did not pass the health check, as after an update.
         /// </summary>
-        Task ApplySettingsAsync(InstalledApp app, CancellationToken cancellationToken = default);
+        Task<bool> ApplySettingsAsync(InstalledApp app, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Enables and starts a newly installed service, then runs the health check: returns whether it
         /// came up and kept running for its current version's <see cref="ServiceSpec.HealthCheck"/>
         /// without the service manager starting it again.
         /// </summary>
-        Task<bool> StartAsync(string appName, CancellationToken cancellationToken = default);
+        Task<bool> StartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Restarts the service, or starts it if it is not running, then runs the health check as
         /// <see cref="StartAsync"/> does.
         /// </summary>
-        Task<bool> RestartAsync(string appName, CancellationToken cancellationToken = default);
-
-        /// <summary>Restarts the service if it is running. Returns whether it did.</summary>
-        Task<bool> RestartIfRunningAsync(string appName, CancellationToken cancellationToken = default);
+        Task<bool> RestartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Stops and deletes the app's unit, its command wrapper, all its versions, settings and secrets;
         /// with <paramref name="purge"/> also its data directory. Leaves the config to the caller.
         /// </summary>
-        Task RemoveAsync(InstalledApp app, bool purge, CancellationToken cancellationToken = default);
+        Task RemoveAsync(InstalledApp app, bool purge, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>Deletes the oldest version directories beyond <paramref name="retentionCount"/>, never the current one.</summary>
         Task PruneOldVersionsAsync(string appName, int retentionCount, CancellationToken cancellationToken = default);

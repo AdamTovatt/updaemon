@@ -9,7 +9,7 @@ namespace Updaemon.Tests.Commands
     public class InstallCommandTests
     {
         [Fact]
-        public async Task Install_FromManifest_SetsUpCommandAndServiceWithSettingsAndSecrets()
+        public async Task Install_FromManifest_SetsUpTheCommandWithSettingsAndSecretsAndStartsTheService()
         {
             using (AppHarness h = new AppHarness())
             {
@@ -26,11 +26,59 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal($"BYTESHELF_URL=https://shelf\nBYTESHELF_API_KEY=key1\nBYTESHELF_LOG_LEVEL=info\nUPDAEMON_DATA_DIR={dataDirectory}\narg=status\n", output);
                 Assert.True(Directory.Exists(dataDirectory));
 
-                string unit = await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf"));
-                Assert.Contains($"ExecStart=\"{h.Scope.GetCurrentLinkPath("byteshelf")}/bin/byteshelf\" \"sync\" \"run\"", unit);
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.EnableServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
                 Assert.Contains("Installed byteshelf 1.0.0 (command + service).", h.Output.Messages);
+            }
+        }
+
+        [Fact]
+        public async Task Install_Service_ItsUnitRunsTheWrapperWhichGetsTheSettingsAndSecrets()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+
+                string unit = await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf"));
+                string serviceWrapper = h.Scope.GetServiceWrapperPath("byteshelf");
+                Assert.Contains($"ExecStart=\"{serviceWrapper}\" \"sync\" \"run\"", unit);
+                Assert.DoesNotContain("key1", unit);
+                string dataDirectory = h.Scope.GetDataDirectory("byteshelf");
+                Assert.Equal(
+                    $"BYTESHELF_URL=https://shelf\nBYTESHELF_API_KEY=key1\nBYTESHELF_LOG_LEVEL=info\nUPDAEMON_DATA_DIR={dataDirectory}\narg=sync\narg=run\n",
+                    await Shell.RunAsync(serviceWrapper, "sync", "run"));
+            }
+        }
+
+        [Fact]
+        public async Task Install_WithoutFrom_ShowsAnExampleAndThePlugins()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                int exitCode = await h.Install().ExecuteAsync(new[] { "tool" });
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(
+                    new[]
+                    {
+                        "Error: Say where to install tool from, for example: updaemon install tool --from github:<owner>/<repo>",
+                        "Plugins: github (installed on first use).",
+                    },
+                    h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task Install_WithoutFrom_ListsTheInstalledPluginsFirst()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync("store");
+                await h.AddPluginAsync("github");
+
+                await h.Install().ExecuteAsync(new[] { "tool" });
+
+                Assert.Equal("Plugins: github, store.", h.Output.Errors[^1]);
             }
         }
 
@@ -200,7 +248,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(1, exitCode);
                 Assert.Contains(h.Output.Errors, e => e.Contains("BYTESHELF_API_KEY") && e.Contains("--set"));
                 Assert.Null(await h.Config.GetAppAsync("byteshelf"));
-                Assert.Empty(Directory.GetDirectories(h.Scope.GetAppDirectory("byteshelf")));
+                Assert.False(Directory.Exists(h.Scope.GetAppDirectory("byteshelf")));
                 Assert.False(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
             }
         }
@@ -217,7 +265,7 @@ namespace Updaemon.Tests.Commands
                 await Assert.ThrowsAsync<OperationCanceledException>(() => h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" }));
 
                 Assert.Null(await h.Config.GetAppAsync("byteshelf"));
-                Assert.Empty(Directory.GetDirectories(h.Scope.GetAppDirectory("byteshelf")));
+                Assert.False(Directory.Exists(h.Scope.GetAppDirectory("byteshelf")));
             }
         }
 
@@ -334,14 +382,16 @@ namespace Updaemon.Tests.Commands
             using (AppHarness h = new AppHarness(isSystem: true))
             {
                 await h.AddPluginAsync();
-                h.AddRelease("owner/api", "1.0.0", """{ "executable": "bin/byteshelf", "service": {} }""");
+                h.AddRelease("owner/api", "1.0.0", """{ "executable": "bin/byteshelf", "service": {}, "settings": { "API_KEY": { "secret": true } } }""");
                 h.Permissions.ExistingUsers.Add("api");
 
-                int exitCode = await h.Install().ExecuteAsync(new[] { "api", "--from", "github:owner/api", "--run-as", "api" });
+                int exitCode = await h.Install().ExecuteAsync(new[] { "api", "--from", "github:owner/api", "--run-as", "api", "--set", "API_KEY=k" });
 
                 Assert.Equal(0, exitCode);
                 Assert.Contains("User=api\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("api")));
                 Assert.Contains($"SetOwnerAsync:{h.Scope.GetDataDirectory("api")}:api", h.Permissions.MethodCalls);
+                // The service's wrapper reads its secrets as that user: the file is theirs from the moment it appears.
+                Assert.Contains(h.Permissions.MethodCalls, call => call.StartsWith($"SetOwnerAsync:{h.Scope.GetSecretsFilePath("api")}.") && call.EndsWith(".tmp:api"));
             }
         }
 
@@ -386,7 +436,8 @@ namespace Updaemon.Tests.Commands
         [InlineData("not a valid app name", "-app", "--from", "github:owner/app")]
         [InlineData("not a valid command name", "app", "--from", "github:owner/app", "--command", "a/b")]
         [InlineData("Unknown option '--bogus'", "app", "--from", "github:owner/app", "--bogus", "x")]
-        [InlineData("Usage: updaemon install", "app")]
+        [InlineData("Say where to install app from", "app")]
+        [InlineData("Usage: updaemon install", "app", "other", "--from", "github:owner/app")]
         public async Task Install_InvalidArguments_FailBeforeDownloading(string expectedError, params string[] args)
         {
             using (AppHarness h = new AppHarness())

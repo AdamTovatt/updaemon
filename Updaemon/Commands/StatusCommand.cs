@@ -61,7 +61,13 @@ namespace Updaemon.Commands
             _outputWriter.WriteLine($"Update timer: {await DescribeTimerAsync(cancellationToken)}");
             UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
             _outputWriter.WriteLine($"Self-update: {(config.SelfUpdate ? "on" : "off")}");
-            await LogoutWarning.WriteIfNeededAsync(_serviceManager, _outputWriter, cancellationToken);
+            // Only a service stops at logout; with none in this scope, there is nothing to warn about.
+            IReadOnlyList<InstalledApp> allApps = await _configManager.GetAllAppsAsync(cancellationToken);
+            if (allApps.Any(app => _serviceDeployer.HasService(app.Name)))
+            {
+                await LogoutWarning.WriteIfNeededAsync(_serviceManager, _outputWriter, cancellationToken);
+            }
+
             _outputWriter.WriteLine(string.Empty);
 
             if (apps.Count == 0)
@@ -139,7 +145,7 @@ namespace Updaemon.Commands
                 manifest = null;
             }
 
-            string state = manifest?.IsService == true ? await DescribeStateAsync(app.Name, cancellationToken) : "-";
+            string state = _serviceDeployer.HasService(app.Name) ? await DescribeStateAsync(app.Name, cancellationToken) : "-";
 
             string skipped = app.SkippedVersions.Count > 0 ? $"skips {string.Join(", ", app.SkippedVersions)}" : string.Empty;
             return new[] { app.Name, version, manifest?.KindLabel ?? "?", state, app.Source, skipped };

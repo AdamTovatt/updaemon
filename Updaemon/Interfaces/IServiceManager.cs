@@ -65,6 +65,14 @@ namespace Updaemon.Interfaces
         /// lingering is on for the user.
         /// </summary>
         Task<bool> ServicesStopAtLogoutAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Checks that this scope's service manager can be reached, before anything that needs it is
+        /// written. Always true of the system's; a user's runs only while the user is logged in or
+        /// lingering is on (Linux), or while the user is logged in to the Mac's desktop.
+        /// </summary>
+        /// <exception cref="ServiceManagerUnreachableException">It cannot; the message says why and how to fix it.</exception>
+        Task<ReachableServiceManager> EnsureReachableAsync(CancellationToken cancellationToken = default);
     }
 }
 

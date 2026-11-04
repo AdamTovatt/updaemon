@@ -51,6 +51,7 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"'{appName}' is not installed.");
             }
 
+            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
             AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
             if (manifest.Service == null)
             {
@@ -59,14 +60,14 @@ namespace Updaemon.Commands
 
             app.Args = parser.Rest?.ToList();
             await _configManager.SaveAppAsync(app, cancellationToken);
-            await _serviceDeployer.ApplySettingsAsync(app, cancellationToken);
+            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(app, reachable, cancellationToken);
 
             IReadOnlyList<string> effective = app.Args ?? manifest.Service.Args;
             string shown = effective.Count == 0 ? "no arguments" : string.Join(' ', effective);
             _outputWriter.WriteLine(app.Args == null
                 ? $"{appName} runs with the arguments from its updaemon.json: {shown}."
                 : $"{appName} runs with: {shown}.");
-            return 0;
+            return _outputWriter.FinishSettingsChange(appName, staysRunning);
         }
 
         public string GetDetailedHelp()
@@ -80,7 +81,8 @@ namespace Updaemon.Commands
 
                 Description:
                   Sets the arguments the app's service runs with, regenerates its unit and
-                  restarts it if it is running. Without '--', restores the arguments from the
+                  restarts it if it is running, checking it keeps running as 'set' does.
+                  Without '--', restores the arguments from the
                   app's updaemon.json. 'set-args <app> --' runs it with no arguments.
 
                 Examples:

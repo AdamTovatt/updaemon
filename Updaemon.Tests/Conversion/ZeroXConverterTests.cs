@@ -68,7 +68,7 @@ namespace Updaemon.Tests.Conversion
                 await h.Converter().RunAsync(dryRun: false);
 
                 string unit = File.ReadAllText(ZeroXLayout.UnitPath(h));
-                Assert.Contains($"EnvironmentFile={h.Scope.GetSettingsFilePath("my-api")}", unit);
+                Assert.Contains($"ExecStart=\"{h.Scope.GetServiceWrapperPath("my-api")}\"", unit);
                 Assert.Contains("API_URL=\"https://api.example\"", File.ReadAllText(h.Scope.GetSettingsFilePath("my-api")));
                 Assert.Equal(ZeroXLayout.Unit(h, ZeroXLayout.Settings), File.ReadAllText(Backup(h, "my-api.service")));
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "my-api"), h.ServiceManager.MethodCalls);
@@ -90,13 +90,13 @@ namespace Updaemon.Tests.Conversion
         }
 
         [Fact]
-        public async Task RunAsync_CliTool_BecomesACommandWrapperInPlaceOfItsLinks()
+        public async Task RunAsync_CliTool_BecomesAWrapperInPlaceOfItsLinks()
         {
             using (AppHarness h = ZeroXSetup())
             {
                 await h.Converter().RunAsync(dryRun: false);
 
-                Assert.Equal("ripgrep", CommandWrapper.ReadOwner(h.Scope.GetCommandPath("rg")));
+                Assert.Equal("ripgrep", AppWrapper.ReadOwner(h.Scope.GetCommandPath("rg")));
                 Assert.False(File.Exists(h.Scope.GetCommandPath("ripgrep")));
                 Assert.Equal("rg", (await h.Deployer.GetCurrentManifestAsync("ripgrep")).Command);
                 Assert.Contains("Converted ripgrep (command) at 14.0.0; its command is now only 'rg'.", h.Output.Messages);
@@ -399,7 +399,7 @@ namespace Updaemon.Tests.Conversion
                 Assert.True(await h.Converter().RunAsync(dryRun: false));
 
                 Assert.Equal("https://api.example", (await h.Config.GetAppAsync("my-api"))!.Settings["API_URL"]);
-                Assert.Contains($"EnvironmentFile={h.Scope.GetSettingsFilePath("my-api")}", File.ReadAllText(ZeroXLayout.UnitPath(h)));
+                Assert.Contains($"ExecStart=\"{h.Scope.GetServiceWrapperPath("my-api")}\"", File.ReadAllText(ZeroXLayout.UnitPath(h)));
             }
         }
 
@@ -413,12 +413,12 @@ namespace Updaemon.Tests.Conversion
                 await h.Converter().RunAsync(dryRun: false);
                 // What a conversion killed after writing the wrapper leaves: the wrapper, and no alias link.
                 File.Delete(h.Scope.GetCommandPath("ripgrep"));
-                File.WriteAllText(h.Scope.GetCommandPath("rg"), CommandWrapper.Render("ripgrep", "/x/rg", "/x/settings", "/x/secrets"));
+                File.WriteAllText(h.Scope.GetCommandPath("rg"), AppWrapper.ForCommand("ripgrep", "/x/rg", "/x/settings", "/x/secrets"));
 
                 Assert.True(await h.Converter().RunAsync(dryRun: false));
 
                 Assert.Equal("rg", (await h.Config.GetAppAsync("ripgrep"))!.Manifest!.Command);
-                Assert.Equal("ripgrep", CommandWrapper.ReadOwner(h.Scope.GetCommandPath("rg")));
+                Assert.Equal("ripgrep", AppWrapper.ReadOwner(h.Scope.GetCommandPath("rg")));
             }
         }
 

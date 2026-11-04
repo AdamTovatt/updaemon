@@ -6,8 +6,8 @@ namespace Updaemon.Configuration
 {
     /// <summary>
     /// The <c>KEY="value"</c> environment file format updaemon writes. Inside double quotes only
-    /// <c>\ " $ `</c> are escaped (with a backslash), which systemd's <c>EnvironmentFile=</c> and
-    /// <c>/bin/sh</c> both read the same way. Values must pass <see cref="SafeText"/>.
+    /// <c>\ " $ `</c> are escaped (with a backslash), as <c>/bin/sh</c> reads them: the app's
+    /// wrappers load these files with <c>.</c>. Values must pass <see cref="SafeText"/>.
     /// </summary>
     public static class EnvFile
     {
@@ -72,6 +72,12 @@ namespace Updaemon.Configuration
         public static async Task WriteAsync(string path, IEnumerable<KeyValuePair<string, string>> variables, UnixFileMode mode, CancellationToken cancellationToken = default)
         {
             await AtomicFile.WriteAsync(path, Format(variables), mode, cancellationToken);
+        }
+
+        /// <summary>As above, with <paramref name="beforeReplace"/> run on the new file before it replaces the old (see <see cref="AtomicFile"/>).</summary>
+        public static async Task WriteAsync(string path, IEnumerable<KeyValuePair<string, string>> variables, UnixFileMode mode, Func<string, Task> beforeReplace, CancellationToken cancellationToken = default)
+        {
+            await AtomicFile.WriteAsync(path, Format(variables), mode, beforeReplace, cancellationToken);
         }
 
         public static async Task<Dictionary<string, string>> ReadAsync(string path, CancellationToken cancellationToken = default)

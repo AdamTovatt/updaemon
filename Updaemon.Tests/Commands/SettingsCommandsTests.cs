@@ -34,6 +34,60 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        /// <summary>Each command that restarts a service, run once, then a check that its change is kept.</summary>
+        public static TheoryData<string, Func<AppHarness, Task<int>>, Func<AppHarness, Task>> ChangesThatRestart =>
+            new TheoryData<string, Func<AppHarness, Task<int>>, Func<AppHarness, Task>>
+            {
+                {
+                    "set",
+                    h => h.Set().ExecuteAsync(new[] { "byteshelf", "BYTESHELF_LOG_LEVEL=debug" }),
+                    async h => Assert.Equal("debug", (await h.Config.GetAppAsync("byteshelf"))!.Settings["BYTESHELF_LOG_LEVEL"])
+                },
+                {
+                    "unset",
+                    h => h.Unset().ExecuteAsync(new[] { "byteshelf", "BYTESHELF_LOG_LEVEL" }),
+                    async h => Assert.DoesNotContain("BYTESHELF_LOG_LEVEL", (await h.Config.GetAppAsync("byteshelf"))!.Settings.Keys)
+                },
+                {
+                    "set-args",
+                    h => h.SetArgs().ExecuteAsync(new[] { "byteshelf", "--", "serve" }),
+                    async h => Assert.Equal(new[] { "serve" }, Assert.IsAssignableFrom<IEnumerable<string>>((await h.Config.GetAppAsync("byteshelf"))!.Args))
+                },
+            };
+
+        [Theory]
+        [MemberData(nameof(ChangesThatRestart))]
+        public async Task Change_RestartedServiceDoesNotStayRunning_FailsNamingTheLogsAndKeepsTheChange(string command, Func<AppHarness, Task<int>> change, Func<AppHarness, Task> assertKept)
+        {
+            _ = command; // Names the case in the test's display name.
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                await h.Set().ExecuteAsync(new[] { "byteshelf", "BYTESHELF_LOG_LEVEL=warn" });
+                h.ServiceManager.CrashOnNextStart.Add("byteshelf");
+                h.Output.Clear();
+
+                int exitCode = await change(h);
+
+                Assert.Equal(1, exitCode);
+                Assert.Equal(new[] { "Error: byteshelf did not stay running after the restart. The change is kept; see 'updaemon logs byteshelf'." }, h.Output.Errors);
+                await assertKept(h);
+            }
+        }
+
+        [Fact]
+        public async Task Set_RestartedServiceStaysRunning_Succeeds()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+
+                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "byteshelf", "BYTESHELF_LOG_LEVEL=debug" }));
+                Assert.Contains(RestartCall, h.ServiceManager.MethodCalls);
+                Assert.Empty(h.Output.Errors);
+            }
+        }
+
         [Fact]
         public async Task Set_UndeclaredKeyWithSecretFlag_IsStoredAsSecret()
         {
@@ -121,7 +175,7 @@ namespace Updaemon.Tests.Commands
 
                 await h.SetArgs().ExecuteAsync(new[] { "byteshelf", "--", "serve", "--port", "80" });
 
-                Assert.Contains("/bin/byteshelf\" \"serve\" \"--port\" \"80\"\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf")));
+                Assert.Contains("/run\" \"serve\" \"--port\" \"80\"\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf")));
             }
         }
 
@@ -134,7 +188,7 @@ namespace Updaemon.Tests.Commands
 
                 await h.SetArgs().ExecuteAsync(new[] { "byteshelf", "--" });
 
-                Assert.Contains("/bin/byteshelf\"\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf")));
+                Assert.Contains("/run\"\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf")));
             }
         }
 
@@ -150,7 +204,7 @@ namespace Updaemon.Tests.Commands
 
                 await h.SetArgs().ExecuteAsync(new[] { "byteshelf" });
 
-                Assert.Contains("/bin/byteshelf\" \"sync\" \"run\"\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf")));
+                Assert.Contains("/run\" \"sync\" \"run\"\n", await File.ReadAllTextAsync(h.Scope.GetUnitFilePath("byteshelf")));
                 Assert.Null((await h.Config.GetAppAsync("byteshelf"))!.Args);
             }
         }

@@ -7,7 +7,7 @@ namespace Updaemon.Services
 {
     /// <summary>
     /// Writes and removes what updaemon generates for an app from its manifest and settings: the
-    /// data directory, the settings file, the command wrapper on PATH and the service unit.
+    /// data directory, the settings file, the command wrapper on PATH, and the service's wrapper and unit.
     /// </summary>
     public class AppFileWriter
     {
@@ -15,7 +15,6 @@ namespace Updaemon.Services
         private readonly IFilePermissionManager _filePermissionManager;
         private readonly IUnitFileManager _unitFileManager;
         private readonly IServiceManager _serviceManager;
-        private readonly ISecretsManager _secretsManager;
         private readonly IOutputWriter _outputWriter;
 
         public AppFileWriter(
@@ -23,14 +22,12 @@ namespace Updaemon.Services
             IFilePermissionManager filePermissionManager,
             IUnitFileManager unitFileManager,
             IServiceManager serviceManager,
-            ISecretsManager secretsManager,
             IOutputWriter outputWriter)
         {
             _scope = scope;
             _filePermissionManager = filePermissionManager;
             _unitFileManager = unitFileManager;
             _serviceManager = serviceManager;
-            _secretsManager = secretsManager;
             _outputWriter = outputWriter;
         }
 
@@ -46,7 +43,7 @@ namespace Updaemon.Services
                 return;
             }
 
-            string? owner = CommandWrapper.ReadOwner(path);
+            string? owner = AppWrapper.ReadOwner(path);
             if (owner == null)
             {
                 throw new InvalidOperationException($"'{path}' already exists and updaemon did not create it. Remove it, then try again.");
@@ -66,6 +63,7 @@ namespace Updaemon.Services
         public async Task WriteAsync(InstalledApp app, AppManifest manifest, AppManifest? previous, CancellationToken cancellationToken)
         {
             string dataDirectory = _scope.GetDataDirectory(app.Name);
+            string secretsFilePath = _scope.GetSecretsFilePath(app.Name);
             Directory.CreateDirectory(dataDirectory);
             if (app.RunAs != null)
             {
@@ -92,7 +90,6 @@ namespace Updaemon.Services
 
             string currentLink = _scope.GetCurrentLinkPath(app.Name);
             string executablePath = Path.Combine(currentLink, manifest.Executable);
-            string secretsFilePath = _scope.GetSecretsFilePath(app.Name);
 
             if (previous?.Command != null && previous.Command != manifest.Command)
             {
@@ -101,28 +98,23 @@ namespace Updaemon.Services
 
             if (manifest.Command != null)
             {
-                string wrapper = CommandWrapper.Render(app.Name, executablePath, settingsFilePath, secretsFilePath);
+                string wrapper = AppWrapper.ForCommand(app.Name, executablePath, settingsFilePath, secretsFilePath);
                 await AtomicFile.WriteAsync(_scope.GetCommandPath(manifest.Command), wrapper, AtomicFile.Executable, cancellationToken);
             }
 
             if (manifest.Service != null)
             {
-                Dictionary<string, string> environment = new Dictionary<string, string>(settings);
-                foreach (KeyValuePair<string, string> secret in await _secretsManager.GetAppSecretsAsync(app.Name, cancellationToken))
-                {
-                    environment[secret.Key] = secret.Value;
-                }
+                string wrapperPath = _scope.GetServiceWrapperPath(app.Name);
+                string wrapper = AppWrapper.ForService(app.Name, executablePath, settingsFilePath, secretsFilePath);
+                await AtomicFile.WriteAsync(wrapperPath, wrapper, AtomicFile.Executable, cancellationToken);
 
                 ServiceUnit unit = new ServiceUnit
                 {
                     AppName = app.Name,
                     WorkingDirectory = currentLink,
-                    ExecutablePath = executablePath,
+                    WrapperPath = wrapperPath,
                     Arguments = app.Args ?? manifest.Service.Args,
                     RunAs = app.RunAs,
-                    SettingsFilePath = settingsFilePath,
-                    SecretsFilePath = secretsFilePath,
-                    Environment = environment,
                 };
 
                 await _unitFileManager.WriteUnitFileAsync(unit, cancellationToken);
@@ -169,7 +161,7 @@ namespace Updaemon.Services
         private void DeleteOwnWrapper(string command, string appName)
         {
             string path = _scope.GetCommandPath(command);
-            if (CommandWrapper.ReadOwner(path) == appName)
+            if (AppWrapper.ReadOwner(path) == appName)
             {
                 File.Delete(path);
             }
@@ -180,6 +172,7 @@ namespace Updaemon.Services
             await BestEffortAsync(() => _serviceManager.StopServiceAsync(appName, cancellationToken));
             await BestEffortAsync(() => _serviceManager.DisableServiceAsync(appName, cancellationToken));
             File.Delete(_scope.GetUnitFilePath(appName));
+            Files.DeleteIfExists(_scope.GetServiceWrapperPath(appName));
             await _serviceManager.DaemonReloadAsync(cancellationToken);
         }
 

@@ -13,20 +13,17 @@ namespace Updaemon.Services
         private readonly IReleaseChecksums _checksums;
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IFilePermissionManager _filePermissionManager;
-        private readonly IOutputWriter _outputWriter;
 
         public PluginDownloader(
             HttpClient httpClient,
             IReleaseChecksums checksums,
             IDistributionServiceClient distributionClient,
-            IFilePermissionManager filePermissionManager,
-            IOutputWriter outputWriter)
+            IFilePermissionManager filePermissionManager)
         {
             _httpClient = httpClient;
             _checksums = checksums;
             _distributionClient = distributionClient;
             _filePermissionManager = filePermissionManager;
-            _outputWriter = outputWriter;
         }
 
         public async Task<PluginDownloadResult> DownloadAndInspectAsync(PluginDownload download, string targetDirectory, CancellationToken cancellationToken = default)
@@ -36,8 +33,6 @@ namespace Updaemon.Services
             {
                 pluginData = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             }
-
-            _outputWriter.WriteLine($"Downloaded {pluginData.Length} bytes");
 
             Directory.CreateDirectory(targetDirectory);
 

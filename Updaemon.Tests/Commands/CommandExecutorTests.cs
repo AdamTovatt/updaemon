@@ -1,5 +1,6 @@
 using Updaemon.Commands;
 using Updaemon.Configuration;
+using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -141,7 +142,28 @@ namespace Updaemon.Tests.Commands
             int exitCode = await executor.ExecuteAsync(new[] { "unknown" });
 
             Assert.Equal(1, exitCode);
-            Assert.Contains("Unknown command: unknown", outputWriter.Errors);
+            Assert.Equal(new[] { "Unknown command 'unknown'. Run 'updaemon help' to list the commands." }, outputWriter.Errors);
+            Assert.Empty(outputWriter.Messages);
+        }
+
+        [Theory]
+        [InlineData("instal", "install")]
+        [InlineData("upadte", "update")]
+        [InlineData("Stauts", "status")]
+        public async Task ExecuteAsync_CloseToACommand_SuggestsIt(string typed, string suggested)
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            foreach (string name in new[] { "install", "update", "status", "set", "unset" })
+            {
+                factory.RegisterCommand(name, new MockCommand { Name = name });
+            }
+
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(factory, outputWriter).ExecuteAsync(new[] { typed });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { $"Unknown command '{typed}'. Did you mean '{suggested}'? Run 'updaemon help' to list the commands." }, outputWriter.Errors);
         }
 
         [Fact]
@@ -208,6 +230,19 @@ namespace Updaemon.Tests.Commands
 
             Assert.Equal(1, exitCode);
             Assert.Contains("Error: Test error", outputWriter.Errors);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_NoUserServiceManager_ExitsWithItsOwnCodeForInstallSh()
+        {
+            MockCommandFactory factory = new MockCommandFactory();
+            factory.RegisterCommand("timer", new MockCommand { Name = "timer", ExceptionToThrow = new ServiceManagerUnreachableException("Cannot reach it.") });
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(factory, outputWriter).ExecuteAsync(new[] { "timer" });
+
+            Assert.Equal(3, exitCode);
+            Assert.Equal(new[] { "Error: Cannot reach it." }, outputWriter.Errors);
         }
 
         [Fact]
@@ -283,7 +318,18 @@ namespace Updaemon.Tests.Commands
             int exitCode = await executor.ExecuteAsync(new[] { "help", "unknown" });
 
             Assert.Equal(1, exitCode);
-            Assert.Contains("Unknown command: unknown", outputWriter.Errors);
+            Assert.Equal(new[] { "Unknown command 'unknown'. Run 'updaemon help' to list the commands." }, outputWriter.Errors);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_HelpCloseToATopic_SuggestsIt()
+        {
+            MockOutputWriter outputWriter = new MockOutputWriter();
+
+            int exitCode = await Executor(new MockCommandFactory(), outputWriter).ExecuteAsync(new[] { "help", "publising" });
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(new[] { "Unknown command 'publising'. Did you mean 'publishing'? Run 'updaemon help' to list the commands." }, outputWriter.Errors);
         }
 
         [Fact]

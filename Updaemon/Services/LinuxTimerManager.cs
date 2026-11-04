@@ -2,6 +2,7 @@ using Updaemon.Configuration;
 using Updaemon.Conversion;
 using Updaemon.Interfaces;
 using Updaemon.IO;
+using Updaemon.Models;
 
 namespace Updaemon.Services
 {
@@ -24,7 +25,7 @@ namespace Updaemon.Services
             _serviceUnitPath = Path.Combine(scope.UnitDirectory, scope.TimerLabel + ".service");
         }
 
-        public async Task SetTimerAsync(TimeSpan interval, CancellationToken cancellationToken = default)
+        public async Task SetTimerAsync(TimeSpan interval, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             await AtomicFile.WriteAsync(_serviceUnitPath, BuildServiceUnit(_scope.UpdaemonCommandPath), AtomicFile.Readable, cancellationToken);
             await AtomicFile.WriteAsync(_timerUnitPath, BuildTimerUnit(interval), AtomicFile.Readable, cancellationToken);
@@ -33,7 +34,7 @@ namespace Updaemon.Services
             await ProcessRunner.RunAndCheckAsync("systemctl", Arguments("start", _timerUnitName), cancellationToken);
         }
 
-        public async Task RemoveTimerAsync(CancellationToken cancellationToken = default)
+        public async Task RemoveTimerAsync(ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             // Both stop and disable are best-effort: the timer may not exist or be running.
             await ProcessRunner.RunAsync("systemctl", Arguments("stop", _timerUnitName), cancellationToken);
@@ -98,9 +99,9 @@ namespace Updaemon.Services
             return new ZeroXTimer(_timerUnitPath, IsOn: false, Interval: null);
         }
 
-        public Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default)
+        public Task RemoveZeroXTimerAsync(ZeroXTimer timer, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
-            return RemoveTimerAsync(cancellationToken);
+            return RemoveTimerAsync(reachable, cancellationToken);
         }
 
         private string[] Arguments(params string[] verb) => [.. _scope.SystemdScopeArguments, .. verb];

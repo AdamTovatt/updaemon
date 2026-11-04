@@ -49,6 +49,7 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"'{appName}' is not installed.");
             }
 
+            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
             AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
             AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
             foreach (string assignment in positionals.Skip(1))
@@ -62,9 +63,9 @@ namespace Updaemon.Commands
             }
 
             await _settingsStore.SaveAsync(values, cancellationToken);
-            await _serviceDeployer.ApplySettingsAsync(app, cancellationToken);
+            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(app, reachable, cancellationToken);
             _outputWriter.WriteLine($"Updated the settings of {appName}.");
-            return 0;
+            return _outputWriter.FinishSettingsChange(appName, staysRunning);
         }
 
         public string GetDetailedHelp()
@@ -77,8 +78,11 @@ namespace Updaemon.Commands
 
                 Description:
                   Sets environment variables for an app, regenerates its service unit and
-                  command, and restarts its service if it is running. Settings the app's
-                  updaemon.json marks secret are stored in a file only the owner can read.
+                  command, and restarts its service if it is running. A restarted service
+                  must keep running for its health-check window, as after an update; if it
+                  does not, set fails and the change stays. Settings the app's
+                  updaemon.json marks secret are stored in a file only the user the app
+                  runs as can read.
                   Use --secret to store another key that way; it stays secret when changed
                   later. To make it plain again, unset it, then set it.
 

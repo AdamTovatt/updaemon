@@ -75,7 +75,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await Command(tempHelper, configManager, new MockPluginDownloader(), outputWriter).ExecuteAsync(new[] { "github" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Contains("Distribution plugin 'github' replaced successfully", outputWriter.Messages);
+                Assert.Contains("Replaced the 'github' plugin.", outputWriter.Messages);
             }
         }
 

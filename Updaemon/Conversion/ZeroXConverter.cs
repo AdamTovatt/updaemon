@@ -302,7 +302,7 @@ namespace Updaemon.Conversion
             }
 
             bool empty = !File.Exists(path) && !Directory.Exists(path);
-            return empty || CommandWrapper.ReadOwner(path) == appName;
+            return empty || AppWrapper.ReadOwner(path) == appName;
         }
 
         private void Preview(ConversionPlan plan)
@@ -414,11 +414,12 @@ namespace Updaemon.Conversion
                 }
 
                 await WriteManifestsIntoOlderVersionsAsync(app, current.Version, cancellationToken);
-                await _serviceDeployer.ActivateAsync(app, current, cancellationToken);
+                ReachableServiceManager reachable = await _serviceManager.EnsureReachableAsync(cancellationToken);
+                await _serviceDeployer.ActivateAsync(app, current, reachable, cancellationToken);
                 if (current.Manifest.IsService)
                 {
                     await _serviceManager.EnableServiceAsync(app.Name, cancellationToken);
-                    if (app.AutoRestart && !await _serviceDeployer.RestartAsync(app.Name, cancellationToken))
+                    if (app.AutoRestart && !await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken))
                     {
                         throw new InvalidOperationException(ServiceDeployer.NotRunning(app.Name, current.Version, " with its new unit, so its 0.x unit is back"));
                     }
@@ -478,7 +479,7 @@ namespace Updaemon.Conversion
                     await _serviceManager.DaemonReloadAsync(CancellationToken.None);
                     if (plan.Old.AutoRestart)
                     {
-                        await _serviceDeployer.RestartAsync(name, CancellationToken.None);
+                        await _serviceDeployer.RestartAsync(name, await _serviceManager.EnsureReachableAsync(CancellationToken.None), CancellationToken.None);
                     }
                 }
             }
@@ -494,9 +495,10 @@ namespace Updaemon.Conversion
             {
                 // The new timer first: if it cannot be set, the 0.x one keeps running and a later run tries again.
                 ZeroXBackup.Keep(timer.FilePath, _scope.ZeroXBackupDirectory);
+                ReachableServiceManager reachable = await _serviceManager.EnsureReachableAsync(cancellationToken);
                 if (timer.IsOn && timer.Interval is TimeSpan interval)
                 {
-                    await _timerManager.SetTimerAsync(interval, cancellationToken);
+                    await _timerManager.SetTimerAsync(interval, reachable, cancellationToken);
                 }
                 else
                 {
@@ -506,7 +508,7 @@ namespace Updaemon.Conversion
                     await _configManager.SaveConfigAsync(config, cancellationToken);
                 }
 
-                await _timerManager.RemoveZeroXTimerAsync(timer, cancellationToken);
+                await _timerManager.RemoveZeroXTimerAsync(timer, reachable, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

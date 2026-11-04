@@ -45,7 +45,9 @@ namespace Updaemon.Tests.Commands
         {
             using (AppHarness h = new AppHarness())
             {
+                await h.InstallByteShelfAsync();
                 h.ServiceManager.ServicesStopAtLogout = true;
+                h.Output.Clear();
 
                 await h.Status().ExecuteAsync(Array.Empty<string>());
 
@@ -53,6 +55,23 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(
                     new[] { $"Warning: lingering is off for {user}, so your services stop when you log out. To keep them running, run: sudo loginctl enable-linger {user}" },
                     h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task Status_ServicesStopAtLogoutButThereIsNoService_DoesNotWarn()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/rg", "1.0.0", """{ "executable": "bin/byteshelf", "command": "rg" }""");
+                await h.Install().ExecuteAsync(new[] { "rg", "--from", "github:owner/rg" });
+                h.ServiceManager.ServicesStopAtLogout = true;
+                h.Output.Clear();
+
+                await h.Status().ExecuteAsync(Array.Empty<string>());
+
+                Assert.Empty(h.Output.Errors);
             }
         }
 

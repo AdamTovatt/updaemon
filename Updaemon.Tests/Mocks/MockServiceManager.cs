@@ -73,6 +73,18 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult(ServicesStopAtLogout);
         }
 
+        /// <summary>Set to make <see cref="EnsureReachableAsync"/> fail with this message, as without a user manager.</summary>
+        public string? Unreachable { get; set; }
+
+        /// <summary>How often <see cref="EnsureReachableAsync"/> was asked; kept apart from <see cref="MethodCalls"/>, which records what changes services.</summary>
+        public int ReachChecks { get; private set; }
+
+        public Task<ReachableServiceManager> EnsureReachableAsync(CancellationToken cancellationToken = default)
+        {
+            ReachChecks++;
+            return Unreachable == null ? Task.FromResult(new ReachableServiceManager()) : throw new ServiceManagerUnreachableException(Unreachable);
+        }
+
         /// <summary>
         /// Services whose next start or restart crashes: not running afterwards, so the health check
         /// fails. A later start runs again, as the version rolled back to does.

@@ -1,5 +1,6 @@
 using Updaemon.Conversion;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Tests.Mocks
 {
@@ -13,7 +14,7 @@ namespace Updaemon.Tests.Mocks
         public string? CurrentInterval { get; set; } = null;
         public TimeSpan? LastSetInterval { get; set; } = null;
 
-        public Task SetTimerAsync(TimeSpan interval, CancellationToken cancellationToken = default)
+        public Task SetTimerAsync(TimeSpan interval, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(SetTimerAsync)}:{interval}");
             if (SetFailure != null)
@@ -27,7 +28,7 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
-        public Task RemoveTimerAsync(CancellationToken cancellationToken = default)
+        public Task RemoveTimerAsync(ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(RemoveTimerAsync));
             if (RemoveFailure != null)
@@ -66,7 +67,7 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult(ZeroX);
         }
 
-        public Task RemoveZeroXTimerAsync(ZeroXTimer timer, CancellationToken cancellationToken = default)
+        public Task RemoveZeroXTimerAsync(ZeroXTimer timer, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(nameof(RemoveZeroXTimerAsync));
             ZeroX = null;

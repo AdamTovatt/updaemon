@@ -36,11 +36,10 @@ namespace Updaemon.Services
             try
             {
                 File.SetUnixFileMode(executablePath, ExecutableMode);
-                _outputWriter.WriteLine($"Set executable permissions on: {executablePath}");
             }
             catch (Exception ex)
             {
-                _outputWriter.WriteLine($"Warning: Could not set executable permissions on {executablePath}: {ex.Message}");
+                _outputWriter.WriteError($"Warning: Could not set executable permissions on {executablePath}: {ex.Message}");
             }
 
             return Task.CompletedTask;
@@ -51,11 +50,10 @@ namespace Updaemon.Services
             try
             {
                 ApplyAdditiveRead(directoryPath);
-                _outputWriter.WriteLine($"Set directory permissions on: {directoryPath}");
             }
             catch (Exception ex)
             {
-                _outputWriter.WriteLine($"Warning: Could not set directory permissions on {directoryPath}: {ex.Message}");
+                _outputWriter.WriteError($"Warning: Could not set directory permissions on {directoryPath}: {ex.Message}");
             }
 
             return Task.CompletedTask;

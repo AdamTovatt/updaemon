@@ -19,6 +19,17 @@ namespace Updaemon.Services
         /// </summary>
         public static async Task LoadAsync(UpdaemonScope scope, string label, string plistPath, IOutputWriter outputWriter, CancellationToken cancellationToken)
         {
+            // Every plist updaemon writes logs under the scope's log directory, and launchd silently
+            // drops the output when the directory is missing.
+            try
+            {
+                Directory.CreateDirectory(scope.LogDirectory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                outputWriter.WriteError($"Warning: could not create the log directory {scope.LogDirectory}: {ex.Message}");
+            }
+
             if (scope.IsSystem)
             {
                 // LaunchDaemons must be owned by root:wheel. Root normally creates files that way; be explicit.
@@ -100,20 +111,6 @@ namespace Updaemon.Services
                 }
 
                 _entries.AppendLine("    </array>");
-                return this;
-            }
-
-            public Plist Dictionary(string key, IEnumerable<KeyValuePair<string, string>> values)
-            {
-                Key(key);
-                _entries.AppendLine("    <dict>");
-                foreach (KeyValuePair<string, string> value in values.OrderBy(v => v.Key, StringComparer.Ordinal))
-                {
-                    _entries.AppendLine($"        <key>{Escape(value.Key)}</key>");
-                    _entries.AppendLine($"        <string>{Escape(value.Value)}</string>");
-                }
-
-                _entries.AppendLine("    </dict>");
                 return this;
             }
 

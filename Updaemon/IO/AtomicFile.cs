@@ -17,7 +17,14 @@ namespace Updaemon.IO
         /// Writes <paramref name="content"/> to a temporary file created with <paramref name="mode"/>, then
         /// renames it over <paramref name="path"/>.
         /// </summary>
-        public static async Task WriteAsync(string path, string content, UnixFileMode mode, CancellationToken cancellationToken = default)
+        public static Task WriteAsync(string path, string content, UnixFileMode mode, CancellationToken cancellationToken = default) =>
+            WriteAsync(path, content, mode, beforeReplace: null, cancellationToken);
+
+        /// <summary>
+        /// As above, with <paramref name="beforeReplace"/> run on the temporary file before the rename, for
+        /// what must already hold when the file appears at <paramref name="path"/>, such as its owner.
+        /// </summary>
+        public static async Task WriteAsync(string path, string content, UnixFileMode mode, Func<string, Task>? beforeReplace, CancellationToken cancellationToken = default)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             string temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
@@ -38,6 +45,11 @@ namespace Updaemon.IO
 
                 // The umask may have cleared bits from the create mode; set it exactly.
                 File.SetUnixFileMode(temporaryPath, mode);
+                if (beforeReplace != null)
+                {
+                    await beforeReplace(temporaryPath);
+                }
+
                 File.Move(temporaryPath, path, overwrite: true);
             }
             catch

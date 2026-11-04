@@ -15,7 +15,7 @@ namespace Updaemon.Tests.Services
         [Fact]
         public void BuildPlist_HasExpectedShape()
         {
-            string plist = MacTimerManager.BuildPlist("com.updaemon", "/usr/local/bin/updaemon", 600);
+            string plist = MacTimerManager.BuildPlist("com.updaemon", "/usr/local/bin/updaemon", 600, "/var/log/updaemon/updaemon.log");
 
             Assert.Contains("<plist", plist);
             Assert.Contains("<key>Label</key>", plist);
@@ -27,6 +27,8 @@ namespace Updaemon.Tests.Services
             Assert.Contains("<integer>600</integer>", plist);
             Assert.Contains("<key>RunAtLoad</key>", plist);
             Assert.Contains("<false/>", plist);
+            Assert.Contains("<key>StandardOutPath</key>\n    <string>/var/log/updaemon/updaemon.log</string>", plist);
+            Assert.Contains("<key>StandardErrorPath</key>\n    <string>/var/log/updaemon/updaemon.log</string>", plist);
         }
 
         [Fact]
@@ -57,7 +59,7 @@ namespace Updaemon.Tests.Services
             string plistPath = Path.Combine(scope.UnitDirectory, scope.TimerLabel + ".plist");
             Directory.CreateDirectory(scope.UnitDirectory);
 
-            string plist = MacTimerManager.BuildPlist(scope.TimerLabel, "/usr/local/bin/updaemon", seconds);
+            string plist = MacTimerManager.BuildPlist(scope.TimerLabel, "/usr/local/bin/updaemon", seconds, scope.UpdateLogPath);
             await File.WriteAllTextAsync(plistPath, plist);
 
             MacTimerManager manager = new MacTimerManager(new MockOutputWriter(), scope);

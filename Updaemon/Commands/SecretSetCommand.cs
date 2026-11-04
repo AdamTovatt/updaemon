@@ -55,11 +55,8 @@ namespace Updaemon.Commands
                 }
             }
 
-            _outputWriter.WriteLine($"Setting secret for plugin '{pluginAlias}': {key}");
-
             await _secretsManager.SetSecretAsync(pluginAlias, key, value, cancellationToken);
-
-            _outputWriter.WriteLine("Secret set successfully");
+            _outputWriter.WriteLine($"Saved the '{pluginAlias}' plugin's {key}.");
             return 0;
         }
 

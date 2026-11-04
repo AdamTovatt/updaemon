@@ -9,12 +9,14 @@ namespace Updaemon.Commands
     public class TimerCommand : ICommand
     {
         private readonly ITimerManager _timerManager;
+        private readonly IServiceManager _serviceManager;
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
 
-        public TimerCommand(ITimerManager timerManager, IConfigManager configManager, IOutputWriter outputWriter)
+        public TimerCommand(ITimerManager timerManager, IServiceManager serviceManager, IConfigManager configManager, IOutputWriter outputWriter)
         {
             _timerManager = timerManager;
+            _serviceManager = serviceManager;
             _configManager = configManager;
             _outputWriter = outputWriter;
         }
@@ -45,6 +47,9 @@ namespace Updaemon.Commands
                 return _outputWriter.FailUsage(this);
             }
 
+            // The timer is a unit or plist of the same service manager; without it, nothing is written.
+            ReachableServiceManager reachable = await _serviceManager.EnsureReachableAsync(cancellationToken);
+
             if (keep && await DescribeKeptTimerAsync(cancellationToken) is string kept)
             {
                 _outputWriter.WriteLine(kept);
@@ -60,12 +65,12 @@ namespace Updaemon.Commands
 
             if (interval == "-")
             {
-                await RemoveTimerAsync(cancellationToken);
+                await RemoveTimerAsync(reachable, cancellationToken);
                 return 0;
             }
 
             // Set timer with specified interval
-            int result = await SetTimerAsync(interval, cancellationToken);
+            int result = await SetTimerAsync(interval, reachable, cancellationToken);
             return result;
         }
 
@@ -101,14 +106,12 @@ namespace Updaemon.Commands
                 : null;
         }
 
-        private async Task RemoveTimerAsync(CancellationToken cancellationToken)
+        private async Task RemoveTimerAsync(ReachableServiceManager reachable, CancellationToken cancellationToken)
         {
-            _outputWriter.WriteLine("Disabling automatic update timer...");
-
             // Recorded first: if removing then fails halfway, the timer is still meant to be off, and install.sh leaves it so.
             await RecordTurnedOffAsync(true, cancellationToken);
-            await _timerManager.RemoveTimerAsync(cancellationToken);
-            _outputWriter.WriteLine("Timer disabled successfully");
+            await _timerManager.RemoveTimerAsync(reachable, cancellationToken);
+            _outputWriter.WriteLine("The update timer is off. Turn it on with 'updaemon timer 1h'.");
         }
 
         private async Task RecordTurnedOffAsync(bool turnedOff, CancellationToken cancellationToken)
@@ -121,7 +124,7 @@ namespace Updaemon.Commands
             }
         }
 
-        private async Task<int> SetTimerAsync(string interval, CancellationToken cancellationToken)
+        private async Task<int> SetTimerAsync(string interval, ReachableServiceManager reachable, CancellationToken cancellationToken)
         {
             // Parse the interval
             TimeSpan? parsedInterval = ParseInterval(interval);
@@ -132,12 +135,10 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            _outputWriter.WriteLine($"Setting automatic update timer to run every {interval}...");
-
             // Cleared first: a record left saying off while a timer runs would make --keep call it off.
             await RecordTurnedOffAsync(false, cancellationToken);
-            await _timerManager.SetTimerAsync(parsedInterval.Value, cancellationToken);
-            _outputWriter.WriteLine($"Timer set successfully to run every {interval}. Turn it off with 'updaemon timer -'.");
+            await _timerManager.SetTimerAsync(parsedInterval.Value, reachable, cancellationToken);
+            _outputWriter.WriteLine($"The update timer runs 'updaemon update' every {interval}. Turn it off with 'updaemon timer -'.");
             return 0;
         }
 

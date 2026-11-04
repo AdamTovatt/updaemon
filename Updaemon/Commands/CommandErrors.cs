@@ -23,5 +23,12 @@ namespace Updaemon.Commands
 
         public static int FailUnknownOption(this IOutputWriter outputWriter, string option) =>
             outputWriter.Fail($"Unknown option '{option}'.");
+
+        /// <summary>
+        /// How set, unset and set-args end: 0, or when the service they restarted did not stay running,
+        /// a failure naming the logs. The change itself is kept either way.
+        /// </summary>
+        public static int FinishSettingsChange(this IOutputWriter outputWriter, string appName, bool staysRunning) =>
+            staysRunning ? 0 : outputWriter.Fail($"{appName} did not stay running after the restart. The change is kept; see 'updaemon logs {appName}'.");
     }
 }

@@ -65,7 +65,7 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult(new Dictionary<string, string>(_appSecrets.GetValueOrDefault(appName) ?? new Dictionary<string, string>()));
         }
 
-        public Task SaveAppSecretsAsync(string appName, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default)
+        public Task SaveAppSecretsAsync(string appName, string? owner, IReadOnlyDictionary<string, string> secrets, CancellationToken cancellationToken = default)
         {
             _appSecrets[appName] = new Dictionary<string, string>(secrets);
             return Task.CompletedTask;

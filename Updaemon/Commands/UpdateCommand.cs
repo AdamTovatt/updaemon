@@ -181,8 +181,11 @@ namespace Updaemon.Commands
             DeployableVersion staged = await _serviceDeployer.StageAsync(app, latestVersion, _distributionClient, cancellationToken);
 
             AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
+            ReachableServiceManager reachable;
             try
             {
+                // Known only now: whether the new version has a service.
+                reachable = await _serviceDeployer.ReachServiceManagerAsync(app.Name, staged.Manifest, cancellationToken);
                 values.EnsureComplete(staged.Manifest, latestVersion, currentVersion, $"updaemon update {app.Name}");
             }
             catch
@@ -200,13 +203,13 @@ namespace Updaemon.Commands
             }
 
             await _settingsStore.SaveAsync(values, cancellationToken);
-            await _serviceDeployer.ActivateAsync(app, staged, cancellationToken);
+            await _serviceDeployer.ActivateAsync(app, staged, reachable, cancellationToken);
 
             if (staged.Manifest.IsService)
             {
                 if (app.AutoRestart)
                 {
-                    await RestartAndCheckAsync(app, latestVersion, currentVersion, cancellationToken);
+                    await RestartAndCheckAsync(app, latestVersion, currentVersion, reachable, cancellationToken);
                 }
                 else
                 {
@@ -235,9 +238,9 @@ namespace Updaemon.Commands
         /// Restarts the service on the new version and checks it stays up. If it does not, the previous
         /// version runs again and the new one is skipped; the update then fails with that.
         /// </summary>
-        private async Task RestartAndCheckAsync(InstalledApp app, Version newVersion, Version previousVersion, CancellationToken cancellationToken)
+        private async Task RestartAndCheckAsync(InstalledApp app, Version newVersion, Version previousVersion, ReachableServiceManager reachable, CancellationToken cancellationToken)
         {
-            if (await _serviceDeployer.RestartAsync(app.Name, cancellationToken))
+            if (await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken))
             {
                 return;
             }
@@ -245,8 +248,8 @@ namespace Updaemon.Commands
             bool previousStaysRunning;
             try
             {
-                await _appRollback.SwitchAsync(app, newVersion, previousVersion, cancellationToken);
-                previousStaysRunning = await _serviceDeployer.RestartAsync(app.Name, cancellationToken);
+                await _appRollback.SwitchAsync(app, newVersion, previousVersion, reachable, cancellationToken);
+                previousStaysRunning = await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

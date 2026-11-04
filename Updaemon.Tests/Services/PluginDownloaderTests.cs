@@ -50,7 +50,7 @@ namespace Updaemon.Tests.Services
         private static PluginDownloader Downloader(OnePlugin server, IReleaseChecksums? checksums = null, MockDistributionServiceClient? client = null, MockFilePermissionManager? permissions = null)
         {
             HttpClient httpClient = new HttpClient(server);
-            return new PluginDownloader(httpClient, checksums ?? new ReleaseChecksums(httpClient), client ?? new MockDistributionServiceClient(), permissions ?? new MockFilePermissionManager(), new MockOutputWriter());
+            return new PluginDownloader(httpClient, checksums ?? new ReleaseChecksums(httpClient), client ?? new MockDistributionServiceClient(), permissions ?? new MockFilePermissionManager());
         }
 
         [Fact]

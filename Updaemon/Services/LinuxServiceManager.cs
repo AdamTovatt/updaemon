@@ -67,6 +67,48 @@ namespace Updaemon.Services
             }
         }
 
+        public async Task<ReachableServiceManager> EnsureReachableAsync(CancellationToken cancellationToken = default)
+        {
+            if (_scope.IsSystem)
+            {
+                return new ReachableServiceManager();
+            }
+
+            ProcessRunner.Result result;
+            try
+            {
+                result = await ProcessRunner.RunAsync("systemctl", Arguments("show-environment"), cancellationToken);
+            }
+            catch (Win32Exception)
+            {
+                throw Unreachable(_scope.UserName!, "systemctl was not found");
+            }
+
+            return result.Success ? new ReachableServiceManager() : throw Unreachable(_scope.UserName!, FirstLine(result.StdErr) ?? $"exit {result.ExitCode}");
+        }
+
+        /// <summary>
+        /// The user manager is missing: it runs while the user is logged in, and from boot once lingering
+        /// is on. A shell from su or sudo -u reaches a running one through <see cref="UserRuntimeDirectory"/>.
+        /// </summary>
+        internal static ServiceManagerUnreachableException Unreachable(string user, string problem) => new ServiceManagerUnreachableException(
+            $"Cannot reach systemd's user manager for {user} ({problem.TrimEnd('.')}). It runs while {user} is logged in; " +
+            $"to have it run always, run: sudo loginctl enable-linger {user}");
+
+        /// <summary>
+        /// Where systemctl --user and journalctl --user find the user manager, when the environment does
+        /// not say so already, or null. A shell from su or sudo -u has no XDG_RUNTIME_DIR, or the calling
+        /// user's; a login or lingering makes /run/user/&lt;uid&gt;, and with it the manager's socket.
+        /// </summary>
+        internal static string? UserRuntimeDirectory(string? current, uint userId, Func<string, bool> directoryExists)
+        {
+            string own = $"/run/user/{userId}";
+            return current != own && directoryExists(own) ? own : null;
+        }
+
+        private static string? FirstLine(string text) =>
+            text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+
         /// <summary>Whether <c>loginctl show-user &lt;user&gt; -p Linger</c> printed <c>Linger=yes</c>.</summary>
         internal static bool LingerIsOn(string output) =>
             output.Split('\n').Any(line => line.Trim() == "Linger=yes");

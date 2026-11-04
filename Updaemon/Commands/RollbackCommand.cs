@@ -58,6 +58,7 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"'{appName}' is not installed.");
             }
 
+            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
             Version current = await _serviceDeployer.GetCurrentVersionAsync(appName, cancellationToken);
             IReadOnlyList<Version> kept = _serviceDeployer.GetRetainedVersions(appName);
             Version? target = named != null
@@ -73,9 +74,9 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"{appName} {current} is already the current version.");
             }
 
-            await _appRollback.SwitchAsync(app, current, target, cancellationToken);
+            await _appRollback.SwitchAsync(app, current, target, reachable, cancellationToken);
             AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
-            bool staysRunning = !manifest.IsService || await _serviceDeployer.RestartAsync(appName, cancellationToken);
+            bool staysRunning = !manifest.IsService || await _serviceDeployer.RestartAsync(appName, reachable, cancellationToken);
 
             _outputWriter.WriteLine(target < current
                 ? $"Rolled back {appName} from {current} to {target}. 'updaemon update' skips {current} from now on."

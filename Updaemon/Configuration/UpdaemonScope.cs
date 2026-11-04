@@ -76,7 +76,7 @@ namespace Updaemon.Configuration
         /// <summary>The generated environment file with the app's non-secret settings.</summary>
         public string GetSettingsFilePath(string appName) => Path.Combine(RootDirectory, "settings", appName + ".env");
 
-        /// <summary>The app's secret settings, readable by the scope owner only.</summary>
+        /// <summary>The app's secret settings, readable only by the user the app runs as.</summary>
         public string GetSecretsFilePath(string appName) => Path.Combine(SecretsDirectory, appName + ".env");
 
         /// <summary>The app's own data, kept across updates and rollbacks.</summary>
@@ -87,11 +87,17 @@ namespace Updaemon.Configuration
 
         public string GetCurrentLinkPath(string appName) => Path.Combine(AppsDirectory, appName, "current");
 
+        /// <summary>The wrapper a service's unit or plist starts, beside its versions.</summary>
+        public string GetServiceWrapperPath(string appName) => Path.Combine(AppsDirectory, appName, "run");
+
         /// <summary>macOS only: where launchd writes the service's standard output.</summary>
         public string GetOutputLogPath(string appName) => Path.Combine(LogDirectory, appName + ".log");
 
         /// <summary>macOS only: where launchd writes the service's standard error.</summary>
         public string GetErrorLogPath(string appName) => Path.Combine(LogDirectory, appName + ".err.log");
+
+        /// <summary>macOS only: where launchd writes the update timer's runs, output and errors alike.</summary>
+        public string UpdateLogPath => Path.Combine(LogDirectory, "updaemon.log");
 
         /// <summary>The systemd unit name or launchd label of an app's service.</summary>
         public string GetServiceLabel(string appName) => Platform.IsMacOS ? MacLabelPrefix + appName : appName;

@@ -70,10 +70,9 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail(ex.Message);
             }
 
-            _outputWriter.WriteLine($"Saved plugin to: {result.Plugin.Path}");
             _outputWriter.WriteLine(result.ReplacedExisting
-                ? $"Distribution plugin '{result.Plugin.Alias}' replaced successfully"
-                : $"Distribution plugin '{result.Plugin.Alias}' installed successfully");
+                ? $"Replaced the '{result.Plugin.Alias}' plugin."
+                : $"Installed the '{result.Plugin.Alias}' plugin.");
             _outputWriter.WriteLine($"  Name: {result.ServiceInformation.FullName}");
             _outputWriter.WriteLine($"  Version: {result.ServiceInformation.Version}");
             _outputWriter.WriteLine($"  Description: {result.ServiceInformation.Description}");

@@ -47,7 +47,7 @@ At least one of `command` and `service` is required; an app can be both. Each se
 |---|---|
 | `description` | Shown when updaemon asks for the value. |
 | `required` | `true` if the app cannot run without it. Default `false`. |
-| `secret` | `true` to store the value where only its owner can read it. Default `false`. |
+| `secret` | `true` to store the value where only the user the app runs as can read it. Default `false`. |
 | `default` | The value when none is set. A setting with a default is never required. |
 
 An invalid manifest stops the install or update with a message naming the problem. No value may contain a line break or other control character.
@@ -56,12 +56,12 @@ The `executablePath` format of updaemon 0.x is not read any more: replace `execu
 
 ## What updaemon does with it
 
-- **Command**: puts a small script named after `command` on PATH. It loads the app's settings, then runs the executable with the arguments it was given, in the caller's working directory. It loads the secrets only when the caller can read them: for an app installed system-wide, that is root.
-- **Service**: writes a systemd unit (Linux) or launchd plist (macOS) that runs the executable with `service.args` and the app's settings, and restarts it if it stops. Its working directory is the release root, which is replaced on each update.
-- **Settings**: `updaemon install` asks for each required setting that has no value; `updaemon set` changes them later. Secrets are kept in a file only the owner can read.
+- **Command**: puts a small script named after `command` on PATH. It loads the app's settings, then runs the executable with the arguments it was given, in the caller's working directory. It loads the secrets only for the user the app runs as: root for an app installed system-wide, unless it was installed with `--run-as <user>`.
+- **Service**: writes a systemd unit (Linux) or launchd plist (macOS) that starts the same kind of script with `service.args`. The script loads the app's settings and secrets with `/bin/sh`, then runs the executable; the service restarts if it stops. Its working directory is the release root, which is replaced on each update.
+- **Settings**: `updaemon install` asks for each required setting that has no value; `updaemon set` changes them later. Secrets are kept in a file only the user the app runs as can read.
 - **Data**: every app gets a directory that is kept across updates, passed in `UPDAEMON_DATA_DIR`. Store state there.
 
-After an update restarts a service, it must keep running for `service.healthCheckSeconds` (10 seconds unless set). Give a service that takes longer to fail, or to settle, a longer window. If it does not keep running, updaemon runs the previous version again and skips the new one until a newer release appears. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`.
+After an update restarts a service, it must keep running for `service.healthCheckSeconds` (10 seconds unless set). Give a service that takes longer to fail, or to settle, a longer window. If it does not keep running, updaemon runs the previous version again and skips the new one until a newer release appears. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`. So do `updaemon set`, `unset` and `set-args` when they restart a running service: the change stays, and the command fails pointing to the logs.
 
 Each update reads the new release's manifest, so a release can add settings or change its arguments. If it adds a required setting the app has no value for, the update waits: the current version keeps running and updaemon names the `updaemon set` command to run.
 

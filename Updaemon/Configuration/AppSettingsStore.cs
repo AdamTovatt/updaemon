@@ -28,7 +28,7 @@ namespace Updaemon.Configuration
         /// </summary>
         public async Task SaveAsync(AppValues values, CancellationToken cancellationToken = default)
         {
-            await _secretsManager.SaveAppSecretsAsync(values.App.Name, values.Secrets, cancellationToken);
+            await _secretsManager.SaveAppSecretsAsync(values.App.Name, values.App.RunAs, values.Secrets, cancellationToken);
             await _configManager.SaveAppAsync(values.App, cancellationToken);
         }
     }

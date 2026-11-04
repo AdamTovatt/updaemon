@@ -96,6 +96,22 @@ namespace Updaemon.Services
         public Task<bool> ServicesStopAtLogoutAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
+        public async Task<ReachableServiceManager> EnsureReachableAsync(CancellationToken cancellationToken = default)
+        {
+            if (_scope.IsSystem)
+            {
+                return new ReachableServiceManager();
+            }
+
+            ProcessRunner.Result result = await ProcessRunner.RunAsync("launchctl", new[] { "print", _scope.LaunchdDomain }, cancellationToken);
+            return result.Success ? new ReachableServiceManager() : throw Unreachable(_scope.UserName!, _scope.LaunchdDomain);
+        }
+
+        /// <summary>A user's launchd domain exists only while that user is logged in to the Mac's desktop.</summary>
+        internal static ServiceManagerUnreachableException Unreachable(string user, string domain) => new ServiceManagerUnreachableException(
+            $"Cannot reach launchd's {domain} domain for {user}, which exists only while {user} is logged in to the Mac's desktop. " +
+            $"Log in as {user} on the Mac itself, then try again.");
+
         private string Label(string serviceName) => _scope.GetServiceLabel(serviceName);
 
         private async Task LoadAsync(string serviceName, CancellationToken cancellationToken)
@@ -104,17 +120,6 @@ namespace Updaemon.Services
             if (!File.Exists(plistPath))
             {
                 throw new InvalidOperationException($"Plist not found at '{plistPath}'. Cannot load '{serviceName}'.");
-            }
-
-            // The plist's StandardOutPath / StandardErrorPath point under the scope's log directory.
-            // If the directory doesn't exist, launchd silently drops logs — make sure it's there.
-            try
-            {
-                Directory.CreateDirectory(_scope.LogDirectory);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                _outputWriter.WriteError($"Warning: could not create log directory {_scope.LogDirectory}: {ex.Message}");
             }
 
             await Launchd.LoadAsync(_scope, Label(serviceName), plistPath, _outputWriter, cancellationToken);

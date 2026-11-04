@@ -21,10 +21,8 @@ namespace Updaemon.Services
 
         public async Task WriteUnitFileAsync(ServiceUnit unit, CancellationToken cancellationToken = default)
         {
-            // A plist carries the secrets, so only its owner may read it. A systemd unit only names
-            // the secrets file; 0644 is what systemd expects.
-            UnixFileMode mode = _scope.Platform.IsMacOS ? AtomicFile.OwnerOnly : AtomicFile.Readable;
-            await AtomicFile.WriteAsync(_scope.GetUnitFilePath(unit.AppName), Render(unit), mode, cancellationToken);
+            // Neither holds a secret, and 0644 is what systemd and launchd expect.
+            await AtomicFile.WriteAsync(_scope.GetUnitFilePath(unit.AppName), Render(unit), AtomicFile.Readable, cancellationToken);
         }
 
         public string Render(ServiceUnit unit) =>
@@ -49,9 +47,7 @@ namespace Updaemon.Services
             }
 
             builder.AppendLine($"WorkingDirectory={SystemdSyntax.EscapeSpecifiers(unit.WorkingDirectory)}");
-            builder.AppendLine($"EnvironmentFile={SystemdSyntax.EscapeSpecifiers(unit.SettingsFilePath)}");
-            builder.AppendLine($"EnvironmentFile=-{SystemdSyntax.EscapeSpecifiers(unit.SecretsFilePath)}");
-            IEnumerable<string> command = new[] { unit.ExecutablePath }.Concat(unit.Arguments);
+            IEnumerable<string> command = new[] { unit.WrapperPath }.Concat(unit.Arguments);
             builder.AppendLine($"ExecStart={string.Join(' ', command.Select(SystemdSyntax.QuoteArgument))}");
             builder.AppendLine("Restart=always");
             builder.AppendLine("RestartSec=10");
@@ -72,8 +68,7 @@ namespace Updaemon.Services
 
             return plist
                 .String("WorkingDirectory", unit.WorkingDirectory)
-                .Strings("ProgramArguments", new[] { unit.ExecutablePath }.Concat(unit.Arguments))
-                .Dictionary("EnvironmentVariables", unit.Environment)
+                .Strings("ProgramArguments", new[] { unit.WrapperPath }.Concat(unit.Arguments))
                 .Boolean("RunAtLoad", true)
                 .Boolean("KeepAlive", true)
                 .Integer("ThrottleInterval", 10)

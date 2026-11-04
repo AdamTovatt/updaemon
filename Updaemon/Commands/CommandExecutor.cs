@@ -1,5 +1,6 @@
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
+using Updaemon.Models;
 
 namespace Updaemon.Commands
 {
@@ -69,9 +70,7 @@ namespace Updaemon.Commands
                     }
                     catch (UnknownCommandException)
                     {
-                        _outputWriter.WriteError($"Unknown command: {args[1]}");
-                        PrintGeneralHelp();
-                        return 1;
+                        return FailUnknown(args[1], includeTopics: true);
                     }
                 }
                 else
@@ -108,15 +107,43 @@ namespace Updaemon.Commands
             }
             catch (UnknownCommandException)
             {
-                _outputWriter.WriteError($"Unknown command: {commandName}");
-                PrintGeneralHelp();
-                return 1;
+                return FailUnknown(args[0], includeTopics: false);
+            }
+            catch (ServiceManagerUnreachableException ex)
+            {
+                _outputWriter.WriteError($"Error: {ex.Message}");
+                return ServiceManagerUnreachableException.ExitCode;
             }
             catch (Exception ex)
             {
                 _outputWriter.WriteError($"Error: {ex.Message}");
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// One line instead of the whole help: the name, the closest command (or help topic) within
+        /// two edits if there is one, and where the list is.
+        /// </summary>
+        private int FailUnknown(string name, bool includeTopics)
+        {
+            IEnumerable<string> known = _commandFactory.GetAllCommands().Select(command => command.Name);
+            if (includeTopics)
+            {
+                known = known.Concat(HelpTopics.All.Select(topic => topic.Name));
+            }
+
+            string? closest = known
+                .Select(candidate => (Name: candidate, Distance: TextDistance.Between(name.ToLowerInvariant(), candidate)))
+                .Where(match => match.Distance <= 2)
+                .OrderBy(match => match.Distance)
+                .ThenBy(match => match.Name, StringComparer.Ordinal)
+                .Select(match => match.Name)
+                .FirstOrDefault();
+
+            string suggestion = closest == null ? string.Empty : $" Did you mean '{closest}'?";
+            _outputWriter.WriteError($"Unknown command '{name}'.{suggestion} Run 'updaemon help' to list the commands.");
+            return 1;
         }
 
         private void PrintVersionHeader()

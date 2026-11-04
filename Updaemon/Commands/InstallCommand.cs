@@ -66,10 +66,18 @@ namespace Updaemon.Commands
 
         public async Task<int> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
         {
-            InstallRequest? request = Parse(args, out string? problem);
-            if (request == null)
+            InstallRequest request;
+            switch (Parse(args))
             {
-                return problem == null ? _outputWriter.FailUsage(this) : _outputWriter.Fail(problem);
+                case Parsed.Request parsed:
+                    request = parsed.Value;
+                    break;
+                case Parsed.SourceMissing missing:
+                    return await FailSourceMissingAsync(missing.AppName, cancellationToken);
+                case Parsed.Problem problem:
+                    return _outputWriter.Fail(problem.Message);
+                default:
+                    return _outputWriter.FailUsage(this);
             }
 
             string? refusal = await FindRefusalAsync(request, cancellationToken);
@@ -117,8 +125,11 @@ namespace Updaemon.Commands
             }
 
             AppValues? values;
+            ReachableServiceManager reachable;
             try
             {
+                // Known to be a service only now; the download is all there is to take back.
+                reachable = await _serviceDeployer.ReachServiceManagerAsync(app.Name, staged.Manifest, cancellationToken);
                 values = await CollectValuesAsync(app, staged.Manifest, request.Values, cancellationToken);
             }
             catch
@@ -133,7 +144,7 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            return await CommitAsync(values, staged, cancellationToken);
+            return await CommitAsync(values, staged, reachable, cancellationToken);
         }
 
         public string GetDetailedHelp()
@@ -169,61 +180,84 @@ namespace Updaemon.Commands
                 """;
         }
 
-        /// <summary>Checks the arguments' shape. Null with a null problem means: show the usage.</summary>
-        private InstallRequest? Parse(string[] args, out string? problem)
+        /// <summary>What the arguments ask for, or what is wrong with them.</summary>
+        private abstract record Parsed
         {
-            problem = null;
+            public sealed record Request(InstallRequest Value) : Parsed;
+
+            /// <summary>Only --from is missing.</summary>
+            public sealed record SourceMissing(string AppName) : Parsed;
+
+            public sealed record Problem(string Message) : Parsed;
+
+            /// <summary>The arguments do not have the command's shape at all.</summary>
+            public sealed record ShowUsage : Parsed;
+        }
+
+        private static Parsed Parse(string[] args)
+        {
             ArgumentParser parser = new ArgumentParser(args, "--service");
             if (parser.GetUnknownFlags("--from", "--set", "--command", "--service", "--run-as") is [string unknown, ..])
             {
-                problem = $"Unknown option '{unknown}'.";
-                return null;
+                return new Parsed.Problem($"Unknown option '{unknown}'.");
             }
 
-            if (parser.Positionals is not [string appName] || parser.GetFlag("--from") is not string from)
+            if (parser.Positionals is not [string appName])
             {
-                return null;
+                return new Parsed.ShowUsage();
+            }
+
+            if (parser.GetFlag("--from") is not string from)
+            {
+                return new Parsed.SourceMissing(appName);
             }
 
             if (!AppManifest.IsValidAppName(appName))
             {
-                problem = $"'{appName}' is not a valid app name. Use letters, digits, '.', '_' and '-'; '{AppManifest.ReservedAppName}' is reserved.";
-                return null;
+                return new Parsed.Problem($"'{appName}' is not a valid app name. Use letters, digits, '.', '_' and '-'; '{AppManifest.ReservedAppName}' is reserved.");
             }
 
             int separator = from.IndexOf(':');
             if (separator <= 0 || separator == from.Length - 1)
             {
-                problem = $"--from must be <plugin>:<remote>, for example github:owner/repo. Got '{from}'.";
-                return null;
+                return new Parsed.Problem($"--from must be <plugin>:<remote>, for example github:owner/repo. Got '{from}'.");
             }
 
             string? command = parser.GetFlag("--command");
             if (command != null && !AppManifest.IsValidName(command))
             {
-                problem = $"'{command}' is not a valid command name.";
-                return null;
+                return new Parsed.Problem($"'{command}' is not a valid command name.");
             }
 
             List<KeyValuePair<string, string>> values = new List<KeyValuePair<string, string>>();
             foreach (string assignment in parser.GetFlagValues("--set"))
             {
-                if (!SettingAssignment.TryParse(assignment, out string key, out string value, out problem))
+                if (!SettingAssignment.TryParse(assignment, out string key, out string value, out string? problem))
                 {
-                    return null;
+                    return new Parsed.Problem(problem);
                 }
 
                 values.Add(new KeyValuePair<string, string>(key, value));
             }
 
-            return new InstallRequest(
+            return new Parsed.Request(new InstallRequest(
                 appName,
                 from.Substring(0, separator),
                 from.Substring(separator + 1),
                 command,
                 parser.HasFlag("--service"),
                 parser.GetFlag("--run-as"),
-                values);
+                values));
+        }
+
+        /// <summary>Shows how to give the source, and what plugins it can name.</summary>
+        private async Task<int> FailSourceMissingAsync(string appName, CancellationToken cancellationToken)
+        {
+            _outputWriter.Fail($"Say where to install {appName} from, for example: updaemon install {appName} --from github:<owner>/<repo>");
+            (IReadOnlyList<string> installed, IReadOnlyList<string> onFirstUse) = await _pluginProvider.GetAvailableAsync(cancellationToken);
+            IEnumerable<string> plugins = installed.Concat(onFirstUse.Select(name => $"{name} (installed on first use)"));
+            _outputWriter.WriteError($"Plugins: {string.Join(", ", plugins)}.");
+            return 1;
         }
 
         /// <summary>Why the request cannot be installed here, or null when it can.</summary>
@@ -303,7 +337,7 @@ namespace Updaemon.Commands
         /// Saves the app, activates and starts it. On any failure, Ctrl+C included, removes everything
         /// the install created: a half-installed app could be neither updated nor installed again.
         /// </summary>
-        private async Task<int> CommitAsync(AppValues values, DeployableVersion staged, CancellationToken cancellationToken)
+        private async Task<int> CommitAsync(AppValues values, DeployableVersion staged, ReachableServiceManager reachable, CancellationToken cancellationToken)
         {
             InstalledApp app = values.App;
             bool dataDirectoryExisted = Directory.Exists(_scope.GetDataDirectory(app.Name));
@@ -311,14 +345,14 @@ namespace Updaemon.Commands
             try
             {
                 await _settingsStore.SaveAsync(values, cancellationToken);
-                await _serviceDeployer.ActivateAsync(app, staged, cancellationToken);
-                staysRunning = !staged.Manifest.IsService || await _serviceDeployer.StartAsync(app.Name, cancellationToken);
+                await _serviceDeployer.ActivateAsync(app, staged, reachable, cancellationToken);
+                staysRunning = !staged.Manifest.IsService || await _serviceDeployer.StartAsync(app.Name, reachable, cancellationToken);
             }
             catch (Exception ex)
             {
                 try
                 {
-                    await _serviceDeployer.RemoveAsync(app, purge: !dataDirectoryExisted, CancellationToken.None);
+                    await _serviceDeployer.RemoveAsync(app, purge: !dataDirectoryExisted, reachable, CancellationToken.None);
                     await _configManager.RemoveAppAsync(app.Name, CancellationToken.None);
                 }
                 catch (Exception cleanupException)

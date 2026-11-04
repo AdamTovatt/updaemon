@@ -65,11 +65,12 @@ namespace Updaemon.Tests.Services
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
 
                 DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
-                await h.Deployer.ActivateAsync(app, staged);
+                await h.Deployer.ActivateAsync(app, staged, h.Reachable);
 
                 Assert.False(File.Exists(h.Scope.GetCommandPath("byteshelf")));
                 Assert.True(File.Exists(h.Scope.GetCommandPath("shelf")));
                 Assert.False(File.Exists(h.Scope.GetUnitFilePath("byteshelf")));
+                Assert.False(File.Exists(h.Scope.GetServiceWrapperPath("byteshelf")));
                 int stop = h.ServiceManager.MethodCalls.IndexOf(MockServiceManager.Call(nameof(IServiceManager.StopServiceAsync), "byteshelf"));
                 int disable = h.ServiceManager.MethodCalls.IndexOf(MockServiceManager.Call(nameof(IServiceManager.DisableServiceAsync), "byteshelf"));
                 Assert.InRange(stop, 0, disable - 1);
@@ -87,7 +88,7 @@ namespace Updaemon.Tests.Services
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
                 DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged, h.Reachable));
 
                 Assert.Contains("did not create it", ex.Message);
                 Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
@@ -105,7 +106,7 @@ namespace Updaemon.Tests.Services
                 InstalledApp other = new InstalledApp { Name = "other", Plugin = "github", Remote = "owner/other" };
                 DeployableVersion staged = await h.Deployer.StageAsync(other, new Version(1, 0, 0), h.Client);
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(other, staged));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(other, staged, h.Reachable));
 
                 Assert.Equal("The command 'byteshelf' already belongs to the app 'byteshelf'.", ex.Message);
             }
@@ -121,7 +122,7 @@ namespace Updaemon.Tests.Services
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
                 DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged, h.Reachable));
 
                 Assert.Contains("'bin/renamed'", ex.Message);
                 Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
@@ -142,7 +143,7 @@ namespace Updaemon.Tests.Services
                 // A file where the unit directory should be: writing the new service unit fails.
                 File.WriteAllText(h.Scope.UnitDirectory, "");
 
-                await Assert.ThrowsAnyAsync<IOException>(() => h.Deployer.ActivateAsync(app, staged));
+                await Assert.ThrowsAnyAsync<IOException>(() => h.Deployer.ActivateAsync(app, staged, h.Reachable));
 
                 Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
             }
@@ -157,7 +158,7 @@ namespace Updaemon.Tests.Services
                 h.ServiceManager.ServiceRunningStates["byteshelf"] = false;
                 h.ServiceManager.MethodCalls.Clear();
 
-                await h.Deployer.ApplySettingsAsync((await h.Config.GetAppAsync("byteshelf"))!);
+                await h.Deployer.ApplySettingsAsync((await h.Config.GetAppAsync("byteshelf"))!, h.Reachable);
 
                 Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
                 Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
@@ -172,7 +173,7 @@ namespace Updaemon.Tests.Services
                 await h.InstallByteShelfAsync();
                 h.ServiceManager.RestartingServices.Add("byteshelf");
 
-                Assert.False(await h.Deployer.StartAsync("byteshelf"));
+                Assert.False(await h.Deployer.StartAsync("byteshelf", h.Reachable));
             }
         }
 
@@ -183,7 +184,7 @@ namespace Updaemon.Tests.Services
             {
                 await h.InstallByteShelfAsync();
 
-                Assert.True(await h.Deployer.StartAsync("byteshelf"));
+                Assert.True(await h.Deployer.StartAsync("byteshelf", h.Reachable));
                 Assert.Equal(TimeSpan.FromSeconds(10), h.Time.Waits[^1]);
             }
         }
@@ -224,7 +225,7 @@ namespace Updaemon.Tests.Services
                 await h.InstallByteShelfAsync();
                 h.ServiceManager.ScriptedReadings["byteshelf"] = new Queue<bool>(new[] { true, false });
 
-                Assert.False(await h.Deployer.StartAsync("byteshelf"));
+                Assert.False(await h.Deployer.StartAsync("byteshelf", h.Reachable));
             }
         }
 
@@ -236,7 +237,7 @@ namespace Updaemon.Tests.Services
                 await h.InstallByteShelfAsync();
                 h.ServiceManager.ScriptedReadings["byteshelf"] = new Queue<bool>(new[] { false, true, true });
 
-                Assert.True(await h.Deployer.StartAsync("byteshelf"));
+                Assert.True(await h.Deployer.StartAsync("byteshelf", h.Reachable));
             }
         }
 
@@ -249,7 +250,7 @@ namespace Updaemon.Tests.Services
                 h.ServiceManager.CrashOnNextStart.Add("byteshelf");
                 int waitsBefore = h.Time.Waits.Count;
 
-                Assert.False(await h.Deployer.StartAsync("byteshelf"));
+                Assert.False(await h.Deployer.StartAsync("byteshelf", h.Reachable));
                 Assert.Equal(TimeSpan.FromSeconds(10), h.Time.Waits.Skip(waitsBefore).Aggregate(TimeSpan.Zero, (sum, wait) => sum + wait));
             }
         }
@@ -263,7 +264,7 @@ namespace Updaemon.Tests.Services
                 h.ServiceManager.ServiceRunningStates["byteshelf"] = false;
                 h.ServiceManager.MethodCalls.Clear();
 
-                await h.Deployer.RestartAsync("byteshelf");
+                await h.Deployer.RestartAsync("byteshelf", h.Reachable);
 
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
                 Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
@@ -280,7 +281,7 @@ namespace Updaemon.Tests.Services
                 await h.InstallByteShelfAsync();
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
 
-                await h.Deployer.RemoveAsync(app, purge);
+                await h.Deployer.RemoveAsync(app, purge, h.Reachable);
 
                 Assert.False(Directory.Exists(h.Scope.GetAppDirectory("byteshelf")));
                 Assert.False(File.Exists(h.Scope.GetCommandPath("byteshelf")));
@@ -288,6 +289,41 @@ namespace Updaemon.Tests.Services
                 Assert.False(File.Exists(h.Scope.GetSettingsFilePath("byteshelf")));
                 Assert.False(File.Exists(h.Scope.GetSecretsFilePath("byteshelf")));
                 Assert.Equal(!purge, Directory.Exists(h.Scope.GetDataDirectory("byteshelf")));
+            }
+        }
+
+        [Fact]
+        public async Task RemoveAsync_OnMacOSWithoutALogDirectory_Purges()
+        {
+            using (AppHarness h = new AppHarness(isMacOS: true))
+            {
+                await h.InstallByteShelfAsync();
+                Assert.False(Directory.Exists(h.Scope.LogDirectory));
+
+                await h.Deployer.RemoveAsync((await h.Config.GetAppAsync("byteshelf"))!, purge: true, h.Reachable);
+
+                Assert.False(Directory.Exists(h.Scope.GetDataDirectory("byteshelf")));
+            }
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task RemoveAsync_OnMacOS_DeletesTheLogFilesOnlyWhenPurged(bool purge)
+        {
+            using (AppHarness h = new AppHarness(isMacOS: true))
+            {
+                await h.InstallByteShelfAsync();
+                Directory.CreateDirectory(h.Scope.LogDirectory);
+                File.WriteAllText(h.Scope.GetOutputLogPath("byteshelf"), "out");
+                File.WriteAllText(h.Scope.GetErrorLogPath("byteshelf"), "err");
+                File.WriteAllText(h.Scope.GetOutputLogPath("other"), "out");
+
+                await h.Deployer.RemoveAsync((await h.Config.GetAppAsync("byteshelf"))!, purge, h.Reachable);
+
+                Assert.Equal(!purge, File.Exists(h.Scope.GetOutputLogPath("byteshelf")));
+                Assert.Equal(!purge, File.Exists(h.Scope.GetErrorLogPath("byteshelf")));
+                Assert.True(File.Exists(h.Scope.GetOutputLogPath("other")));
             }
         }
 

@@ -1,5 +1,6 @@
 using Updaemon.Commands;
 using Updaemon.Configuration;
+using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 
@@ -9,6 +10,7 @@ namespace Updaemon.Tests.Commands
     {
         private readonly TempFileHelper _temp = new TempFileHelper();
         private readonly MockTimerManager _timer = new MockTimerManager();
+        private readonly MockServiceManager _serviceManager = new MockServiceManager();
         private readonly ConfigManager _config;
 
         public TimerCommandTests()
@@ -21,7 +23,7 @@ namespace Updaemon.Tests.Commands
         private async Task<(int ExitCode, MockOutputWriter Output)> RunAsync(params string[] args)
         {
             MockOutputWriter output = new MockOutputWriter();
-            int exitCode = await new TimerCommand(_timer, _config, output).ExecuteAsync(args);
+            int exitCode = await new TimerCommand(_timer, _serviceManager, _config, output).ExecuteAsync(args);
             return (exitCode, output);
         }
 
@@ -32,7 +34,22 @@ namespace Updaemon.Tests.Commands
 
             Assert.Equal(0, exitCode);
             Assert.Equal(TimeSpan.FromHours(1), _timer.LastSetInterval);
-            Assert.Contains("Timer set successfully to run every 1h. Turn it off with 'updaemon timer -'.", output.Messages);
+            Assert.Contains("The update timer runs 'updaemon update' every 1h. Turn it off with 'updaemon timer -'.", output.Messages);
+        }
+
+        [Theory]
+        [InlineData("1h", "--keep")]
+        [InlineData("-")]
+        public async Task NoUserServiceManager_ChangesNothing(params string[] args)
+        {
+            _serviceManager.Unreachable = "Cannot reach systemd's user manager.";
+
+            ServiceManagerUnreachableException ex = await Assert.ThrowsAsync<ServiceManagerUnreachableException>(() => RunAsync(args));
+
+            Assert.Equal("Cannot reach systemd's user manager.", ex.Message);
+            Assert.Null(_timer.LastSetInterval);
+            Assert.Empty(_timer.MethodCalls);
+            Assert.False((await _config.LoadConfigAsync()).TimerTurnedOff);
         }
 
         [Fact]

@@ -9,6 +9,13 @@ namespace Updaemon.Tests.Helpers
     {
         public static async Task<string> RunAsync(string scriptPath, params string[] arguments)
         {
+            (int exitCode, string output, string error) = await RunForResultAsync(scriptPath, arguments);
+            Assert.True(exitCode == 0, $"sh exited {exitCode}: {error}");
+            return output;
+        }
+
+        public static async Task<(int ExitCode, string Output, string Error)> RunForResultAsync(string scriptPath, params string[] arguments)
+        {
             ProcessStartInfo startInfo = new ProcessStartInfo("/bin/sh")
             {
                 RedirectStandardOutput = true,
@@ -26,8 +33,7 @@ namespace Updaemon.Tests.Helpers
                 string output = await process.StandardOutput.ReadToEndAsync();
                 string error = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
-                Assert.True(process.ExitCode == 0, $"sh exited {process.ExitCode}: {error}");
-                return output;
+                return (process.ExitCode, output, error);
             }
         }
 

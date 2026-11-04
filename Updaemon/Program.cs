@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Updaemon.Commands;
 using Updaemon.Configuration;
@@ -11,15 +12,19 @@ namespace Updaemon
     {
         public static async Task<int> Main(string[] args)
         {
-            // Setup cancellation token for Ctrl+C
-            using (CancellationTokenSource cancellationTokenSource = new CancellationTokenSource())
+            // Ctrl+C, a kill and a closed terminal all cancel the run instead of ending the process
+            // outright, so it cleans up as it would on Ctrl+C: 'logs -f' stops its journalctl or tail.
+            using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            Action<PosixSignalContext> cancel = context =>
             {
-                Console.CancelKeyPress += (sender, e) =>
-                {
-                    e.Cancel = true; // Prevent immediate termination
-                    cancellationTokenSource.Cancel();
-                };
+                context.Cancel = true;
+                cancellationTokenSource.Cancel();
+            };
 
+            using (PosixSignalRegistration interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, cancel))
+            using (PosixSignalRegistration terminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, cancel))
+            using (PosixSignalRegistration hangUp = PosixSignalRegistration.Create(PosixSignal.SIGHUP, cancel))
+            {
                 // Setup DI container
                 ServiceCollection services = new ServiceCollection();
                 ConfigureServices(services);
@@ -47,6 +52,13 @@ namespace Updaemon
         private static void ConfigureServices(ServiceCollection services)
         {
             UpdaemonScope scope = UpdaemonScope.Detect();
+            if (!scope.IsSystem && !scope.Platform.IsMacOS
+                && LinuxServiceManager.UserRuntimeDirectory(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR"), scope.UserId, Directory.Exists) is string runtimeDirectory)
+            {
+                // systemctl and journalctl, run as children, inherit it and so find the user's manager.
+                Environment.SetEnvironmentVariable("XDG_RUNTIME_DIR", runtimeDirectory);
+            }
+
             services.AddSingleton(scope);
             services.AddSingleton(scope.Platform);
             UpdaemonScope? otherScope = UpdaemonScope.DetectOther(scope);
