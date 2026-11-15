@@ -25,6 +25,7 @@ namespace Updaemon.Conversion
         private readonly ITimerManager _timerManager;
         private readonly IExecutableDetector _executableDetector;
         private readonly ISymlinkManager _symlinkManager;
+        private readonly IFilePermissionManager _filePermissionManager;
         private readonly AppFileWriter _appFileWriter;
         private readonly PluginProvider _pluginProvider;
         private readonly IPluginUrlResolver _pluginUrlResolver;
@@ -38,6 +39,7 @@ namespace Updaemon.Conversion
             ITimerManager timerManager,
             IExecutableDetector executableDetector,
             ISymlinkManager symlinkManager,
+            IFilePermissionManager filePermissionManager,
             AppFileWriter appFileWriter,
             PluginProvider pluginProvider,
             IPluginUrlResolver pluginUrlResolver,
@@ -50,6 +52,7 @@ namespace Updaemon.Conversion
             _timerManager = timerManager;
             _executableDetector = executableDetector;
             _symlinkManager = symlinkManager;
+            _filePermissionManager = filePermissionManager;
             _appFileWriter = appFileWriter;
             _pluginProvider = pluginProvider;
             _pluginUrlResolver = pluginUrlResolver;
@@ -146,9 +149,20 @@ namespace Updaemon.Conversion
 
         /// <param name="ZeroXUnitText">The 0.x unit, put back if converting fails; null for a command.</param>
         /// <param name="ZeroXLinks">Where 0.x linked the command: emptied for the wrapper, linked again if converting fails.</param>
-        private sealed record ReadyApp(ZeroXApp Old, InstalledApp App, DeployableVersion Current, string? ZeroXUnitText, IReadOnlyList<string> ZeroXLinks) : AppPlan(Old)
+        /// <param name="UnitRunAs">The user the 0.x unit itself names, which a drop-in can override.</param>
+        /// <param name="DropIns">The 0.x unit's drop-ins, in the order systemd applies them; left in place.</param>
+        private sealed record ReadyApp(
+            ZeroXApp Old,
+            InstalledApp App,
+            DeployableVersion Current,
+            string? ZeroXUnitText,
+            IReadOnlyList<string> ZeroXLinks,
+            string? UnitRunAs,
+            IReadOnlyList<ZeroXDropIn> DropIns) : AppPlan(Old)
         {
             public string Kind => Current.Manifest.IsService ? "service" : "command";
+
+            public string RunningAs => App.RunAs == null ? string.Empty : $", running as {App.RunAs}";
         }
 
         private async Task<ConversionPlan> PlanAsync(ZeroXConfig old, bool firstRun, CancellationToken cancellationToken)
@@ -204,6 +218,8 @@ namespace Updaemon.Conversion
 
             string executable;
             string? unitText = null;
+            string? unitRunAs = null;
+            List<ZeroXDropIn> dropIns = new List<ZeroXDropIn>();
             List<string> zeroXLinks = new List<string>();
             if (old.ServiceType == ZeroXAppType.Service)
             {
@@ -217,8 +233,8 @@ namespace Updaemon.Conversion
                 ZeroXUnitReading result = ZeroXUnit.Read(unitText, name, currentLink, _scope.Platform.IsMacOS);
                 if (result is ZeroXUnitReading.HandEdited edited)
                 {
-                    string settings = _scope.Platform.IsMacOS ? "its EnvironmentVariables" : "Environment= lines";
-                    return new BlockedApp(old, $"{unitPath} was edited by hand: {edited.Problem}. Make it what updaemon 0.x wrote, apart from {settings}");
+                    string allowed = _scope.Platform.IsMacOS ? "its EnvironmentVariables and UserName" : "Environment= and User= lines";
+                    return new BlockedApp(old, $"{unitPath} was edited by hand: {edited.Problem}. Make it what updaemon 0.x wrote, apart from {allowed}");
                 }
 
                 ZeroXUnitReading.AsWritten reading = (ZeroXUnitReading.AsWritten)result;
@@ -231,6 +247,35 @@ namespace Updaemon.Conversion
                 foreach (KeyValuePair<string, string> setting in reading.Settings)
                 {
                     app.Settings[setting.Key] = setting.Value;
+                }
+
+                // launchd has no drop-ins.
+                IReadOnlyList<string> dropInPaths = _scope.Platform.IsMacOS ? Array.Empty<string>() : ZeroXDropIn.FindPaths(unitPath);
+                foreach (string dropInPath in dropInPaths)
+                {
+                    ZeroXDropInReading dropInReading = ZeroXDropIn.Read(dropInPath, await File.ReadAllTextAsync(dropInPath, cancellationToken));
+                    if (dropInReading is ZeroXDropInReading.Unreadable unreadable)
+                    {
+                        return new BlockedApp(old, $"its drop-in {dropInPath} {unreadable.Problem}");
+                    }
+
+                    dropIns.Add(((ZeroXDropInReading.Read)dropInReading).DropIn);
+                }
+
+                // As systemd applies them: the unit, then each drop-in, the last User= winning. A variable a
+                // drop-in sets stays the drop-in's: as a setting too, the unit's value would win, since the
+                // wrapper loads settings after systemd has set the drop-in's.
+                unitRunAs = reading.RunAs;
+                ZeroXDropIn? userDropIn = dropIns.LastOrDefault(dropIn => dropIn.User != null);
+                app.RunAs = userDropIn != null ? userDropIn.User!.Name : unitRunAs;
+                foreach (string variable in dropIns.SelectMany(dropIn => dropIn.Variables))
+                {
+                    app.Settings.Remove(variable);
+                }
+
+                if (app.RunAs != null && !await _filePermissionManager.UserExistsAsync(app.RunAs, cancellationToken))
+                {
+                    return new BlockedApp(old, $"it runs as '{app.RunAs}', and there is no user by that name");
                 }
             }
             else
@@ -271,7 +316,7 @@ namespace Updaemon.Conversion
                 Manifest = app.Manifest with { Executable = executable },
                 ManifestInDirectory = false,
             };
-            return new ReadyApp(old, app, deployable, unitText, zeroXLinks);
+            return new ReadyApp(old, app, deployable, unitText, zeroXLinks, unitRunAs, dropIns);
         }
 
         /// <summary>
@@ -320,7 +365,11 @@ namespace Updaemon.Conversion
                 if (app is ReadyApp ready)
                 {
                     string settings = ready.App.Settings.Count == 0 ? string.Empty : $", with the settings {string.Join(", ", ready.App.Settings.Keys.Order(StringComparer.Ordinal))}";
-                    _outputWriter.WriteLine($"  convert {app.Old.LocalName} ({ready.Kind}) at {ready.Current.Version}{settings}");
+                    _outputWriter.WriteLine($"  convert {app.Old.LocalName} ({ready.Kind}) at {ready.Current.Version}{ready.RunningAs}{settings}");
+                    foreach (string line in DescribeDropIns(ready))
+                    {
+                        _outputWriter.WriteLine($"    {line}");
+                    }
                 }
                 else if (app is BlockedApp blocked)
                 {
@@ -334,6 +383,22 @@ namespace Updaemon.Conversion
             }
 
             _outputWriter.WriteLine("Nothing was changed.");
+        }
+
+        /// <summary>The drop-ins converting leaves in place, and which user wins when one overrides the unit's.</summary>
+        private static IEnumerable<string> DescribeDropIns(ReadyApp app)
+        {
+            foreach (ZeroXDropIn dropIn in app.DropIns)
+            {
+                string sets = dropIn.Lines.Count == 0 ? "sets nothing" : $"still sets {string.Join("; ", dropIn.Lines)}";
+                yield return $"its drop-in {dropIn.Path} stays in place and {sets}";
+            }
+
+            ZeroXDropIn? overriding = app.DropIns.LastOrDefault(dropIn => dropIn.User != null);
+            if (app.UnitRunAs != null && overriding != null && overriding.User!.Name != app.UnitRunAs)
+            {
+                yield return $"its drop-in {overriding.Path} overrides its unit's User={app.UnitRunAs}, so it runs as {app.App.RunAs ?? "root"}, as before";
+            }
         }
 
         private static string DescribeTimer(ZeroXTimer timer, bool done)
@@ -442,7 +507,12 @@ namespace Updaemon.Conversion
 
             string restart = current.Manifest.IsService && !app.AutoRestart ? "; it runs as before until it restarts (restart=manual)" : string.Empty;
             string command = current.Manifest.Command != null && current.Manifest.Command != app.Name ? $"; its command is now only '{current.Manifest.Command}'" : string.Empty;
-            _outputWriter.WriteLine($"Converted {app.Name} ({plan.Kind}) at {current.Version}{restart}{command}.");
+            _outputWriter.WriteLine($"Converted {app.Name} ({plan.Kind}) at {current.Version}{plan.RunningAs}{restart}{command}.");
+            foreach (string line in DescribeDropIns(plan))
+            {
+                _outputWriter.WriteLine($"  {char.ToUpperInvariant(line[0])}{line.Substring(1)}.");
+            }
+
             return true;
         }
 

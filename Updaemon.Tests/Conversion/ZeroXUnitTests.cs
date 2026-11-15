@@ -52,6 +52,36 @@ namespace Updaemon.Tests.Conversion
 
             Assert.Equal("MyApi", reading.ExecutableName);
             Assert.Empty(reading.Settings);
+            Assert.Null(reading.RunAs);
+        }
+
+        [Theory]
+        [InlineData("User=pi", "pi")]
+        [InlineData("User=1000", "1000")]
+        [InlineData("User=api\nUser=pi", "pi")]
+        [InlineData("User=pi\nUser=", null)]
+        [InlineData("User=svc.api_1\nEnvironment=A=1", "svc.api_1")]
+        public void Read_UserLineInService_IsTheUserItRunsAsTheLastWinning(string lines, string? expected)
+        {
+            Assert.Equal(expected, AsWritten(SystemdUnit(lines)).RunAs);
+        }
+
+        [Theory]
+        [InlineData("User=%i")]
+        [InlineData("User=-R")]
+        [InlineData("User=a b")]
+        [InlineData("User=a:b")]
+        public void Read_UserLineThatIsNoUserName_IsRefusedNamingIt(string line)
+        {
+            Assert.Equal(new ZeroXUnitReading.HandEdited($"the line '{line}' is not one updaemon can read as the user it runs as"), Read(SystemdUnit(line)));
+        }
+
+        [Fact]
+        public void Read_UserLineOutsideService_IsAHandEdit()
+        {
+            string unit = SystemdUnit().Replace("After=network.target\n", "After=network.target\nUser=pi\n");
+
+            Assert.Equal(new ZeroXUnitReading.HandEdited("the line 'User=pi' differs from what updaemon 0.x wrote"), Read(unit));
         }
 
         [Theory]
@@ -73,7 +103,7 @@ namespace Updaemon.Tests.Conversion
         [InlineData("Environment=1A=x", "the line 'Environment=1A=x' is not one updaemon can read as settings")]
         [InlineData("Environment=UPDAEMON_DATA_DIR=/x", "the line 'Environment=UPDAEMON_DATA_DIR=/x' is not one updaemon can read as settings")]
         [InlineData("Environment=\"A=1", "the line 'Environment=\"A=1' is not one updaemon can read as settings")]
-        [InlineData("User=api", "the line 'User=api' differs from what updaemon 0.x wrote")]
+        [InlineData("Group=api", "the line 'Group=api' differs from what updaemon 0.x wrote")]
         [InlineData("EnvironmentFile=/etc/my-api.env", "the line 'EnvironmentFile=/etc/my-api.env' differs from what updaemon 0.x wrote")]
         public void Read_AnyOtherEdit_IsRefusedNamingTheLine(string lines, string expected)
         {
@@ -121,10 +151,19 @@ namespace Updaemon.Tests.Conversion
 
             Assert.Equal("MyApi", reading.ExecutableName);
             Assert.Equal(new Dictionary<string, string> { ["API_URL"] = "https://api & more" }, reading.Settings);
+            Assert.Null(reading.RunAs);
+        }
+
+        [Fact]
+        public void Read_PlistWithUserName_IsTheUserItRunsAs()
+        {
+            Assert.Equal("pi", AsWritten(Plist("<key>UserName</key><string>pi</string>"), isMacOS: true).RunAs);
         }
 
         [Theory]
-        [InlineData("<key>UserName</key><string>api</string>", PlistProgram, "its 'UserName' differs from what updaemon 0.x wrote")]
+        [InlineData("<key>UserName</key><integer>1</integer>", PlistProgram, "its UserName is not a user name updaemon can read")]
+        [InlineData("<key>UserName</key><string></string>", PlistProgram, "its UserName is not a user name updaemon can read")]
+        [InlineData("<key>GroupName</key><string>api</string>", PlistProgram, "its 'GroupName' differs from what updaemon 0.x wrote")]
         [InlineData("", "<key>ProgramArguments</key><array><string>/usr/bin/other</string></array>", $"its ProgramArguments do not run '{Current}/<executable>'")]
         [InlineData("", "", $"its ProgramArguments do not run '{Current}/<executable>'")]
         [InlineData("<key>EnvironmentVariables</key><array><string>A=1</string></array>", PlistProgram, "its EnvironmentVariables are not all names with text values")]

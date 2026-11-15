@@ -62,9 +62,15 @@ namespace Updaemon.Commands
                   converts what an earlier one left out.
 
                   Each 0.x service or CLI tool becomes an app that keeps its versions, its
-                  restart setting and, as settings, its unit's Environment= lines (on macOS,
-                  its EnvironmentVariables). A unit edited by hand in any other way is left
-                  alone and reported: make it what updaemon 0.x wrote, then run this again.
+                  restart setting, as settings its unit's Environment= lines (on macOS, its
+                  EnvironmentVariables), and as the user it runs as its unit's User= (on
+                  macOS, UserName). A unit edited by hand in any other way is left alone and
+                  reported: make it what updaemon 0.x wrote, then run this again.
+
+                  A unit's drop-ins (<unit>.service.d/*.conf) are left in place and still
+                  apply to the new unit, which has the same name; the report lists what each
+                  still sets. As systemd reads them, the last User= wins, a drop-in's over
+                  the unit's.
                   What the conversion replaces is kept in the 0.x-backup directory beside
                   config.json.
 

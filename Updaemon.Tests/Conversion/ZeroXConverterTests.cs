@@ -23,6 +23,15 @@ namespace Updaemon.Tests.Conversion
 
         private static string Backup(AppHarness h, string fileName) => Path.Combine(h.Scope.ZeroXBackupDirectory, fileName);
 
+        /// <summary>Writes a drop-in of my-api's 0.x unit, as <c>systemctl edit</c> would, and returns its path.</summary>
+        private static string DropIn(AppHarness h, string fileName, string text)
+        {
+            string path = Path.Combine(h.Scope.UnitDirectory, "my-api.service.d", fileName);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text);
+            return path;
+        }
+
         /// <summary>A 0.x timer of two files, as on Linux: each is kept in the backup.</summary>
         private static ZeroXTimer TimerIn(AppHarness h, bool isOn, TimeSpan? interval)
         {
@@ -244,16 +253,87 @@ namespace Updaemon.Tests.Conversion
         [Fact]
         public async Task RunAsync_HandEditedUnit_LeavesThatAppAloneAndSaysWhy()
         {
-            using (AppHarness h = ZeroXSetup(serviceLines: "User=api"))
+            using (AppHarness h = ZeroXSetup(serviceLines: "Group=api"))
             {
                 Assert.False(await h.Converter().RunAsync(dryRun: false));
 
                 Assert.Null(await h.Config.GetAppAsync("my-api"));
-                Assert.Equal(ZeroXLayout.Unit(h, "User=api"), File.ReadAllText(ZeroXLayout.UnitPath(h)));
+                Assert.Equal(ZeroXLayout.Unit(h, "Group=api"), File.ReadAllText(ZeroXLayout.UnitPath(h)));
                 Assert.Contains(
-                    $"Not converted: my-api: {ZeroXLayout.UnitPath(h)} was edited by hand: the line 'User=api' differs from what updaemon 0.x wrote. Make it what updaemon 0.x wrote, apart from Environment= lines.",
+                    $"Not converted: my-api: {ZeroXLayout.UnitPath(h)} was edited by hand: the line 'Group=api' differs from what updaemon 0.x wrote. Make it what updaemon 0.x wrote, apart from Environment= and User= lines.",
                     h.Output.Errors);
                 Assert.NotNull(await h.Config.GetAppAsync("ripgrep"));
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_UnitWithUser_ConvertsItToRunAsThatUser()
+        {
+            using (AppHarness h = ZeroXSetup(serviceLines: $"{ZeroXLayout.Settings}\nUser=pi"))
+            {
+                h.Permissions.ExistingUsers.Add("pi");
+
+                Assert.True(await h.Converter().RunAsync(dryRun: false));
+
+                Assert.Equal("pi", (await h.Config.GetAppAsync("my-api"))!.RunAs);
+                Assert.Contains("User=pi", File.ReadAllText(ZeroXLayout.UnitPath(h)).Split('\n'));
+                Assert.Contains($"SetOwnerAsync:{h.Scope.GetDataDirectory("my-api")}:pi", h.Permissions.MethodCalls);
+                Assert.Contains("Converted my-api (service) at 1.0.0, running as pi.", h.Output.Messages);
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_DropInSetsUser_ConvertsItToRunAsThatUserAndLeavesTheDropInWhereSystemdAppliesIt()
+        {
+            using (AppHarness h = ZeroXSetup())
+            {
+                h.Permissions.ExistingUsers.Add("pi");
+                string dropInText = "[Service]\nUser=pi\nEnvironment=TOKEN=s3cret\n";
+                string dropIn = DropIn(h, "run-as-pi.conf", dropInText);
+
+                Assert.True(await h.Converter().RunAsync(dryRun: false));
+
+                Assert.Equal("pi", (await h.Config.GetAppAsync("my-api"))!.RunAs);
+                // The new unit has the 0.x unit's name, so systemd still applies the drop-in to it.
+                Assert.Equal(ZeroXDropIn.DirectoryOf(ZeroXLayout.UnitPath(h)), Path.GetDirectoryName(dropIn));
+                Assert.Contains($"ExecStart=\"{h.Scope.GetServiceWrapperPath("my-api")}\"", File.ReadAllText(ZeroXLayout.UnitPath(h)));
+                Assert.Equal(dropInText, File.ReadAllText(dropIn));
+                Assert.Equal(new[] { "run-as-pi.conf" }, Directory.GetFiles(Path.GetDirectoryName(dropIn)!).Select(Path.GetFileName));
+                Assert.Contains("Converted my-api (service) at 1.0.0, running as pi.", h.Output.Messages);
+                Assert.Contains($"  Its drop-in {dropIn} stays in place and still sets User=pi; the variable TOKEN.", h.Output.Messages);
+                Assert.DoesNotContain(h.Output.Messages, message => message.Contains("s3cret"));
+            }
+        }
+
+        [Theory]
+        [InlineData("User=pi", "pi", "pi")]
+        [InlineData("User=", null, "root")]
+        public async Task RunAsync_DropInOverridesTheUnitsUser_RunsAsTheDropInSaysAndSaysSo(string dropInUser, string? runAs, string described)
+        {
+            using (AppHarness h = ZeroXSetup(serviceLines: "User=api"))
+            {
+                h.Permissions.ExistingUsers.UnionWith(new[] { "pi", "api" });
+                DropIn(h, "10-other.conf", "[Service]\nUser=api\n");
+                string dropIn = DropIn(h, "override.conf", $"[Service]\n{dropInUser}\n");
+
+                Assert.True(await h.Converter().RunAsync(dryRun: false));
+
+                Assert.Equal(runAs, (await h.Config.GetAppAsync("my-api"))!.RunAs);
+                Assert.Contains($"  Its drop-in {dropIn} overrides its unit's User=api, so it runs as {described}, as before.", h.Output.Messages);
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_DropInSetsAVariableTheUnitSetsToo_LeavesItToTheDropIn()
+        {
+            using (AppHarness h = ZeroXSetup(serviceLines: "Environment=API_URL=https://api.example LOG_LEVEL=debug"))
+            {
+                DropIn(h, "override.conf", "[Service]\nEnvironment=API_URL=https://override.example\n");
+
+                Assert.True(await h.Converter().RunAsync(dryRun: false));
+
+                Assert.Equal(new Dictionary<string, string> { ["LOG_LEVEL"] = "debug" }, (await h.Config.GetAppAsync("my-api"))!.Settings);
+                Assert.DoesNotContain("API_URL", File.ReadAllText(h.Scope.GetSettingsFilePath("my-api")));
             }
         }
 
@@ -289,6 +369,21 @@ namespace Updaemon.Tests.Conversion
                 "ripgrep",
                 h => $"{h.Scope.GetCommandPath("rg")} is not the link updaemon 0.x made"
             },
+            {
+                h => File.WriteAllText(ZeroXLayout.UnitPath(h), ZeroXLayout.Unit(h, "User=ghost")),
+                "my-api",
+                h => "it runs as 'ghost', and there is no user by that name"
+            },
+            {
+                h => DropIn(h, "override.conf", "[Service]\nUser=ghost\n"),
+                "my-api",
+                h => "it runs as 'ghost', and there is no user by that name"
+            },
+            {
+                h => DropIn(h, "override.conf", "[Service]\nEnvironment=\n"),
+                "my-api",
+                h => $"its drop-in {Path.Combine(h.Scope.UnitDirectory, "my-api.service.d", "override.conf")} has an Environment= line updaemon cannot read"
+            },
         };
 
         [Theory]
@@ -311,7 +406,7 @@ namespace Updaemon.Tests.Conversion
         [Fact]
         public async Task RunAsync_AgainAfterTheHandEditIsUndone_ConvertsWhatWasLeft()
         {
-            using (AppHarness h = ZeroXSetup(serviceLines: "User=api"))
+            using (AppHarness h = ZeroXSetup(serviceLines: "Group=api"))
             {
                 await h.Converter().RunAsync(dryRun: false);
                 File.WriteAllText(ZeroXLayout.UnitPath(h), ZeroXLayout.Unit(h));
@@ -491,6 +586,33 @@ namespace Updaemon.Tests.Conversion
                 Assert.Empty(h.ServiceManager.MethodCalls);
                 Assert.Empty(h.PluginDownloader.MethodCalls);
                 Assert.Empty(h.Timer.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task RunAsync_DryRunWithDropIns_NamesEachAndWhatItStillSets()
+        {
+            using (AppHarness h = ZeroXSetup(serviceLines: $"{ZeroXLayout.Settings}\nUser=api"))
+            {
+                h.Permissions.ExistingUsers.Add("pi");
+                string runAs = DropIn(h, "run-as-pi.conf", "[Service]\nUser=pi\n");
+                string secrets = DropIn(h, "secrets.conf", "[Unit]\nAfter=postgresql.service\n[Service]\nEnvironment=\"DB_PASSWORD=p a s s\"\n");
+
+                Assert.True(await h.Converter().RunAsync(dryRun: true));
+
+                Assert.Equal(
+                    new[]
+                    {
+                        "Converting the updaemon 0.x setup would:",
+                        "  reinstall the 'github' plugin from this updaemon's release, keeping its secrets",
+                        "  convert my-api (service) at 1.0.0, running as pi, with the settings API_URL",
+                        $"    its drop-in {runAs} stays in place and still sets User=pi",
+                        $"    its drop-in {secrets} stays in place and still sets After; the variable DB_PASSWORD",
+                        $"    its drop-in {runAs} overrides its unit's User=api, so it runs as pi, as before",
+                        "  convert ripgrep (command) at 14.0.0",
+                        "Nothing was changed.",
+                    },
+                    h.Output.Messages);
             }
         }
 
