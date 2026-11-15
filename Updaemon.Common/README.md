@@ -141,7 +141,7 @@ Query your distribution server for the latest available version.
 - `cancellationToken` - Cancellation token to cancel the operation.
 
 **Returns:**
-- `Version?` - The latest version available, or `null` if the service doesn't exist
+- `Version?` - The latest version available, or `null` when the source exists but has no released version. Throw when the source itself is not found, saying what to check: updaemon reports that as a failure, but `null` only as nothing to install.
 
 ### DownloadVersionAsync(string serviceName, Version version, string runtimeIdentifier, string targetPath, CancellationToken cancellationToken = default)
 
@@ -158,9 +158,8 @@ Download a specific version to the target directory.
 - `DownloadResult` - `Verified` says whether the download was checked against a checksum its source published. Updaemon tells the user when it was not.
 
 **Behavior:**
-- Download all necessary files for the service
-- Verify the download before extracting it when the source publishes a checksum (`Sha256Sums` reads a `SHA256SUMS` file), and throw on a mismatch
-- Extract archives if needed (see `DownloadPostProcessor` utility below)
+- For a source that publishes releases as files, hand them to `ReleaseAssets` (see below): it picks the build, verifies it against the release's `SHA256SUMS` and extracts it, as the bundled plugins do
+- Otherwise download all necessary files for the service, verify the download before extracting it when the source publishes a checksum (`Sha256Sums` reads a `SHA256SUMS` file), throw on a mismatch, and extract archives if needed (`DownloadPostProcessor`)
 - Preserve file permissions (especially for executables)
 - Throw exceptions on failure
 - Respect cancellation token for long-running operations
@@ -218,9 +217,13 @@ Reads a release's `SHA256SUMS` file, in `sha256sum`'s format, and checks a downl
 
 - `Sha256Sums.AssetName` - The file's name, `SHA256SUMS`
 - `Sha256Sums.Parse(text)` - Reads the file. Lines in another form are skipped, and a name is matched without its directory, so `sha256sum dist/*` output works
-- `VerifyAsync(filePath, assetName)` - Throws `ChecksumException` when there is no well-formed line for `assetName`, its lines disagree, or the file does not match
+- `For(assetName).VerifyAsync(filePath)` - Throws `ChecksumException` when there is no well-formed line for `assetName`, its lines disagree, or the file does not match
 
 Verify before extracting, so a tampered archive is never opened.
+
+### ReleaseAssets
+
+How the bundled plugins install from a release's files, so every source works the same way. Give it the release's assets, how to name, read and download one, and a post-processor, then call `DownloadAsync(pattern, runtimeIdentifier, targetPath)`. It picks the build for this machine (`*-<rid>.zip`, `*-<rid>.tar.gz` or `*-<rid>`) or the asset the pattern names, reads `SHA256SUMS` first when there is one, verifies the download against it and extracts it. `Verified` is true only when a `SHA256SUMS` was checked.
 
 ## RPC Protocol
 
@@ -287,17 +290,16 @@ updaemon follows only the release GitHub marks Latest; drafts and pre-releases a
 
 Build against the `Updaemon.Common` of the updaemon release your users run: updaemon refuses a plugin that speaks another protocol version (see [Versioning](#versioning)).
 
-## Example: ByteShelf Distribution Plugin
-
-Here's a minimal example structure for a ByteShelf distribution plugin:
+## Example: a plugin's layout
 
 ```
 MyPlugin/
 ├── MyPlugin.csproj
-├── Program.cs                    # Named pipe server
-├── MyDistributionService.cs      # IDistributionService implementation
-└── ByteShelfClient.cs            # Your distribution API client
+├── Program.cs                    # Runs DistributionServiceHost
+└── MyDistributionService.cs      # IDistributionService implementation
 ```
+
+The [ByteShelf plugin](../Updaemon.Distribution.ByteShelfDistribution) in this repository is a small complete one.
 
 ## Versioning
 

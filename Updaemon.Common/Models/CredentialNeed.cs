@@ -6,7 +6,7 @@ namespace Updaemon.Common.Models
     [JsonConverter(typeof(JsonStringEnumConverter<CredentialProblem>))]
     public enum CredentialProblem
     {
-        /// <summary>The thing asked for was not found without the secret: it may be private.</summary>
+        /// <summary>The secret is not set, and the call needs it, or what was asked for was not found without it and may be private.</summary>
         Missing,
 
         /// <summary>The secret that is set was refused.</summary>

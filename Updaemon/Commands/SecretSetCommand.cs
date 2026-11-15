@@ -76,7 +76,7 @@ namespace Updaemon.Commands
 
                 Examples:
                   updaemon secret-set github githubToken
-                  updaemon secret-set byteshelf apiKey xyz789
+                  updaemon secret-set byteshelf byteShelfUrl https://shelf.example.com
                 """;
         }
     }

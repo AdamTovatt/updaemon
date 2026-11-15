@@ -7,11 +7,15 @@ namespace Updaemon.Distribution.ByteShelfDistribution
     {
         static async Task Main(string[] args)
         {
-            ByteShelfDistributionService service = new ByteShelfDistributionService(
-                new VersionParser(),
-                new DownloadPostProcessor());
+            using (ByteShelfHttpConnector connector = new ByteShelfHttpConnector())
+            {
+                ByteShelfDistributionService service = new ByteShelfDistributionService(
+                    new VersionParser(),
+                    new DownloadPostProcessor(),
+                    connector.Connect);
 
-            await DistributionServiceHost.RunAsync(args, service);
+                await DistributionServiceHost.RunAsync(args, service);
+            }
         }
     }
 }
