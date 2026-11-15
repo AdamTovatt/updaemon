@@ -177,7 +177,7 @@ namespace Updaemon.Tests.Helpers
         public RemoveCommand Remove() => new RemoveCommand(Config, Deployer, Output, Scope);
 
         public ZeroXConverter Converter() => new ZeroXConverter(
-            Scope, Config, Deployer, ServiceManager, Timer, new ExecutableDetector(), new SymlinkManager(), Files, Plugins, PluginUrlResolver, Output);
+            Scope, Config, Deployer, ServiceManager, Timer, new ExecutableDetector(), new SymlinkManager(), Permissions, Files, Plugins, PluginUrlResolver, Output);
 
         public async Task AddPluginAsync(string alias = "github")
         {

@@ -11,8 +11,11 @@ namespace Updaemon.Conversion
         {
         }
 
-        /// <summary>The unit runs the executable in the app's <c>current</c> directory, with these settings.</summary>
-        public sealed record AsWritten(string ExecutableName, IReadOnlyDictionary<string, string> Settings) : ZeroXUnitReading;
+        /// <summary>
+        /// The unit runs the executable in the app's <c>current</c> directory, with these settings, as
+        /// <paramref name="RunAs"/> (null: root).
+        /// </summary>
+        public sealed record AsWritten(string ExecutableName, IReadOnlyDictionary<string, string> Settings, string? RunAs) : ZeroXUnitReading;
 
         /// <summary>The unit was edited by hand; <paramref name="Problem"/> names the line in question.</summary>
         public sealed record HandEdited(string Problem) : ZeroXUnitReading;
@@ -20,12 +23,17 @@ namespace Updaemon.Conversion
 
     /// <summary>
     /// Reads a 0.x service unit or plist by comparing it with the template 0.x generated it from.
-    /// <c>Environment=</c> lines (plist: <c>EnvironmentVariables</c>) are read as settings; any other
+    /// <c>Environment=</c> lines (plist: <c>EnvironmentVariables</c>) are read as settings, and a
+    /// <c>User=</c> line in <c>[Service]</c> (plist: <c>UserName</c>) as the user it runs as; any other
     /// difference is a hand edit updaemon cannot tell the meaning of, so the unit is not converted.
     /// </summary>
     public static class ZeroXUnit
     {
-        private const string EnvironmentPrefix = "Environment=";
+        internal const string EnvironmentPrefix = "Environment=";
+
+        internal const string UserPrefix = "User=";
+
+        internal const string ServiceSection = "[Service]";
 
         // 0.x's embedded service.template.
         private const string SystemdTemplate = """
@@ -85,9 +93,20 @@ namespace Updaemon.Conversion
         {
             Dictionary<string, string> settings = new Dictionary<string, string>();
             List<string> lines = new List<string>();
+            string? section = null;
+            string? runAs = null;
             foreach (string line in MeaningfulLines(text))
             {
-                if (!line.StartsWith(EnvironmentPrefix, StringComparison.Ordinal))
+                section = line.StartsWith('[') ? line : section;
+                if (section == ServiceSection && line.StartsWith(UserPrefix, StringComparison.Ordinal))
+                {
+                    // As systemd reads it, the last User= wins, and an empty one means root again.
+                    if (!TryReadUser(line.Substring(UserPrefix.Length), out runAs))
+                    {
+                        return new ZeroXUnitReading.HandEdited($"the line '{line}' is not one updaemon can read as the user it runs as");
+                    }
+                }
+                else if (!line.StartsWith(EnvironmentPrefix, StringComparison.Ordinal))
                 {
                     lines.Add(line);
                 }
@@ -119,7 +138,7 @@ namespace Updaemon.Conversion
                 }
             }
 
-            return new ZeroXUnitReading.AsWritten(executableName, settings);
+            return new ZeroXUnitReading.AsWritten(executableName, settings, runAs);
         }
 
         private static ZeroXUnitReading ReadPlist(string text, string appName, string currentLink)
@@ -134,6 +153,12 @@ namespace Updaemon.Conversion
             if (actual.Remove("EnvironmentVariables", out XElement? environment) && !TryReadEnvironmentDictionary(environment, settings))
             {
                 return new ZeroXUnitReading.HandEdited("its EnvironmentVariables are not all names with text values");
+            }
+
+            string? runAs = null;
+            if (actual.Remove("UserName", out XElement? userName) && (userName.Name != "string" || !TryReadUser(userName.Value, out runAs) || runAs == null))
+            {
+                return new ZeroXUnitReading.HandEdited("its UserName is not a user name updaemon can read");
             }
 
             string programPrefix = currentLink + "/";
@@ -159,7 +184,7 @@ namespace Updaemon.Conversion
                 return new ZeroXUnitReading.HandEdited($"its '{missing}' is missing");
             }
 
-            return new ZeroXUnitReading.AsWritten(executableName, settings);
+            return new ZeroXUnitReading.AsWritten(executableName, settings, runAs);
         }
 
         private static string Render(string template, string serviceName, string description, string workingDirectory, string executableName)
@@ -172,7 +197,7 @@ namespace Updaemon.Conversion
         }
 
         /// <summary>Trimmed lines, without blank lines and comments, which change nothing.</summary>
-        private static IEnumerable<string> MeaningfulLines(string text)
+        internal static IEnumerable<string> MeaningfulLines(string text)
         {
             return text.Split('\n')
                 .Select(line => line.Trim())
@@ -180,6 +205,16 @@ namespace Updaemon.Conversion
         }
 
         private static bool IsFileName(string name) => name.Length > 0 && !name.Contains('/') && !name.Any(char.IsWhiteSpace) && SafeText.IsSafe(name);
+
+        /// <summary>
+        /// Reads a <c>User=</c> value: a user name or ID, or empty, which systemd reads as root (null).
+        /// Specifiers (<c>%</c>) and anything else a user name has not are refused.
+        /// </summary>
+        internal static bool TryReadUser(string value, out string? user)
+        {
+            user = value.Length == 0 ? null : value;
+            return value.Length == 0 || (!value.StartsWith('-') && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.'));
+        }
 
         /// <summary>Reads one <c>Environment=</c> value: <c>KEY=value</c> words (see <see cref="SystemdSyntax.SplitWords"/>), at least one.</summary>
         private static bool TryReadEnvironment(string value, Dictionary<string, string> settings)
