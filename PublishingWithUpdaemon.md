@@ -17,6 +17,19 @@ Also publish a `SHA256SUMS` asset: one `<sha-256>  <asset name>` line per asset,
 
 Versions come from the release tag, for example `v1.2.0`.
 
+## On a ByteShelf shelf
+
+The `byteshelf` plugin reads a ByteShelf 2.0 shelf. Put each version in a directory named like a release tag, holding the same assets and `SHA256SUMS`:
+
+```
+/myapp/1.2.0/myapp-linux-arm64.zip
+/myapp/1.2.0/myapp-linux-x64.zip
+/myapp/1.2.0/SHA256SUMS
+/myapp/1.3.0/...
+```
+
+Install with `--from byteshelf:<shelf>/myapp`, or `byteshelf:<shelf>/myapp/<pattern>` to pick the asset. The highest version is the latest; directories not named as a version are ignored. The plugin needs the secrets `byteShelfUrl` and `byteShelfKey`, a key for that shelf; a read key is enough.
+
 ## The manifest: `updaemon.json`
 
 Put `updaemon.json` at the release root. It says what the app is and how to run it:

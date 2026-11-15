@@ -1,301 +1,300 @@
+using System.Security.Cryptography;
+using System.Text;
+using ByteShelfClient;
+using ByteShelfClient.InMemory;
 using ByteShelfCommon;
 using Updaemon.Common;
+using Updaemon.Common.Models;
 using Updaemon.Common.Utilities;
 
 namespace Updaemon.Distribution.ByteShelfDistribution.Tests
 {
-    public class ByteShelfDistributionServiceTests
+    public sealed class ByteShelfDistributionServiceTests : IAsyncLifetime
     {
-        [Fact]
-        public async Task InitializeAsync_WithMissingApiKey_ThrowsException()
+        private const string Rid = "linux-arm64";
+
+        private readonly string _targetPath = Path.Combine(Path.GetTempPath(), $"byteshelf-distribution-{Guid.NewGuid():N}");
+        private readonly InMemoryByteShelfClient _byteShelf = new InMemoryByteShelfClient();
+        private readonly IDownloadPostProcessor _postProcessor = Substitute.For<IDownloadPostProcessor>();
+        private readonly List<(Uri Server, string Key)> _connections = new List<(Uri Server, string Key)>();
+
+        public async Task InitializeAsync()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
-            SecretCollection secrets = new SecretCollection(new Dictionary<string, string>
+            await _byteShelf.CreateShelfAsync("tools");
+        }
+
+        public Task DisposeAsync()
+        {
+            if (Directory.Exists(_targetPath))
             {
-                { "byteShelfUrl", "https://example.com" },
+                Directory.Delete(_targetPath, recursive: true);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private static SecretCollection Secrets(string? key = "bsk_test", string? url = "https://shelf.example")
+        {
+            Dictionary<string, string> secrets = new Dictionary<string, string>();
+            if (key != null)
+            {
+                secrets[ByteShelfDistributionService.KeySecret] = key;
+            }
+
+            if (url != null)
+            {
+                secrets[ByteShelfDistributionService.UrlSecret] = url;
+            }
+
+            return new SecretCollection(secrets);
+        }
+
+        private ByteShelfDistributionService Service(IByteShelfClient? byteShelf = null) =>
+            new ByteShelfDistributionService(new VersionParser(), _postProcessor, (server, key) =>
+            {
+                _connections.Add((server, key));
+                return byteShelf ?? _byteShelf;
             });
 
-            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.InitializeAsync(secrets));
+        private async Task<ByteShelfDistributionService> ServiceAsync(SecretCollection? secrets = null, IByteShelfClient? byteShelf = null)
+        {
+            ByteShelfDistributionService service = Service(byteShelf);
+            await service.InitializeAsync(secrets ?? Secrets());
+            return service;
+        }
 
-            Assert.Contains("ByteShelf API key is required", exception.Message);
+        private Task PutAsync(string path, string content) =>
+            _byteShelf.Shelf("tools").UploadAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(content)));
+
+        private Task PutSumsAsync(string versionDirectory, string name, string content) =>
+            PutAsync($"{versionDirectory}/{Sha256Sums.AssetName}", $"{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)))}  {name}\n");
+
+        /// <summary>Version 1.2.0 of tools/myapp with a build for this machine and one for another.</summary>
+        private async Task PutBuildsAsync()
+        {
+            await PutAsync("/myapp/1.2.0/myapp-linux-arm64.zip", "arm build");
+            await PutAsync("/myapp/1.2.0/myapp-linux-x64.zip", "x64 build");
+        }
+
+        private async Task<DownloadResult> DownloadAsync(string remote = "tools/myapp", Version? version = null) =>
+            await (await ServiceAsync()).DownloadVersionAsync(remote, version ?? new Version(1, 2, 0), Rid, _targetPath);
+
+        /// <summary>A shelf whose listing of the app is refused with <paramref name="code"/>.</summary>
+        private static IByteShelfClient Refusing(string code, IShelfClient? shelf = null)
+        {
+            shelf ??= Substitute.For<IShelfClient>();
+            shelf.ListAsync(Arg.Any<EntryReference?>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<DirectoryListing>(new ByteShelfException("refused", code)));
+            IByteShelfClient byteShelf = Substitute.For<IByteShelfClient>();
+            byteShelf.Shelf("tools").Returns(shelf);
+            return byteShelf;
         }
 
         [Fact]
-        public async Task InitializeAsync_WithMissingUrl_ThrowsException()
+        public async Task GetLatestVersionAsync_RemoteInNeitherForm_IsRefusedBeforeConnecting()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
-            SecretCollection secrets = new SecretCollection(new Dictionary<string, string>
-            {
-                { "byteShelfApiKey", "test-key" },
-            });
+            ByteShelfDistributionService service = await ServiceAsync();
 
-            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.InitializeAsync(secrets));
+            await Assert.ThrowsAsync<ArgumentException>(() => service.GetLatestVersionAsync("myapp"));
 
-            Assert.Contains("ByteShelf URL is required", exception.Message);
+            Assert.Empty(_connections);
         }
 
         [Fact]
-        public async Task InitializeAsync_WithBothSecrets_DoesNotThrow()
+        public async Task GetLatestVersionAsync_IsTheHighestVersionDirectory()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
-            SecretCollection secrets = new SecretCollection(new Dictionary<string, string>
-            {
-                { "byteShelfApiKey", "test-key" },
-                { "byteShelfUrl", "https://example.com" },
-            });
+            await PutAsync("/myapp/1.2.0/myapp-linux-arm64", "build");
+            await PutAsync("/myapp/v1.10.0/myapp-linux-arm64", "build");
+            await PutAsync("/myapp/1.9.0/myapp-linux-arm64", "build");
+            await PutAsync("/myapp/notes.txt", "a file, not a version");
+            await _byteShelf.Shelf("tools").CreateDirectoryAsync("/myapp/drafts");
 
-            await service.InitializeAsync(secrets);
+            Version? latest = await (await ServiceAsync()).GetLatestVersionAsync("tools/myapp");
 
-            // Should complete without throwing
+            Assert.Equal(new Version(1, 10, 0), latest);
         }
 
         [Fact]
-        public async Task InitializeAsync_CaseInsensitiveSecrets_Works()
+        public async Task GetLatestVersionAsync_AppDirectoryWithoutVersions_IsNone()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
-            SecretCollection secrets = SecretCollection.FromString("BYTESHELFAPIKEY=test-key\nBYTESHELFURL=https://example.com");
+            await _byteShelf.Shelf("tools").CreateDirectoryAsync("/myapp/drafts");
 
-            await service.InitializeAsync(secrets);
-
-            // Should complete without throwing
+            Assert.Null(await (await ServiceAsync()).GetLatestVersionAsync("tools/myapp"));
         }
 
         [Fact]
-        public async Task GetLatestVersionAsync_WithoutInitialization_ThrowsException()
+        public async Task GetLatestVersionAsync_NoAppDirectory_SaysTheAppHasNoVersions()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            ByteShelfDistributionService service = await ServiceAsync();
 
-            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.GetLatestVersionAsync("MyApp"));
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetLatestVersionAsync("tools/myapp"));
 
-            Assert.Contains("API client not initialized", exception.Message);
+            Assert.Equal("tools/myapp has no versions: the shelf 'tools' has no directory /myapp.", ex.Message);
         }
 
         [Fact]
-        public async Task DownloadVersionAsync_WithoutInitialization_ThrowsException()
+        public async Task GetLatestVersionAsync_NoSuchShelf_SaysTheKeyMayNotSeeIt()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            ByteShelfDistributionService service = await ServiceAsync();
 
-            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.DownloadVersionAsync("MyApp", new Version(1, 0, 0), "linux-arm64", "/tmp/test"));
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetLatestVersionAsync("apps/myapp"));
 
-            Assert.Contains("API client not initialized", exception.Message);
+            Assert.Equal(
+                "The shelf 'apps' was not found: it does not exist, or the byteShelfKey cannot see it (a shelf key works on its own shelf only). " +
+                "Remotes are <shelf>/<app> since ByteShelf 2.0. Set another key with 'updaemon secret-set byteshelf byteShelfKey'.",
+                ex.Message);
         }
 
         [Fact]
-        public void ParseServiceName_WithSubtenantOnly_ReturnsCorrectValues()
+        public async Task GetLatestVersionAsync_KeyNotSet_NeedsTheKeyBeforeConnecting()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            ByteShelfDistributionService service = await ServiceAsync(Secrets(key: null));
 
-            // Use reflection to call private method for testing
-            System.Reflection.MethodInfo? parseMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("ParseServiceName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            CredentialNeededException ex = await Assert.ThrowsAsync<CredentialNeededException>(() => service.GetLatestVersionAsync("tools/myapp"));
 
-            object? result = parseMethod?.Invoke(service, new object[] { "MyApp" });
-            (string appSubtenantName, string? filenamePattern) = ((string, string?))result!;
-
-            Assert.Equal("MyApp", appSubtenantName);
-            Assert.Null(filenamePattern);
+            Assert.Equal("The byteShelfKey is not set: reading the shelf 'tools' needs a shelf key for it.", ex.Message);
+            Assert.Equal(ByteShelfDistributionService.KeySecret, ex.Need.Secret);
+            Assert.Equal(CredentialProblem.Missing, ex.Need.Problem);
+            Assert.Empty(_connections);
         }
 
         [Fact]
-        public void ParseServiceName_WithSubtenantAndPattern_ReturnsCorrectValues()
+        public async Task InitializeAsync_AgainWithNewSecrets_TheNextCallConnectsWithThem()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            await _byteShelf.Shelf("tools").CreateDirectoryAsync("/myapp");
+            ByteShelfDistributionService service = await ServiceAsync(Secrets(key: "bsk_old"));
+            await service.GetLatestVersionAsync("tools/myapp");
 
-            System.Reflection.MethodInfo? parseMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("ParseServiceName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            await service.InitializeAsync(SecretCollection.FromString("BYTESHELFKEY=bsk_new\nbyteShelfUrl=https://shelf.example/base"));
+            await service.GetLatestVersionAsync("tools/myapp");
 
-            object? result = parseMethod?.Invoke(service, new object[] { "MyApp/linux-*.zip" });
-            (string appSubtenantName, string? filenamePattern) = ((string, string?))result!;
+            Assert.Equal(new[] { (new Uri("https://shelf.example/"), "bsk_old"), (new Uri("https://shelf.example/base/"), "bsk_new") }, _connections);
+        }
 
-            Assert.Equal("MyApp", appSubtenantName);
-            Assert.Equal("linux-*.zip", filenamePattern);
+        [Theory]
+        [InlineData(null, "The ByteShelf server's address, byteShelfUrl, is not set.")]
+        [InlineData("ftp://shelf.example", "The byteShelfUrl 'ftp://shelf.example' is not an http or https address.")]
+        [InlineData("shelf.example", "The byteShelfUrl 'shelf.example' is not an http or https address.")]
+        public async Task GetLatestVersionAsync_NoServerAddress_NamesTheCommandThatSetsIt(string? url, string expected)
+        {
+            ByteShelfDistributionService service = await ServiceAsync(Secrets(url: url));
+
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetLatestVersionAsync("tools/myapp"));
+
+            Assert.Equal($"{expected} Set it with 'updaemon secret-set byteshelf byteShelfUrl <url>'.", ex.Message);
+        }
+
+        private const string Rejected = "ByteShelf rejected the byteShelfKey: it is wrong, or the key was deleted.";
+
+        /// <summary>A code the server refuses the key with, whether the call is a download, and the message.</summary>
+        public static TheoryData<string, bool, string> KeyRefusals => new TheoryData<string, bool, string>
+        {
+            { ErrorCodes.Unauthenticated, false, Rejected },
+            { ErrorCodes.InvalidCredentials, false, Rejected },
+            { ErrorCodes.PermissionDenied, false, "The byteShelfKey may not read the shelf 'tools': it needs read access." },
+            { ErrorCodes.Unauthenticated, true, Rejected },
+        };
+
+        // The in-memory client acts as an admin and refuses nothing for lack of access, so the server's
+        // refusals of a key come from a stand-in shelf.
+        [Theory]
+        [MemberData(nameof(KeyRefusals))]
+        public async Task KeyRefused_NeedsAnotherKey(string code, bool download, string expected)
+        {
+            ByteShelfDistributionService service = await ServiceAsync(byteShelf: Refusing(code));
+
+            CredentialNeededException ex = await Assert.ThrowsAsync<CredentialNeededException>(() => download
+                ? service.DownloadVersionAsync("tools/myapp", new Version(1, 2, 0), Rid, _targetPath)
+                : service.GetLatestVersionAsync("tools/myapp"));
+
+            Assert.Equal(expected, ex.Message);
+            Assert.Equal(ByteShelfDistributionService.KeySecret, ex.Need.Secret);
+            Assert.Equal(CredentialProblem.Rejected, ex.Need.Problem);
         }
 
         [Fact]
-        public void ParseServiceName_WithLeadingSlash_HandlesGracefully()
+        public async Task GetLatestVersionAsync_KeyRefusedWhenAskingWhetherTheShelfExists_NeedsAnotherKey()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            IShelfClient shelf = Substitute.For<IShelfClient>();
+            shelf.GetInfoAsync(Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<ShelfInfo>(new ByteShelfException("refused", ErrorCodes.Unauthenticated)));
+            ByteShelfDistributionService service = await ServiceAsync(byteShelf: Refusing(ErrorCodes.NotFound, shelf));
 
-            System.Reflection.MethodInfo? parseMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("ParseServiceName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            CredentialNeededException ex = await Assert.ThrowsAsync<CredentialNeededException>(() => service.GetLatestVersionAsync("tools/myapp"));
 
-            object? result = parseMethod?.Invoke(service, new object[] { "/MyApp" });
-            (string appSubtenantName, string? filenamePattern) = ((string, string?))result!;
-
-            Assert.Equal("MyApp", appSubtenantName);
+            Assert.Equal(Rejected, ex.Message);
         }
 
         [Fact]
-        public void ParseServiceName_WithTrailingSlash_HandlesGracefully()
+        public async Task DownloadVersionAsync_BuildMatchesItsSum_IsVerifiedThenExtracted()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            await PutBuildsAsync();
+            await PutSumsAsync("/myapp/1.2.0", "myapp-linux-arm64.zip", "arm build");
 
-            System.Reflection.MethodInfo? parseMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("ParseServiceName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            DownloadResult result = await DownloadAsync();
 
-            object? result = parseMethod?.Invoke(service, new object[] { "MyApp/" });
-            (string appSubtenantName, string? filenamePattern) = ((string, string?))result!;
-
-            Assert.Equal("MyApp", appSubtenantName);
+            Assert.True(result.Verified);
+            Assert.Equal("arm build", await File.ReadAllTextAsync(Path.Combine(_targetPath, "myapp-linux-arm64.zip")));
+            Assert.Single(Directory.GetFiles(_targetPath));
+            await _postProcessor.Received().ProcessAsync(_targetPath, Arg.Any<CancellationToken>());
         }
 
         [Fact]
-        public void FindMatchingFile_WithNoPatternAndSingleFile_ReturnsFile()
+        public async Task DownloadVersionAsync_WithPattern_TakesTheAssetItNamesAndVerifiesIt()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            await PutBuildsAsync();
+            await PutSumsAsync("/myapp/1.2.0", "myapp-linux-x64.zip", "x64 build");
 
-            Guid fileId = Guid.NewGuid();
-            ShelfFileMetadata[] files = new[]
-            {
-                new ShelfFileMetadata(fileId, "app.zip", "application/zip", 1024, new List<Guid>()),
-            };
+            DownloadResult result = await DownloadAsync("tools/myapp/*-x64.zip");
 
-            System.Reflection.MethodInfo? findMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("FindMatchingFile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            ShelfFileMetadata? result = findMethod?.Invoke(service, new object?[] { files, null, "MyApp", "1.0.0" }) as ShelfFileMetadata;
-
-            Assert.NotNull(result);
-            Assert.Equal("app.zip", result.OriginalFilename);
+            Assert.True(result.Verified);
+            Assert.Equal(new[] { "myapp-linux-x64.zip" }, Directory.GetFiles(_targetPath).Select(Path.GetFileName));
         }
 
         [Fact]
-        public void FindMatchingFile_WithNoPatternAndMultipleFiles_ThrowsException()
+        public async Task DownloadVersionAsync_NoBuildForThisMachine_ListsTheAssets()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            await PutAsync("/myapp/1.2.0/myapp-linux-x64.zip", "x64 build");
 
-            ShelfFileMetadata[] files = new[]
-            {
-                new ShelfFileMetadata(Guid.NewGuid(), "file1.zip", "application/zip", 1024, new List<Guid>()),
-                new ShelfFileMetadata(Guid.NewGuid(), "file2.zip", "application/zip", 1024, new List<Guid>()),
-            };
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => DownloadAsync());
 
-            System.Reflection.MethodInfo? findMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("FindMatchingFile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            System.Reflection.TargetInvocationException exception = Assert.Throws<System.Reflection.TargetInvocationException>(
-                () => findMethod?.Invoke(service, new object?[] { files, null, "MyApp", "1.0.0" }));
-
-            Assert.IsType<InvalidOperationException>(exception.InnerException);
-            Assert.Contains("Multiple files found", exception.InnerException.Message);
+            Assert.Equal(
+                "No asset in the version 1.2.0 of tools/myapp is named *-linux-arm64.zip, *-linux-arm64.tar.gz or *-linux-arm64, the build for this machine. Its assets:\n" +
+                "  myapp-linux-x64.zip\n" +
+                "Pick one with the remote tools/myapp/<pattern>, where <pattern> is an asset name and * matches any text.",
+                ex.Message);
         }
 
         [Fact]
-        public void FindMatchingFile_WithWildcardPattern_MatchesCorrectFile()
+        public async Task DownloadVersionAsync_VersionGoneSinceItWasFound_SaysSo()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            await PutBuildsAsync();
 
-            ShelfFileMetadata[] files = new[]
-            {
-                new ShelfFileMetadata(Guid.NewGuid(), "app-linux-arm.zip", "application/zip", 1024, new List<Guid>()),
-                new ShelfFileMetadata(Guid.NewGuid(), "app-linux-x64.zip", "application/zip", 1024, new List<Guid>()),
-                new ShelfFileMetadata(Guid.NewGuid(), "app-windows.zip", "application/zip", 1024, new List<Guid>()),
-            };
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => DownloadAsync(version: new Version(1, 3, 0)));
 
-            System.Reflection.MethodInfo? findMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("FindMatchingFile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            ShelfFileMetadata? result = findMethod?.Invoke(service, new object?[] { files, "*-linux-arm.zip", "MyApp", "1.0.0" }) as ShelfFileMetadata;
-
-            Assert.NotNull(result);
-            Assert.Equal("app-linux-arm.zip", result.OriginalFilename);
+            Assert.Equal("tools/myapp has no version 1.3.0 any more.", ex.Message);
         }
 
         [Fact]
-        public void FindMatchingFile_WithPatternMatchingMultiple_ThrowsException()
+        public async Task DownloadVersionAsync_TwoDirectoriesForTheVersion_NamesBoth()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            await PutBuildsAsync();
+            await PutAsync("/myapp/v1.2.0/myapp-linux-arm64.zip", "another arm build");
 
-            ShelfFileMetadata[] files = new[]
-            {
-                new ShelfFileMetadata(Guid.NewGuid(), "app-linux-arm.zip", "application/zip", 1024, new List<Guid>()),
-                new ShelfFileMetadata(Guid.NewGuid(), "app-linux-x64.zip", "application/zip", 1024, new List<Guid>()),
-            };
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => DownloadAsync());
 
-            System.Reflection.MethodInfo? findMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("FindMatchingFile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            System.Reflection.TargetInvocationException exception = Assert.Throws<System.Reflection.TargetInvocationException>(
-                () => findMethod?.Invoke(service, new object?[] { files, "*-linux-*.zip", "MyApp", "1.0.0" }));
-
-            Assert.IsType<InvalidOperationException>(exception.InnerException);
-            Assert.Contains("Multiple files match pattern", exception.InnerException.Message);
+            Assert.Equal("tools/myapp has several directories for version 1.2.0: /myapp/1.2.0, /myapp/v1.2.0. Keep one.", ex.Message);
+            Assert.False(Directory.Exists(_targetPath));
         }
 
         [Fact]
-        public void FindMatchingFile_WithPatternMatchingNone_ThrowsException()
+        public void GetServiceInformation_IsVersion2WithTheUrlAndAShelfKey()
         {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
+            DistributionServiceInformation information = Service().GetServiceInformation();
 
-            ShelfFileMetadata[] files = new[]
-            {
-                new ShelfFileMetadata(Guid.NewGuid(), "app.tar.gz", "application/gzip", 1024, new List<Guid>()),
-            };
-
-            System.Reflection.MethodInfo? findMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("FindMatchingFile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            System.Reflection.TargetInvocationException exception = Assert.Throws<System.Reflection.TargetInvocationException>(
-                () => findMethod?.Invoke(service, new object?[] { files, "*.zip", "MyApp", "1.0.0" }));
-
-            Assert.IsType<InvalidOperationException>(exception.InnerException);
-            Assert.Contains("No files matching pattern", exception.InnerException.Message);
-        }
-
-        [Fact]
-        public void FindMatchingFile_CaseInsensitiveMatching_Works()
-        {
-            IVersionParser versionParser = Substitute.For<IVersionParser>();
-            IDownloadPostProcessor postProcessor = Substitute.For<IDownloadPostProcessor>();
-            ByteShelfDistributionService service = new ByteShelfDistributionService(versionParser, postProcessor);
-
-            ShelfFileMetadata[] files = new[]
-            {
-                new ShelfFileMetadata(Guid.NewGuid(), "App-LINUX-X64.ZIP", "application/zip", 1024, new List<Guid>()),
-            };
-
-            System.Reflection.MethodInfo? findMethod = typeof(ByteShelfDistributionService)
-                .GetMethod("FindMatchingFile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            ShelfFileMetadata? result = findMethod?.Invoke(service, new object?[] { files, "app-linux-*.zip", "MyApp", "1.0.0" }) as ShelfFileMetadata;
-
-            Assert.NotNull(result);
-            Assert.Equal("App-LINUX-X64.ZIP", result.OriginalFilename);
+            Assert.Equal("2.0.0", information.Version);
+            Assert.Equal(new[] { "byteShelfUrl", "byteShelfKey" }, information.Secrets.Select(secret => secret.Name));
+            Assert.All(information.Secrets, secret => Assert.True(secret.IsRequired));
         }
     }
 }
-

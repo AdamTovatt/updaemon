@@ -3,26 +3,37 @@ using ByteShelfCommon;
 using Updaemon.Common;
 using Updaemon.Common.Models;
 using Updaemon.Common.Utilities;
-using Updaemon.Distribution.ByteShelfDistribution.Interfaces;
 
 namespace Updaemon.Distribution.ByteShelfDistribution
 {
     /// <summary>
-    /// Distribution service that retrieves versioned releases from ByteShelf storage.
-    /// Uses a hierarchical structure: tenant → app subtenant → version subtenant → files
+    /// Distribution service for apps on a ByteShelf 2.0 shelf: each version a directory
+    /// <c>/&lt;app&gt;/&lt;version&gt;/</c> (see <see cref="ByteShelfRemote"/>), read with a shelf key.
     /// </summary>
-    public class ByteShelfDistributionService : IDistributionService
+    public sealed class ByteShelfDistributionService : IDistributionService
     {
+        public const string Alias = "byteshelf";
+
+        public const string UrlSecret = "byteShelfUrl";
+
+        public const string KeySecret = "byteShelfKey";
+
         private readonly IVersionParser _versionParser;
         private readonly IDownloadPostProcessor _postProcessor;
-        private IByteShelfApiClient? _apiClient;
+        private readonly Func<Uri, string, IByteShelfClient> _connect;
+        private string? _url;
+        private string? _key;
+        private IByteShelfClient? _client;
 
+        /// <param name="connect">The client for a server's address, ending in '/', and a shelf key's secret.</param>
         public ByteShelfDistributionService(
             IVersionParser versionParser,
-            IDownloadPostProcessor postProcessor)
+            IDownloadPostProcessor postProcessor,
+            Func<Uri, string, IByteShelfClient> connect)
         {
             _versionParser = versionParser;
             _postProcessor = postProcessor;
+            _connect = connect;
         }
 
         public DistributionServiceInformation GetServiceInformation()
@@ -30,232 +41,204 @@ namespace Updaemon.Distribution.ByteShelfDistribution
             return new DistributionServiceInformation
             {
                 FullName = "ByteShelf",
-                DefaultAlias = "byteshelf",
-                Description = "Distribution service that uses ByteShelf storage.",
-                Version = "1.0.0",
+                DefaultAlias = Alias,
+                Description = "Distribution service that uses a ByteShelf 2.0 shelf.",
+                Version = typeof(ByteShelfDistributionService).Assembly.GetName().Version!.ToString(3),
                 Secrets = new List<DistributionSecretInfo>
                 {
                     new DistributionSecretInfo
                     {
-                        Name = "byteShelfApiKey",
+                        Name = UrlSecret,
                         IsRequired = true,
-                        Description = "ByteShelf API key for authentication."
+                        Description = "The ByteShelf server's address."
                     },
                     new DistributionSecretInfo
                     {
-                        Name = "byteShelfUrl",
+                        Name = KeySecret,
                         IsRequired = true,
-                        Description = "ByteShelf server URL."
+                        Description = "A shelf key for the shelf the apps are on; a read key is enough."
                     }
                 }
             };
         }
 
+        /// <remarks>
+        /// Only keeps the secrets: a missing one is reported by the call that needs it, where updaemon
+        /// can ask for it and call again.
+        /// </remarks>
         public Task InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
         {
-            string? apiKey = secrets.GetValueIgnoreCase("byteShelfApiKey");
-            string? url = secrets.GetValueIgnoreCase("byteShelfUrl");
-
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                throw new InvalidOperationException("ByteShelf API key is required. Set it using: updaemon secret-set byteShelfApiKey <your-key>");
-            }
-
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                throw new InvalidOperationException("ByteShelf URL is required. Set it using: updaemon secret-set byteShelfUrl <your-url>");
-            }
-
-            HttpClient httpClient = HttpShelfFileProvider.CreateHttpClient(url);
-            IShelfFileProvider fileProvider = new HttpShelfFileProvider(httpClient, apiKey);
-            _apiClient = new Services.ByteShelfApiClient(fileProvider, _versionParser);
-
+            _url = secrets.GetValueIgnoreCase(UrlSecret);
+            _key = secrets.GetValueIgnoreCase(KeySecret);
+            _client = null;
             return Task.CompletedTask;
         }
 
-        public async Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
+        public Task<Version?> GetLatestVersionAsync(string serviceName, CancellationToken cancellationToken = default)
         {
-            if (_apiClient == null)
-            {
-                throw new InvalidOperationException("API client not initialized. Call InitializeAsync first.");
-            }
-
-            (string appSubtenantName, string? _) = ParseServiceName(serviceName);
-
-            // Find the app subtenant by display name
-            (string id, TenantInfoResponse info)? appSubtenant = await _apiClient.GetSubTenantByDisplayNameAsync(appSubtenantName, cancellationToken);
-            if (appSubtenant == null)
-            {
-                Console.WriteLine($"Warning: App subtenant '{appSubtenantName}' not found in ByteShelf");
-                return null;
-            }
-
-            // Get all version subtenants under the app subtenant
-            Dictionary<string, TenantInfoResponse> versionSubtenants = await _apiClient.GetVersionSubTenantsAsync(appSubtenant.Value.id, cancellationToken);
-
-            if (versionSubtenants.Count == 0)
-            {
-                Console.WriteLine($"Warning: No version subtenants found under '{appSubtenantName}'");
-                return null;
-            }
-
-            // Parse each subtenant name as a version
-            Version? latestVersion = null;
-
-            foreach (KeyValuePair<string, TenantInfoResponse> kvp in versionSubtenants)
-            {
-                Version? parsedVersion = _versionParser.Parse(kvp.Value.DisplayName);
-
-                if (parsedVersion == null)
-                {
-                    Console.WriteLine($"Warning: Skipping subtenant '{kvp.Value.DisplayName}' - not a valid version");
-                    continue;
-                }
-
-                if (latestVersion == null || parsedVersion > latestVersion)
-                {
-                    latestVersion = parsedVersion;
-                }
-            }
-
-            return latestVersion;
+            return WithVersionsAsync(
+                serviceName,
+                (_, _, versions) => Task.FromResult<Version?>(versions.Count == 0 ? null : versions.Max(version => version.Version)),
+                cancellationToken);
         }
 
-        public async Task<DownloadResult> DownloadVersionAsync(
+        public Task<DownloadResult> DownloadVersionAsync(
             string serviceName,
             Version version,
             string runtimeIdentifier,
             string targetPath,
             CancellationToken cancellationToken = default)
         {
-            // runtimeIdentifier is unused: a ByteShelf version holds the files to download, and
-            // the remote's pattern picks among them.
-            if (_apiClient == null)
-            {
-                throw new InvalidOperationException("API client not initialized. Call InitializeAsync first.");
-            }
+            return WithVersionsAsync(
+                serviceName,
+                async (shelf, remote, versions) =>
+                {
+                    ShelfDirectory directory = versions.Where(candidate => candidate.Version == version).Select(candidate => candidate.Directory).ToArray() switch
+                    {
+                        [ShelfDirectory one] => one,
+                        [] => throw new InvalidOperationException($"{remote} has no version {version} any more."),
+                        ShelfDirectory[] several => throw new InvalidOperationException(
+                            $"{remote} has several directories for version {version}: {string.Join(", ", several.Select(candidate => candidate.Path))}. Keep one."),
+                    };
 
-            (string appSubtenantName, string? filenamePattern) = ParseServiceName(serviceName);
-
-            // Find the app subtenant by display name
-            (string id, TenantInfoResponse info)? appSubtenant = await _apiClient.GetSubTenantByDisplayNameAsync(appSubtenantName, cancellationToken);
-            if (appSubtenant == null)
-            {
-                throw new InvalidOperationException($"App subtenant '{appSubtenantName}' not found in ByteShelf");
-            }
-
-            // Find the version subtenant
-            (string id, TenantInfoResponse info)? versionSubtenant = await _apiClient.GetVersionSubTenantByVersionAsync(appSubtenant.Value.id, version, cancellationToken);
-            if (versionSubtenant == null)
-            {
-                throw new InvalidOperationException($"Version '{version}' not found under '{appSubtenantName}'");
-            }
-
-            // Get all files in the version subtenant
-            IEnumerable<ShelfFileMetadata> files = await _apiClient.GetFilesInSubTenantAsync(versionSubtenant.Value.id, cancellationToken);
-            ShelfFileMetadata[] filesArray = files.ToArray();
-
-            // Find the matching file based on pattern
-            ShelfFileMetadata matchedFile = FindMatchingFile(filesArray, filenamePattern, appSubtenantName, versionSubtenant.Value.info.DisplayName);
-
-            // Ensure target directory exists
-            if (!Directory.Exists(targetPath))
-            {
-                Directory.CreateDirectory(targetPath);
-            }
-
-            // Download the file
-            string targetFilePath = Path.Combine(targetPath, matchedFile.OriginalFilename);
-            await _apiClient.DownloadFileAsync(versionSubtenant.Value.id, matchedFile.Id, targetFilePath, cancellationToken);
-
-            // Post-process (extract if zip)
-            await _postProcessor.ProcessAsync(targetPath, cancellationToken);
-
-            // ByteShelf keeps no checksums to verify against.
-            return new DownloadResult { Verified = false };
+                    DirectoryListing listing = await shelf.ListAsync(directory.Id, cancellationToken);
+                    ReleaseAssets<ShelfFile> assets = new ReleaseAssets<ShelfFile>(
+                        $"version {directory.Name} of {remote}",
+                        remote.ToString(),
+                        listing.Files,
+                        file => file.Name,
+                        (file, token) => ReadTextAsync(shelf, file, token),
+                        (file, filePath, token) => SaveAsync(shelf, file, filePath, token),
+                        _postProcessor);
+                    return await assets.DownloadAsync(remote.Pattern, runtimeIdentifier, targetPath, cancellationToken);
+                },
+                cancellationToken);
         }
 
         /// <summary>
-        /// Parses a service name into app subtenant name and optional filename pattern.
+        /// Reads the remote, then runs <paramref name="call"/> with the app's versions on its shelf. A
+        /// refused key, on any request, is a <see cref="CredentialNeededException"/>.
         /// </summary>
-        /// <param name="serviceName">Service name in format "AppName" or "AppName/pattern"</param>
-        /// <returns>Tuple of (appSubtenantName, filenamePattern)</returns>
-        private (string appSubtenantName, string? filenamePattern) ParseServiceName(string serviceName)
+        private async Task<T> WithVersionsAsync<T>(
+            string serviceName,
+            Func<IShelfClient, ByteShelfRemote, IReadOnlyList<VersionDirectory>, Task<T>> call,
+            CancellationToken cancellationToken)
         {
-            // Strip leading and trailing slashes
-            string normalized = serviceName.Trim('/');
-
-            string[] parts = normalized.Split('/');
-
-            if (parts.Length == 0 || string.IsNullOrWhiteSpace(parts[0]))
+            ByteShelfRemote remote = ByteShelfRemote.Parse(serviceName);
+            IShelfClient shelf = OpenShelf(remote);
+            try
             {
-                throw new ArgumentException($"Invalid service name format: '{serviceName}'. Expected 'AppName' or 'AppName/pattern'");
+                return await call(shelf, remote, await ListVersionsAsync(shelf, remote, cancellationToken));
+            }
+            catch (ByteShelfException ex) when (IsKeyRefusal(ex))
+            {
+                throw KeyRefused(ex, remote);
+            }
+        }
+
+        /// <exception cref="InvalidOperationException">The server's address is not set, or is not one.</exception>
+        /// <exception cref="CredentialNeededException">The key is not set.</exception>
+        private IShelfClient OpenShelf(ByteShelfRemote remote)
+        {
+            string setUrl = $"Set it with 'updaemon secret-set {Alias} {UrlSecret} <url>'.";
+            if (string.IsNullOrWhiteSpace(_url))
+            {
+                throw new InvalidOperationException($"The ByteShelf server's address, {UrlSecret}, is not set. {setUrl}");
             }
 
-            string appSubtenantName = parts[0];
-            string? filenamePattern = parts.Length > 1 ? parts[1] : null;
+            if (!Uri.TryCreate(_url.TrimEnd('/') + "/", UriKind.Absolute, out Uri? server) || (server.Scheme != Uri.UriSchemeHttps && server.Scheme != Uri.UriSchemeHttp))
+            {
+                throw new InvalidOperationException($"The {UrlSecret} '{_url}' is not an http or https address. {setUrl}");
+            }
 
-            return (appSubtenantName, filenamePattern);
+            if (string.IsNullOrWhiteSpace(_key))
+            {
+                throw new CredentialNeededException(
+                    new CredentialNeed { Secret = KeySecret, Problem = CredentialProblem.Missing },
+                    $"The {KeySecret} is not set: reading the shelf '{remote.Shelf}' needs a shelf key for it.");
+            }
+
+            _client ??= _connect(server, _key);
+            return _client.Shelf(remote.Shelf);
+        }
+
+        /// <summary>The app's version directories; directories not named as a version are left out.</summary>
+        /// <exception cref="InvalidOperationException">The shelf or the app's directory was not found.</exception>
+        private async Task<IReadOnlyList<VersionDirectory>> ListVersionsAsync(IShelfClient shelf, ByteShelfRemote remote, CancellationToken cancellationToken)
+        {
+            DirectoryListing listing;
+            try
+            {
+                listing = await shelf.ListAsync(remote.AppDirectory, cancellationToken);
+            }
+            catch (ByteShelfException ex) when (ex.Code == ErrorCodes.NotFound)
+            {
+                throw await NotFoundAsync(shelf, remote, cancellationToken);
+            }
+
+            List<VersionDirectory> versions = new List<VersionDirectory>();
+            foreach (ListedDirectory listed in listing.Directories)
+            {
+                Version? version = _versionParser.Parse(listed.Directory.Name);
+                if (version != null)
+                {
+                    versions.Add(new VersionDirectory(version, listed.Directory));
+                }
+            }
+
+            return versions;
         }
 
         /// <summary>
-        /// Finds a matching file from a list based on a filename pattern.
-        /// Supports wildcards like *.zip, linux-*.zip, etc.
+        /// Why the app's directory was not found. ByteShelf answers not_found both for a missing directory
+        /// and for a shelf the key cannot see; only the shelf itself says which.
         /// </summary>
-        /// <param name="files">Array of available files</param>
-        /// <param name="pattern">Filename pattern (null means single file required)</param>
-        /// <param name="appName">App subtenant name (for error messages)</param>
-        /// <param name="versionName">Version subtenant name (for error messages)</param>
-        /// <returns>The matching file</returns>
-        private ShelfFileMetadata FindMatchingFile(ShelfFileMetadata[] files, string? pattern, string appName, string versionName)
+        private static async Task<Exception> NotFoundAsync(IShelfClient shelf, ByteShelfRemote remote, CancellationToken cancellationToken)
         {
-            if (pattern == null)
+            try
             {
-                // No pattern specified - require exactly one file
-                if (files.Length == 0)
-                {
-                    throw new InvalidOperationException($"No files found in version '{versionName}' for '{appName}'");
-                }
-
-                if (files.Length > 1)
-                {
-                    string fileNames = string.Join(", ", files.Select(f => f.OriginalFilename));
-                    throw new InvalidOperationException(
-                        $"Multiple files found in version '{versionName}' for '{appName}': {fileNames}. " +
-                        $"Please specify a pattern like '{appName}/*.zip'");
-                }
-
-                return files[0];
+                await shelf.GetInfoAsync(cancellationToken);
+            }
+            catch (ByteShelfException ex) when (ex.Code == ErrorCodes.NotFound)
+            {
+                return new InvalidOperationException(
+                    $"The shelf '{remote.Shelf}' was not found: it does not exist, or the {KeySecret} cannot see it (a shelf key works on its own shelf only). " +
+                    $"Remotes are <shelf>/<app> since ByteShelf 2.0. Set another key with 'updaemon secret-set {Alias} {KeySecret}'.");
             }
 
-            // Convert wildcard pattern to regex
-            string regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
-                .Replace("\\*", ".*")
-                .Replace("\\?", ".") + "$";
-            System.Text.RegularExpressions.Regex regex = new System.Text.RegularExpressions.Regex(
-                regexPattern,
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-            ShelfFileMetadata[] matchingFiles = files.Where(f => regex.IsMatch(f.OriginalFilename)).ToArray();
-
-            if (matchingFiles.Length == 0)
-            {
-                string fileNames = string.Join(", ", files.Select(f => f.OriginalFilename));
-                throw new InvalidOperationException(
-                    $"No files matching pattern '{pattern}' found in version '{versionName}' for '{appName}'. " +
-                    $"Available files: {fileNames}");
-            }
-
-            if (matchingFiles.Length > 1)
-            {
-                string matchingNames = string.Join(", ", matchingFiles.Select(f => f.OriginalFilename));
-                throw new InvalidOperationException(
-                    $"Multiple files match pattern '{pattern}' in version '{versionName}' for '{appName}': {matchingNames}. " +
-                    $"Please use a more specific pattern.");
-            }
-
-            return matchingFiles[0];
+            return new InvalidOperationException($"{remote} has no versions: the shelf '{remote.Shelf}' has no directory {remote.AppDirectory}.");
         }
+
+        private static bool IsKeyRefusal(ByteShelfException ex) =>
+            ex.Code is ErrorCodes.Unauthenticated or ErrorCodes.InvalidCredentials or ErrorCodes.PermissionDenied;
+
+        private static CredentialNeededException KeyRefused(ByteShelfException ex, ByteShelfRemote remote)
+        {
+            string message = ex.Code == ErrorCodes.PermissionDenied
+                ? $"The {KeySecret} may not read the shelf '{remote.Shelf}': it needs read access."
+                : $"ByteShelf rejected the {KeySecret}: it is wrong, or the key was deleted.";
+            return new CredentialNeededException(new CredentialNeed { Secret = KeySecret, Problem = CredentialProblem.Rejected }, message);
+        }
+
+        private static async Task<string> ReadTextAsync(IShelfClient shelf, ShelfFile file, CancellationToken cancellationToken)
+        {
+            await using (Stream content = await shelf.OpenReadAsync(file.Id, cancellationToken))
+            using (StreamReader reader = new StreamReader(content))
+            {
+                return await reader.ReadToEndAsync(cancellationToken);
+            }
+        }
+
+        /// <summary>Saves the file whole: reading it to the end checks it against the SHA-256 it was stored with.</summary>
+        private static async Task SaveAsync(IShelfClient shelf, ShelfFile file, string filePath, CancellationToken cancellationToken)
+        {
+            await using (Stream content = await shelf.OpenReadAsync(file.Id, cancellationToken))
+            await using (FileStream target = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await content.CopyToAsync(target, cancellationToken);
+            }
+        }
+
+        private sealed record VersionDirectory(Version Version, ShelfDirectory Directory);
     }
 }
-
