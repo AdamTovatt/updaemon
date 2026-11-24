@@ -31,14 +31,14 @@ namespace Updaemon.Services
 
         internal Func<ProcessInvocation, CancellationToken, Task<ProcessRunner.Result>> Run { get; init; } = ProcessRunner.RunAsync;
 
-        /// <summary>Null when <paramref name="hostVersion"/> would load that kept version of the extension.</summary>
+        /// <summary>Whether <paramref name="hostVersion"/> would load that kept version of the extension.</summary>
         /// <exception cref="InvalidOperationException">The version is not kept; the message lists the kept ones.</exception>
-        public async Task<ExtensionRefusal?> FindRefusalAsync(
+        public async Task<ExtensionVerdict> AskAsync(
             InstalledApp host, DeployableVersion hostVersion, ExtensionName name, Version version, CancellationToken cancellationToken = default)
         {
             return await FindReasonAsync(host, hostVersion, _versions.OpenRetained(name, version), cancellationToken) is string reason
-                ? new ExtensionRefusal(host.Name, hostVersion.Version, version, reason)
-                : null;
+                ? new ExtensionRefusal(hostVersion.Version, name, version, reason)
+                : new AcceptedExtension(hostVersion.Version, name, version);
         }
 
         private async Task<string?> FindReasonAsync(InstalledApp host, DeployableVersion hostVersion, string extensionDirectory, CancellationToken cancellationToken)

@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Models;
 
 namespace Updaemon.Interfaces
@@ -52,24 +53,20 @@ namespace Updaemon.Interfaces
         /// current when this fails partway is for the caller to put back (see <see cref="Services.AppSwitcher"/>).
         /// </summary>
         /// <remarks>
-        /// Takes no <see cref="PreparedApp"/>, as a first install, a conversion from 0.x and putting a version
+        /// Takes no <see cref="AppChange"/>, as a first install, a conversion from 0.x and putting a version
         /// back have none. A command that switches an installed app goes through <see cref="Services.AppSwitcher"/>.
         /// </remarks>
-        Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+        /// <param name="givenUp">
+        /// For a version that is put back: the manifest of the one it was switched to, whose files go too,
+        /// whichever version is current. Null when there is none.
+        /// </param>
+        Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, AppManifest? givenUp = null, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Regenerates the app's settings file, command wrapper and service unit for its current version. A
-        /// step of a change that has begun: it takes the proof, so no command calls it unprepared, and does not begin one.
+        /// Regenerates the app's settings file, command wrapper and service unit for its current version and
+        /// <see cref="AppChange.After"/>.
         /// </summary>
-        Task RegenerateAsync(PreparedApp prepared, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// After a change to the app's settings or arguments: regenerates its settings file, command
-        /// wrapper and service unit for its current version, and restarts the service if it is enabled,
-        /// whether or not it runs.
-        /// Returns false when the restarted service did not pass the health check, as after an update.
-        /// </summary>
-        Task<bool> ApplySettingsAsync(PreparedApp prepared, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+        Task RegenerateAsync(AppChange change, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Enables and starts a newly installed service, then runs the health check (<see cref="StaysRunningAsync"/>).

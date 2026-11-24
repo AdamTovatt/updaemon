@@ -4,10 +4,10 @@ using Updaemon.Models;
 namespace Updaemon.Services
 {
     /// <summary>
-    /// Puts back what an app's <see cref="UnfinishedSwitch"/> says was there before, for
-    /// <see cref="AppSwitcher"/>: after a switch that failed, and after one whose run was killed. Saves
-    /// nothing, and needs neither the network nor a plugin. What it has begun it ends, so it takes no
-    /// cancellation.
+    /// Puts back what an app's <see cref="UnfinishedChange"/> says was there before, or has its files follow
+    /// what stands: for <see cref="AppSwitcher"/> after a switch that failed, and for
+    /// <see cref="AppPreparer"/> after a change that a run left unfinished. Saves nothing, and needs neither the
+    /// network nor a plugin. What it has begun it ends, so it takes no cancellation.
     /// </summary>
     public class SwitchRestorer
     {
@@ -23,23 +23,24 @@ namespace Updaemon.Services
         }
 
         /// <summary>
-        /// Makes what <see cref="UnfinishedSwitch.PutBack"/> names current again, all of it even when one fails,
-        /// and takes out an extension that was not there before. Does not restart and does not save.
+        /// Makes what <paramref name="putBack"/> names current again, all of it even when one fails, and deletes
+        /// the versions of an extension that is not in the entry. Once all of it is, a service that was removed is
+        /// as it was. Does not restart.
         /// </summary>
+        /// <param name="app">The entry from before the change.</param>
         /// <exception cref="InvalidOperationException">Some of it could not be; the message says what.</exception>
-        public async Task RestoreVersionsAsync(InstalledApp app, ReachableServiceManager reachable)
+        public async Task RestoreVersionsAsync(InstalledApp app, UnfinishedChange.PutBack putBack, ReachableServiceManager reachable)
         {
             List<string> problems = new List<string>();
-            foreach (VersionBefore before in app.Unfinished!.PutBack)
+            foreach (VersionBefore before in putBack.Versions)
             {
-                try
-                {
-                    await RestoreVersionAsync(app, before, reachable);
-                }
-                catch (Exception ex)
-                {
-                    problems.Add(ex.Message.TrimEnd('.'));
-                }
+                await TryAsync(() => RestoreVersionAsync(app, before, putBack, reachable), problems);
+            }
+
+            if (problems.Count == 0 && putBack.RemovedService is ServiceBefore service)
+            {
+                // Last: it starts with what is there then.
+                await TryAsync(() => RestoreServiceAsync(app.Name, service), problems);
             }
 
             if (problems.Count > 0)
@@ -48,17 +49,24 @@ namespace Updaemon.Services
             }
         }
 
-        private async Task RestoreVersionAsync(InstalledApp app, VersionBefore before, ReachableServiceManager reachable)
+        private static async Task TryAsync(Func<Task> step, List<string> problems)
+        {
+            try
+            {
+                await step();
+            }
+            catch (Exception ex)
+            {
+                problems.Add(ex.Message.TrimEnd('.'));
+            }
+        }
+
+        private async Task RestoreVersionAsync(InstalledApp app, VersionBefore before, UnfinishedChange.PutBack putBack, ReachableServiceManager reachable)
         {
             if (before.Extension == null)
             {
                 DeployableVersion version = await _serviceDeployer.OpenRetainedAsync(app.Name, before.Version!, CancellationToken.None);
-                await _serviceDeployer.ActivateAsync(app, version, reachable, CancellationToken.None);
-                if (app.Unfinished!.RemovedService is ServiceBefore service)
-                {
-                    await RestoreServiceAsync(app.Name, service);
-                }
-
+                await _serviceDeployer.ActivateAsync(app, version, reachable, putBack.NewManifest, CancellationToken.None);
                 return;
             }
 
@@ -70,9 +78,15 @@ namespace Updaemon.Services
             }
 
             _versions.Unlink(name);
-            app.Extensions.RemoveAll(extension => extension.Id == before.Extension);
-            _versions.TryDeleteAll(name);
+            if (app.Find(name) == null)
+            {
+                _versions.TryDeleteAll(name);
+            }
         }
+
+        /// <summary>Generates the app's files for its current version and <paramref name="app"/>'s settings.</summary>
+        public async Task WriteFilesAsync(InstalledApp app, ReachableServiceManager reachable) =>
+            await _serviceDeployer.ActivateAsync(app, await _serviceDeployer.OpenCurrentAsync(app.Name, CancellationToken.None), reachable, cancellationToken: CancellationToken.None);
 
         /// <summary>Activating a version that is no service stopped and removed this one, and activating its version only wrote its unit again.</summary>
         private async Task RestoreServiceAsync(string appName, ServiceBefore before)
@@ -88,17 +102,17 @@ namespace Updaemon.Services
             }
         }
 
-        /// <summary>Restarts the service if the unfinished switch does and it still is one, without a health check. Returns what failed, or null.</summary>
-        public async Task<string?> RestartAsync(InstalledApp app)
+        /// <summary>Restarts the service if there is one, without a health check. Returns what failed, or null.</summary>
+        public async Task<string?> RestartAsync(string appName)
         {
-            if (!app.Unfinished!.Restart || !_serviceDeployer.HasService(app.Name))
+            if (!_serviceDeployer.HasService(appName))
             {
                 return null;
             }
 
             try
             {
-                await _serviceManager.RestartServiceAsync(app.Name, CancellationToken.None);
+                await _serviceManager.RestartServiceAsync(appName, CancellationToken.None);
                 return null;
             }
             catch (Exception ex)

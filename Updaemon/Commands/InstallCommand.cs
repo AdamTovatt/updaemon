@@ -361,8 +361,8 @@ namespace Updaemon.Commands
             bool staysRunning;
             try
             {
-                await _settingsStore.SaveAsync(values, cancellationToken);
-                await _serviceDeployer.ActivateAsync(app, staged, reachable, cancellationToken);
+                await _settingsStore.SaveAsync(values, cancellationToken: cancellationToken);
+                await _serviceDeployer.ActivateAsync(app, staged, reachable, cancellationToken: cancellationToken);
                 staysRunning = !staged.Manifest.IsService || await _serviceDeployer.StartAsync(app.Name, reachable, cancellationToken);
             }
             catch (Exception ex)

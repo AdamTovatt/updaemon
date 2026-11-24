@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Updaemon.Serialization;
 
 namespace Updaemon.Models
 {
@@ -35,8 +37,8 @@ namespace Updaemon.Models
         /// <summary>The extensions installed into this app, their host.</summary>
         public List<InstalledExtension> Extensions { get; set; } = new List<InstalledExtension>();
 
-        /// <summary>A switch of versions that has begun and not ended; what is here after a run ended was cut off in it.</summary>
-        public UnfinishedSwitch? Unfinished { get; set; }
+        /// <summary>A change that has begun and not ended; what is here after a run ended is left to the next one.</summary>
+        public UnfinishedChange? Unfinished { get; set; }
 
         [JsonIgnore]
         public AppName PackageName => new AppName(Name);
@@ -46,5 +48,16 @@ namespace Updaemon.Models
 
         /// <summary>The extension's full name, as commands take it.</summary>
         public ExtensionName NameOf(InstalledExtension extension) => new ExtensionName(Name, extension.Id);
+
+        /// <summary>The package of that name: this app or one of its extensions.</summary>
+        public InstalledPackage? Find(PackageName name) => name is ExtensionName extension ? FindExtension(extension.Id) : this;
+
+        /// <summary>An entry of its own, down to each extension and setting: editing one leaves the other.</summary>
+        public InstalledApp Copy() => JsonSerializer.Deserialize(ToJson(), UpdaemonJsonContext.Default.InstalledApp)!;
+
+        /// <summary>Whether both would be saved as the same.</summary>
+        public bool IsSameAs(InstalledApp other) => ToJson() == other.ToJson();
+
+        private string ToJson() => JsonSerializer.Serialize(this, UpdaemonJsonContext.Default.InstalledApp);
     }
 }

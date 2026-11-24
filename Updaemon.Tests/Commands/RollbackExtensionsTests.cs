@@ -143,7 +143,7 @@ namespace Updaemon.Tests.Commands
             using (AppHarness h = await UpdatedAsync())
             {
                 IReadOnlyList<string> before = h.Snapshot();
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNext(app => app.Unfinished is not UnfinishedChange.PutBack);
 
                 await Assert.ThrowsAsync<IOException>(() => RollBackAsync(h, "shelf/images"));
 

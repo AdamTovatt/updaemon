@@ -1,3 +1,4 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 using Updaemon.Services;
@@ -12,15 +13,27 @@ namespace Updaemon.Commands
         private readonly IConfigManager _configManager;
         private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
+        private readonly AppPreparer _preparer;
+        private readonly SwitchReadiness _readiness;
         private readonly AppSwitcher _switcher;
         private readonly ExtensionCheck _check;
         private readonly IOutputWriter _outputWriter;
 
-        public RollbackCommand(IConfigManager configManager, VersionStore versions, IServiceDeployer serviceDeployer, AppSwitcher switcher, ExtensionCheck check, IOutputWriter outputWriter)
+        public RollbackCommand(
+            IConfigManager configManager,
+            VersionStore versions,
+            IServiceDeployer serviceDeployer,
+            AppPreparer preparer,
+            SwitchReadiness readiness,
+            AppSwitcher switcher,
+            ExtensionCheck check,
+            IOutputWriter outputWriter)
         {
             _configManager = configManager;
             _versions = versions;
             _serviceDeployer = serviceDeployer;
+            _preparer = preparer;
+            _readiness = readiness;
             _switcher = switcher;
             _check = check;
             _outputWriter = outputWriter;
@@ -56,17 +69,13 @@ namespace Updaemon.Commands
                     return _outputWriter.FailUsage(this);
             }
 
-            SelectedPackage? selected = await AppSelection.FindAsync(name, _configManager, _outputWriter, cancellationToken);
-            if (selected == null)
+            PreparedPackage? prepared = await AppSelection.PrepareAsync(name, _configManager, _preparer, _outputWriter, cancellationToken);
+            if (prepared == null)
             {
                 return 1;
             }
 
-            if (await _switcher.PrepareAsync(selected, cancellationToken) is not PreparedApp prepared)
-            {
-                return _outputWriter.FailNotInstalled(name);
-            }
-
+            SelectedPackage selected = prepared.Package;
             Version current = await _versions.GetCurrentAsync(selected.Name, cancellationToken);
             IReadOnlyList<Version> kept = _versions.GetRetained(selected.Name);
             Version? target = named != null
@@ -83,8 +92,8 @@ namespace Updaemon.Commands
             }
 
             return selected.Extension == null
-                ? await RollBackAppAsync(prepared, current, target, cancellationToken)
-                : await RollBackExtensionAsync(prepared, selected.Extension, current, target, cancellationToken);
+                ? await RollBackAppAsync(prepared.Prepared, current, target, cancellationToken)
+                : await RollBackExtensionAsync(prepared.Prepared, selected.Extension, current, target, cancellationToken);
         }
 
         /// <summary>Its extensions stay as they are: the version rolled back to leaves out those it cannot load.</summary>
@@ -92,8 +101,8 @@ namespace Updaemon.Commands
         {
             InstalledApp app = prepared.App;
             DeployableVersion opened = await _serviceDeployer.OpenRetainedAsync(app.Name, target, cancellationToken);
-            AppSwitch change = AppSwitch.ToVersion(prepared, opened);
-            await _switcher.MakeReadyToRollBackAsync(change, cancellationToken);
+            AppSwitch change = AppSwitch.RollBack(prepared, opened);
+            await _readiness.MakeReadyAsync(change, cancellationToken);
             foreach (InstalledExtension extension in app.Extensions)
             {
                 await WarnOfRefusalAsync(app, opened, app.NameOf(extension), cancellationToken);
@@ -107,7 +116,7 @@ namespace Updaemon.Commands
             try
             {
                 Version version = await _versions.GetCurrentAsync(name, cancellationToken);
-                if (await _check.FindRefusalAsync(app, target, name, version, cancellationToken) is ExtensionRefusal refusal)
+                if (await _check.AskAsync(app, target, name, version, cancellationToken) is ExtensionRefusal refusal)
                 {
                     _outputWriter.WriteError($"Warning: {name}: {refusal}. {app.Name} runs without it.");
                 }
@@ -124,18 +133,20 @@ namespace Updaemon.Commands
             InstalledApp host = prepared.App;
             ExtensionName name = host.NameOf(extension);
             DeployableVersion hostVersion = await _serviceDeployer.OpenCurrentAsync(host.Name, cancellationToken);
-            return await _check.FindRefusalAsync(host, hostVersion, name, target, cancellationToken) is ExtensionRefusal refusal
-                ? _outputWriter.Fail($"{name} was not rolled back: {refusal}.")
-                : await RollBackAsync(AppSwitch.OfExtension(prepared, extension, target), name, current, target, cancellationToken);
+            ExtensionVerdict verdict = await _check.AskAsync(host, hostVersion, name, target, cancellationToken);
+            return verdict is AcceptedExtension accepted
+                ? await RollBackAsync(AppSwitch.RollBack(prepared, accepted), name, current, target, cancellationToken)
+                : _outputWriter.Fail($"{name} was not rolled back: {verdict}.");
         }
 
         private async Task<int> RollBackAsync(AppSwitch change, PackageName name, Version current, Version target, CancellationToken cancellationToken)
         {
-            string? problem = await _switcher.RollBackAsync(change, cancellationToken);
+            SwitchOutcome outcome = await _switcher.SwitchAsync(change, cancellationToken);
+            _outputWriter.WriteRestartSkipped(change.App.Name, outcome);
             _outputWriter.WriteLine(target < current
                 ? $"Rolled back {name} from {current} to {target}. 'updaemon update' skips {current} from now on."
                 : $"Switched {name} from {current} to {target}.");
-            return problem == null ? 0 : _outputWriter.Fail($"{problem}. {ServiceDeployer.SeeLogs(change.App.Name)}");
+            return SwitchText.Problem(change.App.Name, outcome) is string problem ? _outputWriter.Fail(problem) : 0;
         }
 
         /// <summary>"1.2" names the version kept as "1.2.0": missing parts count as zero.</summary>

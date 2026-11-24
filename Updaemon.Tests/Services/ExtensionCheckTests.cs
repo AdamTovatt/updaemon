@@ -46,7 +46,9 @@ namespace Updaemon.Tests.Services
         /// <summary>What it says of the extension's version, without the versions in front.</summary>
         private static async Task<string?> ReasonAsync(ExtensionCheck check, InstalledApp host, DeployableVersion version, CancellationToken cancellationToken = default)
         {
-            ExtensionRefusal? refusal = await check.FindRefusalAsync(host, version, Images, Two, cancellationToken);
+            ExtensionVerdict verdict = await check.AskAsync(host, version, Images, Two, cancellationToken);
+            Assert.Equal((One, Images, Two), (verdict.HostVersion, verdict.Name, verdict.Version));
+            ExtensionRefusal? refusal = verdict as ExtensionRefusal;
             Assert.True(refusal == null || refusal.ToString() == $"shelf 1.0.0 refuses 2.0.0: {refusal.Reason}");
             return refusal?.Reason;
         }

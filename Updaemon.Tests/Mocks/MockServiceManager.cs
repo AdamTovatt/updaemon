@@ -24,6 +24,12 @@ namespace Updaemon.Tests.Mocks
         /// <summary>Called at each restart: to look at what the service starts with.</summary>
         public Action? OnRestart { get; set; }
 
+        /// <summary>Called at each start or restart that works, once the service has read its files.</summary>
+        public Action? OnStarted { get; set; }
+
+        /// <summary>Called before each start, stop, enabling and disabling.</summary>
+        public Action? OnServiceChange { get; set; }
+
         /// <summary>How a call is recorded in <see cref="MethodCalls"/>; pass the method with <c>nameof</c>.</summary>
         public static string Call(string method, string? serviceName = null) =>
             serviceName == null ? method : $"{method}:{serviceName}";
@@ -31,8 +37,10 @@ namespace Updaemon.Tests.Mocks
         public Task StartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(StartServiceAsync), serviceName));
+            OnServiceChange?.Invoke();
             if (StartFailure != null)
                 throw StartFailure;
+            OnStarted?.Invoke();
             ServiceRunningStates[serviceName] = !Crashes(serviceName);
             return Task.CompletedTask;
         }
@@ -40,6 +48,7 @@ namespace Updaemon.Tests.Mocks
         public Task StopServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(StopServiceAsync), serviceName));
+            OnServiceChange?.Invoke();
             ServiceRunningStates[serviceName] = false;
             return Task.CompletedTask;
         }
@@ -50,6 +59,7 @@ namespace Updaemon.Tests.Mocks
             OnRestart?.Invoke();
             if (RestartFailure != null)
                 throw RestartFailure;
+            OnStarted?.Invoke();
             ServiceRunningStates[serviceName] = !Crashes(serviceName);
             return Task.CompletedTask;
         }
@@ -57,6 +67,7 @@ namespace Updaemon.Tests.Mocks
         public Task EnableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(EnableServiceAsync), serviceName));
+            OnServiceChange?.Invoke();
             EnabledServices.Add(serviceName);
             return Task.CompletedTask;
         }
@@ -64,6 +75,7 @@ namespace Updaemon.Tests.Mocks
         public Task DisableServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(DisableServiceAsync), serviceName));
+            OnServiceChange?.Invoke();
             EnabledServices.Remove(serviceName);
             return Task.CompletedTask;
         }

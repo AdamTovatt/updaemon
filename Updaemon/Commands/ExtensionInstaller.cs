@@ -15,6 +15,7 @@ namespace Updaemon.Commands
         private readonly IConfigManager _configManager;
         private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
+        private readonly AppPreparer _preparer;
         private readonly AppSwitcher _switcher;
         private readonly ExtensionCheck _check;
         private readonly ReleaseStager _stager;
@@ -26,6 +27,7 @@ namespace Updaemon.Commands
             IConfigManager configManager,
             VersionStore versions,
             IServiceDeployer serviceDeployer,
+            AppPreparer preparer,
             AppSwitcher switcher,
             ExtensionCheck check,
             ReleaseStager stager,
@@ -36,6 +38,7 @@ namespace Updaemon.Commands
             _configManager = configManager;
             _versions = versions;
             _serviceDeployer = serviceDeployer;
+            _preparer = preparer;
             _switcher = switcher;
             _check = check;
             _stager = stager;
@@ -55,7 +58,8 @@ namespace Updaemon.Commands
             }
 
             // First: a killed install of this very extension is taken out again by it.
-            PreparedApp prepared = await _switcher.PrepareAsync(host, cancellationToken);
+            PreparedApp prepared = await _preparer.PrepareAsync(host, cancellationToken);
+            host = prepared.App;
             if (host.FindExtension(name.Id) is InstalledExtension installed)
             {
                 return _outputWriter.Fail($"'{host.NameOf(installed)}' is already installed. Use 'updaemon update {host.NameOf(installed)}' to update it.");
@@ -113,20 +117,28 @@ namespace Updaemon.Commands
         {
             InstalledApp host = prepared.App;
             ExtensionName name = host.NameOf(extension);
-            if (await _check.FindRefusalAsync(host, hostVersion, name, version, cancellationToken) is ExtensionRefusal refusal)
+            ExtensionVerdict verdict = await _check.AskAsync(host, hostVersion, name, version, cancellationToken);
+            if (verdict is not AcceptedExtension accepted)
             {
-                return _outputWriter.Fail($"{name} was not installed: {refusal}.");
+                return _outputWriter.Fail($"{name} was not installed: {verdict}.");
             }
 
+            SwitchOutcome outcome;
             try
             {
-                await _switcher.UpdateAsync(AppSwitch.OfExtension(prepared, extension, version), cancellationToken);
+                outcome = await _switcher.SwitchAsync(AppSwitch.Install(prepared, accepted, extension.Source), cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 return _outputWriter.Fail($"installing {name} failed: {ex.Message}");
             }
 
+            if (SwitchText.Problem(host.Name, outcome) is string problem)
+            {
+                return _outputWriter.Fail($"installing {name} failed: {problem}");
+            }
+
+            _outputWriter.WriteRestartSkipped(host.Name, outcome);
             _outputWriter.WriteLine($"Installed {name} {version} into {host.Name} {hostVersion.Version}.");
             return 0;
         }

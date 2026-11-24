@@ -1,270 +1,16 @@
+using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
+using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
 using static Updaemon.Tests.Helpers.ShelfPackages;
 
 namespace Updaemon.Tests.Services
 {
-    /// <summary>What a switch leaves when its run is killed, and how the next change to the app puts it right.</summary>
+    /// <summary>Switching an app and its extensions, and what becomes of a switch that fails.</summary>
     public class AppSwitcherTests
     {
-        /// <summary>A release whose every generated file differs from 1.0.0's.</summary>
-        private static readonly string ChangedManifest = AppHarness.HostManifest
-            .Replace("\"command\": \"shelf\"", "\"command\": \"shelf2\"")
-            .Replace("\"serve\"", "\"serve2\"")
-            .Replace("SHELF_PLUGINS", "SHELF_EXTENSIONS");
-
-        public static TheoryData<string, Action<AppHarness>> PointsToBeKilledAt => new TheoryData<string, Action<AppHarness>>
-        {
-            { "linked, no file written", h => h.Permissions.OnMakeTreeReadable = path =>
-                {
-                    if (path == h.Scope.GetExtensionsDirectory("shelf"))
-                    {
-                        h.KeepForCutOff();
-                    }
-                }
-            },
-            { "files written", h => h.ServiceManager.OnDaemonReload = h.KeepForCutOff },
-            { "restarted", h => h.ServiceManager.OnRestart = h.KeepForCutOff },
-        };
-
-        /// <summary>An update of the host from 1.0.0 to 2.0.0 killed at <paramref name="point"/>, then the network gone.</summary>
-        private static async Task<(AppHarness Harness, IReadOnlyList<string> Before)> KilledUpdateAsync(Action<AppHarness> point)
-        {
-            AppHarness h = new AppHarness();
-            await h.InstallHostWithImagesAsync();
-            IReadOnlyList<string> before = h.Snapshot();
-            h.AddHostRelease("2.0.0", ChangedManifest);
-            point(h);
-            Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
-            h.CutOff();
-            Assert.NotNull((await h.HostAsync()).Unfinished);
-            h.Client.RefusedRemotes["owner/shelf"] = "no network";
-            h.Client.RefusedRemotes["owner/shelf/images.zip"] = "no network";
-            return (h, before);
-        }
-
-        private static IReadOnlyList<string> WithoutVersion(AppHarness h, IReadOnlyList<string> snapshot, string version) =>
-            snapshot.Where(entry => !entry.StartsWith(Path.Combine(h.Scope.GetAppDirectory("shelf"), version), StringComparison.Ordinal)).ToList();
-
-        public static TheoryData<string, Func<AppHarness, Task<int>>> CommandsThatPutRight => new TheoryData<string, Func<AppHarness, Task<int>>>
-        {
-            { "update", h => h.Update().ExecuteAsync(new[] { "shelf" }) },
-            { "set", h => h.Set().ExecuteAsync(new[] { "shelf", "A-B=1" }) },
-            { "unset", h => h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }) },
-            { "set-args", h => h.SetArgs().ExecuteAsync(new[] { "shelf" }) },
-            { "rollback", h => h.RollbackCommand().ExecuteAsync(new[] { "shelf", "1.0.0" }) },
-            { "install", h => h.Install().ExecuteAsync(new[] { "shelf/audio", "--from", "github:owner/shelf" }) },
-        };
-
-        [Theory]
-        [MemberData(nameof(PointsToBeKilledAt))]
-        public async Task KilledUpdate_NextUpdate_PutsEverythingBackWithoutTheNetworkAndSkipsNothing(string name, Action<AppHarness> point)
-        {
-            _ = name; // Names the case in the test's display name.
-            (AppHarness h, IReadOnlyList<string> before) = await KilledUpdateAsync(point);
-            using (h)
-            {
-                await h.Update().ExecuteAsync(new[] { "shelf" });
-
-                Assert.Contains("shelf: an earlier run was cut off while it switched versions; putting back shelf 1.0.0.", h.Output.Messages);
-                Assert.Equal(new[] { "Error: shelf: no network", "Error: shelf/images: no network" }, h.Output.Errors);
-                // The service may run either version: it is restarted on the one put back.
-                Assert.Equal(1, h.HostRestarts());
-                Assert.Equal(WithoutVersion(h, before, "2.0.0"), WithoutVersion(h, h.Snapshot(), "2.0.0"));
-            }
-        }
-
-        [Theory]
-        [MemberData(nameof(CommandsThatPutRight))]
-        public async Task KilledUpdate_AnyChangeToTheApp_PutsItBackFirst(string name, Func<AppHarness, Task<int>> run)
-        {
-            _ = name; // Names the case in the test's display name.
-            (AppHarness h, _) = await KilledUpdateAsync(harness => harness.ServiceManager.OnRestart = harness.KeepForCutOff);
-            using (h)
-            {
-                await run(h);
-
-                Assert.Equal(One, await h.Versions.GetCurrentAsync(new AppName("shelf")));
-                InstalledApp host = await h.HostAsync();
-                Assert.Null(host.Unfinished);
-                Assert.Empty(host.SkippedVersions);
-                Assert.True(File.Exists(h.Scope.GetCommandPath("shelf")));
-                Assert.False(File.Exists(h.Scope.GetCommandPath("shelf2")));
-            }
-        }
-
-        [Fact]
-        public async Task KilledUpdate_NextUpdateWithTheNetwork_UpdatesAgain()
-        {
-            (AppHarness h, _) = await KilledUpdateAsync(harness => harness.ServiceManager.OnRestart = harness.KeepForCutOff);
-            using (h)
-            {
-                h.Client.RefusedRemotes.Clear();
-
-                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
-
-                Assert.Equal(Two, await h.Versions.GetCurrentAsync(new AppName("shelf")));
-                Assert.Null((await h.HostAsync()).Unfinished);
-            }
-        }
-
-        [Theory]
-        [MemberData(nameof(PointsToBeKilledAt))]
-        public async Task KilledUpdate_RemovingTheApp_LeavesNothingOfEitherVersion(string name, Action<AppHarness> point)
-        {
-            _ = name; // Names the case in the test's display name.
-            (AppHarness h, _) = await KilledUpdateAsync(point);
-            using (h)
-            {
-                Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf" }));
-
-                Assert.Empty(Directory.GetFileSystemEntries(h.Scope.BinDirectory));
-                Assert.False(Directory.Exists(h.Scope.GetAppDirectory("shelf")));
-            }
-        }
-
-        /// <summary>The way out when the version to put back is gone: removing the app still works.</summary>
-        [Fact]
-        public async Task KilledUpdate_VersionToPutBackIsGone_OnlyRemoveGoesOn()
-        {
-            (AppHarness h, _) = await KilledUpdateAsync(harness => harness.ServiceManager.OnRestart = harness.KeepForCutOff);
-            using (h)
-            {
-                Directory.Delete(h.Versions.GetVersionDirectory(new AppName("shelf"), One), recursive: true);
-
-                Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "shelf" }));
-                Assert.Equal(
-                    "Error: shelf: putting back shelf 1.0.0 failed: shelf 1.0.0 is not kept. Kept versions: 2.0.0. Until that works shelf cannot be changed; 'updaemon remove shelf' still removes it.",
-                    Assert.Single(h.Output.Errors));
-                Assert.NotNull((await h.HostAsync()).Unfinished);
-
-                Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf" }));
-                Assert.Null(await h.Config.GetAppAsync("shelf"));
-            }
-        }
-
-        [Fact]
-        public async Task KilledUpdate_RestartOfWhatIsPutBackFails_WarnsAndGoesOn()
-        {
-            (AppHarness h, _) = await KilledUpdateAsync(harness => harness.ServiceManager.OnRestart = harness.KeepForCutOff);
-            using (h)
-            {
-                h.ServiceManager.RestartFailure = new InvalidOperationException("no restart today");
-
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-
-                Assert.Equal(new[] { "Warning: restarting shelf failed: no restart today" }, h.Output.Errors);
-                Assert.Equal(One, await h.Versions.GetCurrentAsync(new AppName("shelf")));
-                Assert.Null((await h.HostAsync()).Unfinished);
-            }
-        }
-
-        [Theory]
-        [MemberData(nameof(PointsToBeKilledAt))]
-        public async Task KilledInstallOfAnExtension_NextChange_TakesItOutAgain(string name, Action<AppHarness> point)
-        {
-            _ = name; // Names the case in the test's display name.
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallHostAsync();
-                IReadOnlyList<string> before = h.Snapshot();
-                point(h);
-                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
-                h.CutOff();
-
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-
-                Assert.Contains("shelf: an earlier run was cut off while it switched versions; putting back no shelf/images.", h.Output.Messages);
-                Assert.Equal(1, h.HostRestarts());
-                h.AssertUnchangedSince(before);
-            }
-        }
-
-        [Fact]
-        public async Task KilledInstallOfAnExtension_InstallingItAgain_Works()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallHostAsync();
-                await h.KilledInstallOfImagesAsync();
-
-                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
-
-                Assert.Equal(new[] { "images -> 1.0.0" }, h.LinkedExtensions());
-            }
-        }
-
-        /// <summary>Unlinked, but not recorded: it is linked again, and the host, which may have started without it since, restarted.</summary>
-        [Fact]
-        public async Task KilledRemovalOfAnExtension_BeforeItIsRecorded_IsPutBack()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallHostWithImagesAsync();
-                IReadOnlyList<string> before = h.Snapshot();
-                h.SwitcherConfig.OnSave = app =>
-                {
-                    if (app.Extensions.Count == 0)
-                    {
-                        h.KeepForCutOff();
-                    }
-                };
-                Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf/images" }));
-                h.CutOff();
-                Assert.Empty(h.LinkedExtensions());
-
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-
-                Assert.Contains("shelf: an earlier run was cut off while it switched versions; putting back shelf/images 1.0.0.", h.Output.Messages);
-                Assert.Equal(1, h.HostRestarts());
-                h.AssertUnchangedSince(before);
-            }
-        }
-
-        /// <summary>Once recorded, a removal stands: only the restart it was cut off before is made up for.</summary>
-        [Fact]
-        public async Task KilledRemovalOfAnExtension_OnceRecorded_OnlyTheRestartIsMadeUpFor()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallHostWithImagesAsync();
-                h.ServiceManager.OnRestart = h.KeepForCutOff;
-                Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf/images" }));
-                h.CutOff();
-
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-
-                Assert.Contains("shelf: an earlier run was cut off before it restarted the service; restarting it.", h.Output.Messages);
-                Assert.Equal(1, h.HostRestarts());
-                Assert.Empty(h.LinkedExtensions());
-                InstalledApp host = await h.HostAsync();
-                Assert.Empty(host.Extensions);
-                Assert.Null(host.Unfinished);
-            }
-        }
-
-        [Fact]
-        public async Task KilledRollback_OnceRecorded_OnlyTheRestartIsMadeUpFor()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallHostWithImagesAsync();
-                h.AddHostRelease("2.0.0");
-                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
-                h.ServiceManager.OnRestart = h.KeepForCutOff;
-                Assert.Equal(0, await h.RollbackCommand().ExecuteAsync(new[] { "shelf" }));
-                h.CutOff();
-
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-
-                Assert.Equal(One, await h.Versions.GetCurrentAsync(new AppName("shelf")));
-                Assert.Equal(new[] { Two }, (await h.HostAsync()).SkippedVersions);
-                Assert.Equal(1, h.HostRestarts());
-            }
-        }
-
         /// <summary>The service never saw the new version, so it is left running as it was.</summary>
         [Fact]
         public async Task Update_ActivatingFails_PutsBackWithoutRestarting()
@@ -302,21 +48,12 @@ namespace Updaemon.Tests.Services
             }
         }
 
-        /// <summary>1.0.0's service, in 2.0.0 gone. Activating that removes the service, so putting back has to bring it back as it was.</summary>
-        private static async Task<AppHarness> WithAReleaseWithoutTheServiceAsync()
-        {
-            AppHarness h = new AppHarness();
-            await h.InstallHostWithImagesAsync();
-            h.AddHostRelease("2.0.0", AppHarness.HostManifest.Replace("\"service\": { \"args\": [\"serve\"] },", string.Empty));
-            return h;
-        }
-
         [Fact]
         public async Task Update_ToAVersionWithoutTheServiceCannotBeRecorded_EnablesAndStartsTheServiceAgain()
         {
             using (AppHarness h = await WithAReleaseWithoutTheServiceAsync())
             {
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNextWithNothingLeft();
 
                 Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "shelf" }));
 
@@ -335,96 +72,13 @@ namespace Updaemon.Tests.Services
             {
                 await h.ServiceManager.DisableServiceAsync("shelf");
                 await h.ServiceManager.StopServiceAsync("shelf");
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNextWithNothingLeft();
 
                 Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "shelf" }));
 
                 Assert.True(File.Exists(h.Scope.GetUnitFilePath("shelf")));
                 Assert.False(h.ServiceManager.ServiceRunningStates["shelf"]);
                 Assert.DoesNotContain("shelf", h.ServiceManager.EnabledServices);
-            }
-        }
-
-        [Fact]
-        public async Task Update_PuttingBackARemovedServiceFails_TheNextChangeStartsIt()
-        {
-            using (AppHarness h = await WithAReleaseWithoutTheServiceAsync())
-            {
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
-                h.ServiceManager.StartFailure = new InvalidOperationException("no start today");
-
-                Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "shelf" }));
-
-                Assert.Equal(new[] { "Error: shelf: disk full, and switching back failed: no start today." }, h.Output.Errors);
-                Assert.False(h.ServiceManager.ServiceRunningStates["shelf"]);
-                Assert.NotNull((await h.HostAsync()).Unfinished);
-
-                h.ServiceManager.StartFailure = null;
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-                Assert.True(h.ServiceManager.ServiceRunningStates["shelf"]);
-                Assert.Contains("shelf", h.ServiceManager.EnabledServices);
-                Assert.Null((await h.HostAsync()).Unfinished);
-            }
-        }
-
-        /// <summary>On macOS, starting what already runs would restart it.</summary>
-        [Fact]
-        public async Task Update_RemovedServiceIsPutBackButThatIsNotRecorded_TheNextChangeLeavesItRunning()
-        {
-            using (AppHarness h = await WithAReleaseWithoutTheServiceAsync())
-            {
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
-                Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "shelf" }));
-                Assert.NotNull((await h.HostAsync()).Unfinished);
-                Assert.True(h.ServiceManager.ServiceRunningStates["shelf"]);
-                h.ServiceManager.MethodCalls.Clear();
-
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-
-                Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "shelf"), h.ServiceManager.MethodCalls);
-                Assert.Null((await h.HostAsync()).Unfinished);
-            }
-        }
-
-        /// <summary>Killed once the service is gone: putting it back needs the service manager, though no service is there now.</summary>
-        [Fact]
-        public async Task KilledUpdate_ThatRemovedTheService_ChecksTheServiceManagerBeforeItPutsBack()
-        {
-            using (AppHarness h = await WithAReleaseWithoutTheServiceAsync())
-            {
-                h.ServiceManager.OnDaemonReload = h.KeepForCutOff;
-                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
-                h.CutOff();
-                Assert.False(File.Exists(h.Scope.GetUnitFilePath("shelf")));
-                h.ServiceManager.Unreachable = "unreachable";
-                IReadOnlyList<string> before = h.Snapshot();
-
-                await Assert.ThrowsAsync<ServiceManagerUnreachableException>(() => h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-                h.AssertUnchangedSince(before);
-
-                h.ServiceManager.Unreachable = null;
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-                Assert.True(h.ServiceManager.ServiceRunningStates["shelf"]);
-                Assert.Contains("shelf", h.ServiceManager.EnabledServices);
-            }
-        }
-
-        /// <summary>1.0.0 is a command only; 2.0.0 adds the service. Restarting a service without a unit fails, as systemctl's does.</summary>
-        private static async Task<AppHarness> WithAReleaseAddingTheServiceAsync()
-        {
-            AppHarness h = new AppHarness();
-            await h.InstallHostWithImagesAsync(AppHarness.HostManifest.Replace("\"service\": { \"args\": [\"serve\"] },", string.Empty));
-            h.AddHostRelease("2.0.0");
-            h.ServiceManager.OnRestart = () => RequireUnit(h);
-            return h;
-        }
-
-        private static void RequireUnit(AppHarness h)
-        {
-            if (!File.Exists(h.Scope.GetUnitFilePath("shelf")))
-            {
-                throw new InvalidOperationException("Unit shelf.service not found.");
             }
         }
 
@@ -511,18 +165,112 @@ namespace Updaemon.Tests.Services
             await h.InstallHostWithImagesAsync();
             h.AddHostRelease("2.0.0", ChangedManifest);
             h.AddExtensionRelease("owner/shelf/images.zip", "2.0.0");
-            PreparedApp prepared = await h.Switcher.PrepareAsync(await h.HostAsync());
+            PreparedApp prepared = await h.Preparer.PrepareAsync(await h.HostAsync());
             InstalledExtension images = prepared.App.FindExtension("images")!;
             DeployableVersion staged = await h.Deployer.StageAsync(prepared.App, Two, h.Client);
             await h.Versions.DownloadAsync(Images, images, Two, h.Client);
-            return AppSwitch.OfAll(prepared, staged, new[] { new ExtensionSwitch(images, Two) })!;
+            return AppSwitch.Update(prepared, staged, await AcceptAsync(h, staged, Two));
+        }
+
+        private static async Task<AcceptedExtension> AcceptAsync(AppHarness h, DeployableVersion host, Version images) =>
+            Assert.IsType<AcceptedExtension>(await h.Check.AskAsync(await h.HostAsync(), host, Images, images));
+
+        private static async Task<AcceptedExtension> AcceptAsync(AppHarness h, Version images) => await AcceptAsync(h, await h.Deployer.OpenCurrentAsync("shelf"), images);
+
+        /// <summary>What the commands say of a switch that went back.</summary>
+        private static async Task<string?> GoesBackAsync(AppHarness h, AppSwitch change) => SwitchText.Problem("shelf", await h.Switcher.SwitchAsync(change));
+
+        /// <summary>For the reason that the entry is not what it was when it was prepared.</summary>
+        private static async Task AssertIsRefusedAsync(Func<Task> change)
+        {
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(change);
+            Assert.Equal("shelf was changed since it was prepared; prepare it again.", ex.Message);
         }
 
         private static async Task<(Version Host, string Images)> CurrentAsync(AppHarness h) =>
             (await h.Versions.GetCurrentAsync(new AppName("shelf")), Assert.Single(h.LinkedExtensions()));
 
+        /// <summary>One from install flags is all that tells how to run a release without its own.</summary>
         [Fact]
-        public async Task UpdateAsync_HostAndExtension_SwitchesBothWithOneRestart()
+        public async Task Update_ReleaseWithoutAManifest_KeepsTheOneFromTheInstallFlags()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/tool", "1.0.0", manifest: null, "tool");
+                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool", "--command", "tool" }));
+
+                foreach (string version in new[] { "2.0.0", "3.0.0" })
+                {
+                    h.AddRelease("owner/tool", version, manifest: null, "tool");
+                    Assert.Equal(0, await h.Update().ExecuteAsync(Array.Empty<string>()));
+                    Assert.Equal("tool", (await h.Config.GetAppAsync("tool"))!.Manifest!.Command);
+                }
+            }
+        }
+
+        /// <summary>It runs again and its version is skipped: only the note of its restart could not be taken away.</summary>
+        [Fact]
+        public async Task Update_FallbackIsDoneButTheNoteOfItCannotBeCleared_WarnsAndStillChecksTheService()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                h.AddHostRelease("2.0.0");
+                h.ServiceManager.CrashOnNextStart.Add("shelf");
+                h.SavedConfig.FailNextWithNothingLeft();
+
+                Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "shelf" }));
+
+                Assert.Equal(0, h.SavedConfig.StillToFail);
+                Assert.Equal(
+                    new[]
+                    {
+                        "Warning: the next change to shelf restarts it once more: disk full",
+                        "Error: shelf: 2.0.0 did not stay running, so 1.0.0 runs again and 2.0.0 is skipped. See 'updaemon logs shelf'.",
+                    },
+                    h.Output.Errors);
+                Assert.Equal(new UnfinishedChange.CarryOut { Restart = true }, (await h.HostAsync()).Unfinished);
+            }
+        }
+
+        [Fact]
+        public async Task Rollback_NoteOfTheRestartCannotBeCleared_WarnsAndSucceeds()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                h.AddHostRelease("2.0.0");
+                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
+                h.SavedConfig.FailNextWithNothingLeft();
+
+                Assert.Equal(0, await h.RollbackCommand().ExecuteAsync(new[] { "shelf" }));
+
+                Assert.Equal(new[] { "Warning: the next change to shelf restarts it once more: disk full" }, h.Output.Errors);
+                Assert.Equal(One, await h.Versions.GetCurrentAsync(Shelf));
+            }
+        }
+
+        /// <summary>It is not in the entry, so there is no version of it to go back to: its link is to go.</summary>
+        [Fact]
+        public async Task Install_DoesNotStayUpAndCannotBeUndone_SaysSo()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                h.ServiceManager.CrashOnNextStart.Add("shelf");
+                h.ServiceManager.OnCrash = () => h.ServiceManager.RestartFailure = new InvalidOperationException("no restart today.");
+
+                Assert.Equal(1, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
+
+                Assert.Equal(
+                    new[] { "Error: installing shelf/images failed: shelf did not stay running with 1.0.0, and going back failed: no restart today. See 'updaemon logs shelf'." },
+                    h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task SwitchAsync_HostAndExtension_SwitchesBothWithOneRestart()
         {
             using (AppHarness h = new AppHarness())
             {
@@ -530,7 +278,7 @@ namespace Updaemon.Tests.Services
                 string imagesAtRestart = string.Empty;
                 h.ServiceManager.OnRestart = () => imagesAtRestart = Assert.Single(h.LinkedExtensions());
 
-                await h.Switcher.UpdateAsync(both);
+                await h.Switcher.SwitchAsync(both);
 
                 Assert.Equal("images -> 2.0.0", imagesAtRestart);
                 Assert.Equal((Two, "images -> 2.0.0"), await CurrentAsync(h));
@@ -540,18 +288,18 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task UpdateAsync_HostAndExtensionDoNotStayUp_PutsBothBackAndSkipsBoth()
+        public async Task SwitchAsync_HostAndExtensionDoNotStayUp_PutsBothBackAndSkipsBoth()
         {
             using (AppHarness h = new AppHarness())
             {
                 AppSwitch both = await SwitchOfBothAsync(h);
                 h.ServiceManager.CrashOnNextStart.Add("shelf");
 
-                NotRunningException ex = await Assert.ThrowsAsync<NotRunningException>(() => h.Switcher.UpdateAsync(both));
+                string? problem = await GoesBackAsync(h, both);
 
                 Assert.Equal(
                     "shelf did not stay running with shelf 2.0.0, shelf/images 2.0.0, so shelf 1.0.0, shelf/images 1.0.0 run again and each of the new versions is skipped. See 'updaemon logs shelf'.",
-                    ex.Message);
+                    problem);
                 Assert.Equal((One, "images -> 1.0.0"), await CurrentAsync(h));
                 InstalledApp host = await h.HostAsync();
                 Assert.Equal(new[] { Two }, host.SkippedVersions);
@@ -562,7 +310,7 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task UpdateAsync_NeitherStaysUp_SaysWhatIsCurrent()
+        public async Task SwitchAsync_NeitherStaysUp_SaysWhatIsCurrent()
         {
             using (AppHarness h = new AppHarness())
             {
@@ -570,16 +318,16 @@ namespace Updaemon.Tests.Services
                 h.ServiceManager.CrashOnNextStart.Add("shelf");
                 h.ServiceManager.OnCrash = () => h.ServiceManager.CrashOnNextStart.Add("shelf");
 
-                NotRunningException ex = await Assert.ThrowsAsync<NotRunningException>(() => h.Switcher.UpdateAsync(both));
+                string? problem = await GoesBackAsync(h, both);
 
                 Assert.Equal(
                     "shelf did not stay running with shelf 2.0.0, shelf/images 2.0.0; shelf 1.0.0, shelf/images 1.0.0 are current again but did not stay running either, and each of the new versions is skipped. See 'updaemon logs shelf'.",
-                    ex.Message);
+                    problem);
             }
         }
 
         [Fact]
-        public async Task UpdateAsync_InstalledExtensionGoneAgainAndStillNotUp_SaysSo()
+        public async Task SwitchAsync_InstalledExtensionGoneAgainAndStillNotUp_SaysSo()
         {
             using (AppHarness h = new AppHarness())
             {
@@ -597,33 +345,33 @@ namespace Updaemon.Tests.Services
 
         /// <summary>The host's version cannot be put back; the extension's still is, and the rest is left to the next change.</summary>
         [Fact]
-        public async Task UpdateAsync_OneOfTwoCannotBePutBack_PutsTheOtherBack()
+        public async Task SwitchAsync_OneOfTwoCannotBePutBack_PutsTheOtherBack()
         {
             using (AppHarness h = new AppHarness())
             {
                 AppSwitch both = await SwitchOfBothAsync(h);
                 h.ServiceManager.OnRestart = () => Directory.Delete(h.Versions.GetVersionDirectory(new AppName("shelf"), One), recursive: true);
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNextWithNothingLeft();
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.UpdateAsync(both));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.SwitchAsync(both));
 
                 Assert.Equal("disk full, and switching back failed: shelf 1.0.0 is not kept. Kept versions: 2.0.0.", ex.Message);
                 Assert.Equal((Two, "images -> 1.0.0"), await CurrentAsync(h));
-                Assert.NotNull((await h.HostAsync()).Unfinished);
+                Assert.IsType<UnfinishedChange.PutBack>((await h.HostAsync()).Unfinished);
             }
         }
 
         [Fact]
-        public async Task UpdateAsync_ExtensionAlone_DoesNotStayUp_SkipsItsVersion()
+        public async Task SwitchAsync_ExtensionAlone_DoesNotStayUp_SkipsItsVersion()
         {
             using (AppHarness h = new AppHarness())
             {
                 AppSwitch both = await SwitchOfBothAsync(h);
                 h.ServiceManager.CrashOnNextStart.Add("shelf");
 
-                NotRunningException ex = await Assert.ThrowsAsync<NotRunningException>(() => h.Switcher.UpdateAsync(AppSwitch.OfAll(both.Prepared, null, both.Extensions)!));
+                string? problem = await GoesBackAsync(h, AppSwitch.UpdateExtensions(both.Prepared, await AcceptAsync(h, Two)));
 
-                Assert.Equal("shelf did not stay running with 2.0.0, so 1.0.0 runs again and 2.0.0 is skipped. See 'updaemon logs shelf'.", ex.Message);
+                Assert.Equal("shelf did not stay running with 2.0.0, so 1.0.0 runs again and 2.0.0 is skipped. See 'updaemon logs shelf'.", problem);
                 Assert.Equal((One, "images -> 1.0.0"), await CurrentAsync(h));
                 InstalledApp host = await h.HostAsync();
                 Assert.Empty(host.SkippedVersions);
@@ -633,35 +381,35 @@ namespace Updaemon.Tests.Services
 
         /// <summary>After a failure the entry in hand is not what is saved: saving it would bring back what was put back.</summary>
         [Fact]
-        public async Task UpdateAsync_AgainWithTheSameProof_IsRefused()
+        public async Task SwitchAsync_AgainWithTheSameProof_IsRefused()
         {
             using (AppHarness h = new AppHarness())
             {
                 AppSwitch both = await SwitchOfBothAsync(h);
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
-                await Assert.ThrowsAsync<IOException>(() => h.Switcher.UpdateAsync(both));
+                h.SavedConfig.FailNextWithNothingLeft();
+                await Assert.ThrowsAsync<IOException>(() => h.Switcher.SwitchAsync(both));
                 IReadOnlyList<string> before = h.Snapshot();
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.UpdateAsync(both));
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.RemoveExtensionAsync(both.Prepared, both.Extensions[0].Extension));
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ApplySettingsAsync(both.Prepared, h.Reachable));
+                await AssertIsRefusedAsync(() => h.Switcher.SwitchAsync(both));
+                await AssertIsRefusedAsync(() => h.Switcher.SwitchAsync(AppSwitch.Remove(both.Prepared, both.App.Extensions[0])));
+                await AssertIsRefusedAsync(() => both.Prepared.BeginChangeAsync());
 
-                Assert.Equal("shelf was changed since it was prepared; prepare it again.", ex.Message);
                 h.AssertUnchangedSince(before);
                 Assert.Equal((One, "images -> 1.0.0"), await CurrentAsync(h));
             }
         }
 
         [Fact]
-        public async Task UpdateAsync_AgainWithTheSameProofAfterOneThatStands_IsRefused()
+        public async Task SwitchAsync_AgainWithTheSameProofAfterOneThatStands_IsRefused()
         {
             using (AppHarness h = new AppHarness())
             {
                 AppSwitch both = await SwitchOfBothAsync(h);
-                await h.Switcher.UpdateAsync(both);
+                await h.Switcher.SwitchAsync(both);
                 IReadOnlyList<string> before = h.Snapshot();
 
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.UpdateAsync(AppSwitch.OfExtension(both.Prepared, both.Extensions[0].Extension, One)));
+                AcceptedExtension one = await AcceptAsync(h, One);
+                await AssertIsRefusedAsync(() => h.Switcher.SwitchAsync(AppSwitch.UpdateExtensions(both.Prepared, one)));
 
                 h.AssertUnchangedSince(before);
                 Assert.Equal((Two, "images -> 2.0.0"), await CurrentAsync(h));
@@ -670,94 +418,148 @@ namespace Updaemon.Tests.Services
 
         /// <summary>What to put back is only saved once: a second switch would overwrite it with what the first one left.</summary>
         [Fact]
-        public async Task UpdateAsync_AnotherProofOfAnAppWhoseSwitchCouldNotBePutBack_IsRefused()
+        public async Task SwitchAsync_AnotherProofOfAnAppWhoseSwitchCouldNotBePutBack_IsRefused()
         {
             using (AppHarness h = new AppHarness())
             {
                 AppSwitch both = await SwitchOfBothAsync(h);
-                PreparedApp another = await h.Switcher.PrepareAsync(both.App);
+                PreparedApp another = await h.Preparer.PrepareAsync(both.App);
                 h.ServiceManager.OnRestart = () => Directory.Delete(h.Versions.GetVersionDirectory(new AppName("shelf"), One), recursive: true);
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.UpdateAsync(both));
+                h.SavedConfig.FailNextWithNothingLeft();
+                InvalidOperationException notBack = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.SwitchAsync(both));
+                Assert.StartsWith("disk full, and switching back failed", notBack.Message);
                 IReadOnlyList<string> before = h.Snapshot();
 
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.RemoveExtensionAsync(another, both.Extensions[0].Extension));
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.UpdateAsync(AppSwitch.OfAll(another, null, both.Extensions)!));
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ApplySettingsAsync(another, h.Reachable));
+                await AssertIsRefusedAsync(() => h.Switcher.SwitchAsync(AppSwitch.Remove(another, both.App.Extensions[0])));
+                await AssertIsRefusedAsync(() => h.Switcher.SwitchAsync(AppSwitch.UpdateExtensions(another, both.Extensions[0].To!)));
+                await AssertIsRefusedAsync(() => another.BeginChangeAsync());
 
                 h.AssertUnchangedSince(before);
-                Assert.Equal(One, (await h.HostAsync()).Unfinished!.PutBack[0].Version);
-            }
-        }
-
-        /// <summary>The service may still run the version that failed: the restart on the one put back is owed to the next change.</summary>
-        [Fact]
-        public async Task Update_DoesNotStayUpAndTheRestartOnThePreviousFails_TheNextChangeRestartsIt()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallHostWithImagesAsync();
-                h.AddHostRelease("2.0.0");
-                h.ServiceManager.CrashOnNextStart.Add("shelf");
-                h.ServiceManager.OnCrash = () => h.ServiceManager.RestartFailure = new InvalidOperationException("no restart today");
-                Assert.Equal(1, await h.Update().ExecuteAsync(new[] { "shelf" }));
-                Assert.Equal(new[] { Two }, (await h.HostAsync()).SkippedVersions);
-                h.ServiceManager.RestartFailure = null;
-                h.ForgetCalls();
-
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
-
-                Assert.Contains("shelf: an earlier run was cut off before it restarted the service; restarting it.", h.Output.Messages);
-                Assert.Equal(1, h.HostRestarts());
-                Assert.Null((await h.HostAsync()).Unfinished);
+                Assert.Equal(One, Assert.IsType<UnfinishedChange.PutBack>((await h.HostAsync()).Unfinished).Versions[0].Version);
             }
         }
 
         /// <summary>The fallback itself worked, but that could not be saved: on disk, the switch is still unfinished.</summary>
         [Fact]
-        public async Task UpdateAsync_AnotherProofOfAnAppWhoseFallbackCouldNotBeSaved_IsRefused()
+        public async Task SwitchAsync_AnotherProofOfAnAppWhoseFallbackCouldNotBeSaved_IsRefused()
         {
             using (AppHarness h = await WithAReleaseAddingTheServiceAsync())
             {
-                PreparedApp prepared = await h.Switcher.PrepareAsync(await h.HostAsync());
-                PreparedApp another = await h.Switcher.PrepareAsync(prepared.App);
+                PreparedApp prepared = await h.Preparer.PrepareAsync(await h.HostAsync());
+                PreparedApp another = await h.Preparer.PrepareAsync(prepared.App);
                 DeployableVersion staged = await h.Deployer.StageAsync(prepared.App, Two, h.Client);
                 h.ServiceManager.CrashOnNextStart.Add("shelf");
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
-                await Assert.ThrowsAsync<NotRunningException>(() => h.Switcher.UpdateAsync(AppSwitch.ToVersion(prepared, staged)));
+                h.SavedConfig.FailNextWithNothingLeft();
+                Assert.IsType<SwitchOutcome.WentBack>(await h.Switcher.SwitchAsync(AppSwitch.Update(prepared, staged)));
 
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Switcher.UpdateAsync(AppSwitch.ToVersion(another, staged)));
+                await AssertIsRefusedAsync(() => h.Switcher.SwitchAsync(AppSwitch.Update(another, staged)));
 
-                Assert.Equal(One, (await h.HostAsync()).Unfinished!.PutBack[0].Version);
+                Assert.Equal(One, Assert.IsType<UnfinishedChange.PutBack>((await h.HostAsync()).Unfinished).Versions[0].Version);
                 Assert.Equal(One, await h.Versions.GetCurrentAsync(Shelf));
             }
         }
 
+        /// <summary>Another change may have come to stand meanwhile: committing this one's copy would undo it.</summary>
         [Fact]
-        public async Task RollBackAsync_ExtensionNotInstalled_IsRefused()
+        public async Task SwitchAsync_AnotherProofOfAnAppThatWasChangedSince_IsRefused()
         {
             using (AppHarness h = new AppHarness())
             {
-                await h.InstallHostWithImagesAsync();
+                AppSwitch both = await SwitchOfBothAsync(h);
+                PreparedApp another = await h.Preparer.PrepareAsync(both.App);
+                Assert.Equal(0, await h.SetArgs().ExecuteAsync(new[] { "shelf", "--", "other" }));
                 IReadOnlyList<string> before = h.Snapshot();
-                PreparedApp prepared = await h.Switcher.PrepareAsync(await h.HostAsync());
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-                    () => h.Switcher.RollBackAsync(AppSwitch.OfExtension(prepared, new InstalledExtension { Id = "images" }, One)));
+                await AssertIsRefusedAsync(() => another.BeginChangeAsync());
+                await AssertIsRefusedAsync(() => h.Switcher.SwitchAsync(AppSwitch.Remove(another, both.App.Extensions[0])));
 
-                Assert.Equal("shelf/images is not installed.", ex.Message);
                 h.AssertUnchangedSince(before);
             }
         }
 
+        /// <summary>Asked of one version of the host, while another will run.</summary>
         [Fact]
-        public async Task OfAll_NothingToSwitch_IsNoSwitch()
+        public async Task SwitchAsync_ExtensionAcceptedByAnotherVersionThanWillRun_IsRefused()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                AppSwitch both = await SwitchOfBothAsync(h);
+                AcceptedExtension byCurrent = await AcceptAsync(h, Two);
+                IReadOnlyList<string> before = h.Snapshot();
+
+                InvalidOperationException newHost = await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => h.Switcher.SwitchAsync(AppSwitch.Update(both.Prepared, both.NewVersion!, byCurrent)));
+                InvalidOperationException alone = await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => h.Switcher.SwitchAsync(AppSwitch.RollBack(both.Prepared, both.Extensions[0].To!)));
+
+                Assert.Equal("shelf/images 2.0.0 was accepted by shelf 1.0.0, but 2.0.0 will run.", newHost.Message);
+                Assert.Equal("shelf/images 2.0.0 was accepted by shelf 2.0.0, but 1.0.0 will run.", alone.Message);
+                h.AssertUnchangedSince(before);
+            }
+        }
+
+        /// <summary>One without a current version has no link to put back, but stays installed with the versions it has.</summary>
+        [Fact]
+        public async Task Remove_ExtensionWithoutACurrentVersionCannotBeRecorded_KeepsItsVersions()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                h.Versions.Unlink(Images);
+                IReadOnlyList<string> before = h.Snapshot();
+                h.SavedConfig.FailNext(app => app.Unfinished is not UnfinishedChange.PutBack);
+
+                await Assert.ThrowsAsync<IOException>(() => h.Remove().ExecuteAsync(new[] { "shelf/images" }));
+
+                h.AssertUnchangedSince(before);
+            }
+        }
+
+        /// <summary>What the host runs with does not change by it.</summary>
+        [Fact]
+        public async Task Remove_Extension_WritesNoFileOfTheHost()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                await h.SetRestart().ExecuteAsync(new[] { "shelf", "manual" });
+                await File.WriteAllTextAsync(Path.Combine(h.Scope.GetCurrentLinkPath("shelf"), AppManifest.FileName), "not json");
+
+                Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf/images" }));
+
+                Assert.Empty(h.LinkedExtensions());
+                Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.DaemonReloadAsync)), h.ServiceManager.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task RollBack_ExtensionNotInstalled_IsRefused()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                await h.Versions.DownloadAsync(Images, new InstalledExtension { Id = "images", Remote = ImagesRemote }, One, h.Client);
+                AcceptedExtension accepted = await AcceptAsync(h, One);
+                PreparedApp prepared = await h.Preparer.PrepareAsync(await h.HostAsync());
+
+                InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => AppSwitch.RollBack(prepared, accepted));
+
+                Assert.Equal("shelf/images is not installed.", ex.Message);
+            }
+        }
+
+        [Fact]
+        public async Task UpdateExtensions_None_IsRefused()
         {
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallHostAsync();
 
-                Assert.Null(AppSwitch.OfAll(await h.Switcher.PrepareAsync(await h.HostAsync()), null, Array.Empty<ExtensionSwitch>()));
+                PreparedApp prepared = await h.Preparer.PrepareAsync(await h.HostAsync());
+
+                InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => AppSwitch.UpdateExtensions(prepared));
+
+                Assert.Equal("There is no extension of shelf to switch.", ex.Message);
             }
         }
     }

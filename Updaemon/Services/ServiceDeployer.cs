@@ -126,7 +126,7 @@ namespace Updaemon.Services
             return await OpenRetainedAsync(appName, await _versions.GetCurrentAsync(new AppName(appName), cancellationToken), cancellationToken);
         }
 
-        public async Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
+        public async Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, AppManifest? givenUp = null, CancellationToken cancellationToken = default)
         {
             AppManifest manifest = version.Manifest;
             if (manifest.Command != null)
@@ -143,31 +143,14 @@ namespace Updaemon.Services
 
             AppManifest? previous = await TryReadCurrentManifestAsync(app.Name, cancellationToken);
             await _versions.PointAsync(app.PackageName, version.Version, cancellationToken);
-            await _appFileWriter.WriteAsync(app, manifest, previous, cancellationToken);
+            await _appFileWriter.WriteAsync(app, manifest, new[] { previous, givenUp }.OfType<AppManifest>().ToList(), cancellationToken);
         }
 
-        public async Task RegenerateAsync(PreparedApp prepared, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
+        public async Task RegenerateAsync(AppChange change, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
-            InstalledApp app = prepared.App;
+            InstalledApp app = change.After;
             AppManifest manifest = await GetCurrentManifestAsync(app.Name, cancellationToken);
-            await _appFileWriter.WriteAsync(app, manifest, manifest, cancellationToken);
-        }
-
-        public async Task<bool> ApplySettingsAsync(PreparedApp prepared, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
-        {
-            prepared.BeginChange();
-            InstalledApp app = prepared.App;
-            await RegenerateAsync(prepared, reachable, cancellationToken);
-            if (!HasService(app.Name) || !await _serviceManager.IsEnabledAsync(app.Name, cancellationToken))
-            {
-                return true;
-            }
-
-            // Running or not: one crash-looping between automatic restarts would otherwise keep its old
-            // unit until the next update.
-            await _serviceManager.RestartServiceAsync(app.Name, cancellationToken);
-            _outputWriter.WriteLine($"Restarted {app.Name}.");
-            return await StaysRunningAsync(app.Name, cancellationToken);
+            await _appFileWriter.WriteAsync(app, manifest, Array.Empty<AppManifest>(), cancellationToken);
         }
 
         public async Task<bool> StartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
@@ -198,17 +181,7 @@ namespace Updaemon.Services
 
         public async Task RemoveAsync(InstalledApp app, bool purge, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
-            AppManifest? manifest = null;
-            try
-            {
-                manifest = await TryReadCurrentManifestAsync(app.Name, cancellationToken);
-            }
-            catch (ManifestException ex)
-            {
-                _outputWriter.WriteError($"Warning: {ex.Message}");
-            }
-
-            await _appFileWriter.RemoveAsync(app.Name, manifest, cancellationToken);
+            await _appFileWriter.RemoveAsync(app.Name, cancellationToken);
             Files.DeleteDirectoryIfExists(_scope.GetAppDirectory(app.Name));
             _secretsManager.DeleteAppSecrets(app.Name);
             if (purge)

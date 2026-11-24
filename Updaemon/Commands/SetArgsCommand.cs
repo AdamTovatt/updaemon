@@ -10,15 +10,13 @@ namespace Updaemon.Commands
     public class SetArgsCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppSwitcher _switcher;
+        private readonly SettingsChanger _settings;
         private readonly IOutputWriter _outputWriter;
 
-        public SetArgsCommand(IConfigManager configManager, IServiceDeployer serviceDeployer, AppSwitcher switcher, IOutputWriter outputWriter)
+        public SetArgsCommand(IConfigManager configManager, SettingsChanger settings, IOutputWriter outputWriter)
         {
             _configManager = configManager;
-            _serviceDeployer = serviceDeployer;
-            _switcher = switcher;
+            _settings = settings;
             _outputWriter = outputWriter;
         }
 
@@ -54,21 +52,19 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            PreparedApp prepared = await _switcher.PrepareAsync(app, cancellationToken);
-            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
-            AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
-            if (manifest.Service == null)
+            SettingsChange settings = await _settings.BeginAsync(app, cancellationToken);
+            if (settings.Manifest.Service is not ServiceSpec service)
             {
                 return _outputWriter.Fail($"{appName} is not a service.");
             }
 
-            app.Args = parser.Rest?.ToList();
-            await _configManager.SaveAppAsync(app, cancellationToken);
-            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(prepared, reachable, cancellationToken);
+            List<string>? given = parser.Rest?.ToList();
+            settings.Change.After.Args = given;
+            bool staysRunning = await _settings.ApplyAsync(settings, cancellationToken);
 
-            IReadOnlyList<string> effective = app.Args ?? manifest.Service.Args;
+            IReadOnlyList<string> effective = given ?? service.Args;
             string shown = effective.Count == 0 ? "no arguments" : string.Join(' ', effective);
-            _outputWriter.WriteLine(app.Args == null
+            _outputWriter.WriteLine(given == null
                 ? $"{appName} runs with the arguments from its updaemon.json: {shown}."
                 : $"{appName} runs with: {shown}.");
             return _outputWriter.FinishSettingsChange(appName, staysRunning);

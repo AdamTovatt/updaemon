@@ -98,7 +98,10 @@ namespace Updaemon
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
             services.AddSingleton<VersionStore>();
             services.AddSingleton<SwitchRestorer>();
+            services.AddSingleton<SwitchReadiness>();
+            services.AddSingleton<AppPreparer>();
             services.AddSingleton<AppSwitcher>();
+            services.AddSingleton<SettingsChanger>();
             services.AddSingleton<ExtensionCheck>();
             services.AddTransient<PluginSessions>();
             services.AddTransient<ReleaseStager>();
@@ -113,8 +116,8 @@ namespace Updaemon
             services.AddSingleton<IGitHubPluginReleases, GitHubPluginReleases>();
             services.AddTransient<GitHubPluginUpdater>();
 
-            // Distribution service client
-            services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();
+            // Distribution service client: one for each plugin that runs
+            services.AddSingleton<Func<IDistributionServiceClient>>(_ => () => new DistributionServiceClient(scope.Platform));
 
             // HTTP client for downloading plugins, and updaemon's own builds
             services.AddSingleton<HttpClient>();

@@ -14,16 +14,34 @@ namespace Updaemon.Tests.Mocks
             _inner = inner;
         }
 
-        /// <summary>What the next saves of an app do, in order; the ones after that work. Null is one that works.</summary>
-        public Queue<Exception?> NextSaves { get; } = new Queue<Exception?>();
+        private readonly List<Func<InstalledApp, bool>> _failing = new List<Func<InstalledApp, bool>>();
+
+        /// <summary>The next save of an app that <paramref name="which"/> is true of fails, as on a full disk: one for each call.</summary>
+        public void FailNext(Func<InstalledApp, bool> which) => _failing.Add(which);
+
+        /// <summary>That of what makes a switch that restarts first stand, or of everything being back.</summary>
+        public void FailNextWithNothingLeft() => FailNext(app => app.Unfinished == null);
+
+        /// <summary>How many saves are still to fail.</summary>
+        public int StillToFail => _failing.Count;
 
         /// <summary>Called with the app before each save, to look at what is there then.</summary>
         public Action<InstalledApp>? OnSave { get; set; }
 
-        public Task SaveAppAsync(InstalledApp app, CancellationToken cancellationToken = default)
+        /// <summary>Called with the app after each save that worked.</summary>
+        public Action<InstalledApp>? OnSaved { get; set; }
+
+        public async Task SaveAppAsync(InstalledApp app, CancellationToken cancellationToken = default)
         {
             OnSave?.Invoke(app);
-            return NextSaves.TryDequeue(out Exception? failure) && failure != null ? Task.FromException(failure) : _inner.SaveAppAsync(app, cancellationToken);
+            if (_failing.Find(which => which(app)) is Func<InstalledApp, bool> failing)
+            {
+                _failing.Remove(failing);
+                throw new IOException("disk full");
+            }
+
+            await _inner.SaveAppAsync(app, cancellationToken);
+            OnSaved?.Invoke(app);
         }
 
         public Task<UpdaemonConfig> LoadConfigAsync(CancellationToken cancellationToken = default) => _inner.LoadConfigAsync(cancellationToken);

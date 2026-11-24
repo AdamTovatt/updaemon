@@ -11,6 +11,7 @@ namespace Updaemon.Commands
     public class UpdateCommand : ICommand
     {
         private readonly IConfigManager _configManager;
+        private readonly AppPreparer _preparer;
         private readonly AppUpdater _appUpdater;
         private readonly GitHubPluginUpdater _gitHubPluginUpdater;
         private readonly SelfUpdater _selfUpdater;
@@ -20,6 +21,7 @@ namespace Updaemon.Commands
 
         public UpdateCommand(
             IConfigManager configManager,
+            AppPreparer preparer,
             AppUpdater appUpdater,
             GitHubPluginUpdater gitHubPluginUpdater,
             SelfUpdater selfUpdater,
@@ -28,6 +30,7 @@ namespace Updaemon.Commands
             TimeProvider time)
         {
             _configManager = configManager;
+            _preparer = preparer;
             _appUpdater = appUpdater;
             _gitHubPluginUpdater = gitHubPluginUpdater;
             _selfUpdater = selfUpdater;
@@ -52,13 +55,20 @@ namespace Updaemon.Commands
                 return _outputWriter.FailUnknownOption(unknown);
             }
 
-            IReadOnlyList<SelectedPackage>? selected = await AppSelection.SelectAsync(this, parser.Positionals, _configManager, _outputWriter, cancellationToken);
-            if (selected == null)
+            IReadOnlyList<string> names;
+            switch (parser.Positionals)
             {
-                return 1;
+                case []:
+                    names = (await _configManager.GetAllAppsAsync(cancellationToken)).Select(app => app.Name).ToList();
+                    break;
+                case [string name]:
+                    names = new[] { name };
+                    break;
+                default:
+                    return _outputWriter.FailUsage(this);
             }
 
-            if (selected.Count == 0)
+            if (names.Count == 0)
             {
                 _outputWriter.WriteLine("No apps installed. Use 'updaemon install <app> --from <plugin>:<remote>' to install one.");
             }
@@ -70,6 +80,12 @@ namespace Updaemon.Commands
 
             try
             {
+                IReadOnlyList<PreparedPackage>? selected = await PrepareAsync(names, failures, cancellationToken);
+                if (selected == null)
+                {
+                    return 1;
+                }
+
                 upToDate = await _appUpdater.RunAsync(selected, config.ReleaseRetentionCount, failures, cancellationToken);
 
                 // Last, so a run finishes on one version of the code. Updating one app leaves updaemon and its plugins alone.
@@ -87,6 +103,31 @@ namespace Updaemon.Commands
 
             await RecordAsync(fullRun, parser.HasFlag(TimerRun.Option) ? UpdateStarter.Timer : UpdateStarter.Person, upToDate, failures, cancellationToken);
             return failures.All.Count == 0 ? 0 : 1;
+        }
+
+        /// <summary>All of them that can be changed; one that cannot is reported. Null when one is not installed, which is too.</summary>
+        private async Task<IReadOnlyList<PreparedPackage>?> PrepareAsync(IReadOnlyList<string> names, UpdateFailures failures, CancellationToken cancellationToken)
+        {
+            List<PreparedPackage> packages = new List<PreparedPackage>();
+            foreach (string name in names)
+            {
+                try
+                {
+                    PreparedPackage? package = await AppSelection.PrepareAsync(name, _configManager, _preparer, _outputWriter, cancellationToken);
+                    if (package == null)
+                    {
+                        return null;
+                    }
+
+                    packages.Add(package);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    failures.Report(name, ex.Message);
+                }
+            }
+
+            return packages;
         }
 
         /// <summary>
@@ -147,6 +188,10 @@ namespace Updaemon.Commands
                   service.healthCheckSeconds); if it does not, the previous version runs again and
                   the new one is skipped. A skipped version, or one rolled back from, is not
                   offered again; update waits for a newer release.
+
+                  If the switch itself fails or is cancelled, everything goes back, nothing is
+                  skipped, and the next run tries again. If the run is killed, the next command
+                  that changes the app puts back what was there before.
 
                   Old version directories are pruned after each update; releaseRetentionCount
                   in config.json sets how many to keep (default 5).

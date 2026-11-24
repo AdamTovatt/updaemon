@@ -485,7 +485,7 @@ namespace Updaemon.Conversion
                 ReachableServiceManager reachable = await _serviceManager.EnsureReachableAsync(cancellationToken);
                 await _serviceDeployer.MakeExecutableAsync(app.Name, current, cancellationToken);
                 await _versions.MakeReadableAsync(app.PackageName, cancellationToken);
-                await _serviceDeployer.ActivateAsync(app, current, reachable, cancellationToken);
+                await _serviceDeployer.ActivateAsync(app, current, reachable, cancellationToken: cancellationToken);
                 if (current.Manifest.IsService)
                 {
                     await _serviceManager.EnableServiceAsync(app.Name, cancellationToken);
@@ -541,7 +541,7 @@ namespace Updaemon.Conversion
             string name = plan.Old.LocalName;
             try
             {
-                _appFileWriter.RemoveCommandAndSettings(name, plan.Current.Manifest);
+                _appFileWriter.RemoveCommandsAndSettings(name);
                 string target = Path.Combine(_scope.GetCurrentLinkPath(name), Path.GetFileName(plan.Current.Manifest.Executable));
                 foreach (string link in plan.ZeroXLinks.Where(link => !File.Exists(link)))
                 {

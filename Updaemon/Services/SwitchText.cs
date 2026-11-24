@@ -1,56 +1,88 @@
+using Updaemon.Interfaces;
 using Updaemon.Models;
 
 namespace Updaemon.Services
 {
-    /// <summary>How messages name a switch that did not stay running: one version by itself, several with their names.</summary>
-    internal sealed class SwitchText
+    /// <summary>How commands word a <see cref="SwitchOutcome"/>: one version by itself, several with their names.</summary>
+    public static class SwitchText
     {
-        private readonly string _appName;
-        private readonly string _failed;
-
-        /// <summary>Empty when all the switch did was install an extension.</summary>
-        private readonly string _before;
-        private readonly bool _one;
-        private readonly string _skipped;
-
-        public SwitchText(string appName, IReadOnlyList<PackageSwitch> switched)
+        /// <summary>Says why the service was not restarted, if it was not and there is one.</summary>
+        public static void WriteRestartSkipped(this IOutputWriter outputWriter, string appName, SwitchOutcome outcome)
         {
-            _appName = appName;
-            _one = switched.Count == 1;
-            string to = Join(switched, package => package.To);
-            _failed = _one && switched[0].Name is AppName ? $"{to} did not stay running" : $"{appName} did not stay running with {to}";
-            _before = Join(switched.Where(package => package.From != null).ToList(), package => package.From!);
-            _skipped = _one ? to : "each of the new versions";
+            switch (outcome.Restart)
+            {
+                case RestartDecision.Manual:
+                    string running = outcome.Switched.FirstOrDefault(package => package.Name is AppName)?.From!.ToString() ?? "the extensions it started with";
+                    outputWriter.WriteLine($"{appName}: restart skipped (restart=manual); the service runs {running} until it restarts.");
+                    break;
+                case RestartDecision.Disabled:
+                    outputWriter.WriteLine($"{appName}: restart skipped, as its service is disabled.");
+                    break;
+            }
         }
 
-        private string Join(IReadOnlyList<PackageSwitch> packages, Func<PackageSwitch, Version> version) =>
-            string.Join(", ", packages.Select(package => _one ? version(package).ToString() : $"{package.Name} {version(package)}"));
-
-        public string PuttingBackFailed(string problem) =>
-            $"{_failed}, and going back{(_before.Length == 0 ? string.Empty : $" to {_before}")} failed: {problem.TrimEnd('.')}. {ServiceDeployer.SeeLogs(_appName)}";
-
-        /// <param name="staysRunning">Whether the service stays up on what is current again; null when that is none.</param>
-        /// <param name="skipNotRecorded">Why the new versions could not be recorded as skipped; null when they were.</param>
-        public string PutBack(bool? staysRunning, string? skipNotRecorded)
+        /// <summary>
+        /// What failed of the switch, what runs and where to look, whatever its <see cref="AppSwitch.IfDown"/>;
+        /// null when nothing did.
+        /// </summary>
+        /// <param name="ifStands">A sentence for one that stands though the service is down; none when empty.</param>
+        public static string? Problem(string appName, SwitchOutcome outcome, string ifStands = "")
         {
-            string logs = ServiceDeployer.SeeLogs(_appName);
-            if (_before.Length == 0)
+            string logs = ServiceDeployer.SeeLogs(appName);
+            string stands = ifStands.Length == 0 ? logs : $"{ifStands} {logs}";
+            return outcome switch
             {
-                return staysRunning == true
-                    ? $"{_failed}, so it is removed again. {logs}"
-                    : $"{_failed}; it is removed again, but {_appName} did not stay running without it either. {logs}";
-            }
-
-            string skip = skipNotRecorded == null
-                ? $"{_skipped} is skipped"
-                : $"{_skipped} could not be recorded as skipped ({skipNotRecorded.TrimEnd('.')}), so the next update tries it again";
-            string isCurrent = $"{_before} {(_one ? "is" : "are")} current again";
-            return staysRunning switch
-            {
-                true => $"{_failed}, so {_before} {(_one ? "runs" : "run")} again and {skip}. {logs}",
-                false => $"{_failed}; {isCurrent} but did not stay running either, and {skip}. {logs}",
-                null => $"{_failed}, so {isCurrent} and {skip}. {logs}",
+                SwitchOutcome.Stands => null,
+                SwitchOutcome.StandsDown { RestartFailure: string failure } => $"{appName} could not be restarted: {failure.TrimEnd('.')}. {stands}",
+                SwitchOutcome.StandsDown => $"{ServiceDeployer.NotRunningAfterRestart(appName)}. {stands}",
+                SwitchOutcome.WentBack wentBack => $"{WentBack(appName, wentBack)}. {logs}",
+                SwitchOutcome.NotBack notBack => $"{Failed(appName, notBack)}, and going back{(Before(notBack) is string before ? $" to {before}" : string.Empty)} failed: {notBack.Problem.TrimEnd('.')}. {logs}",
+                _ => throw new InvalidOperationException($"There is no wording for {outcome.GetType().Name}."),
             };
         }
+
+        private static string WentBack(string appName, SwitchOutcome.WentBack outcome)
+        {
+            string failed = Failed(appName, outcome);
+            if (Before(outcome) is not string before)
+            {
+                return outcome.StaysUp == true
+                    ? $"{failed}, so it is removed again"
+                    : $"{failed}; it is removed again, but {appName} did not stay running without it either";
+            }
+
+            bool one = IsOne(outcome);
+            string skipped = one ? To(outcome) : "each of the new versions";
+            string skip = outcome.SkipNotRecorded == null
+                ? $"{skipped} is skipped"
+                : $"{skipped} could not be recorded as skipped ({outcome.SkipNotRecorded.TrimEnd('.')}), so the next update tries it again";
+            string isCurrent = $"{before} {(one ? "is" : "are")} current again";
+            return outcome.StaysUp switch
+            {
+                true => $"{failed}, so {before} {(one ? "runs" : "run")} again and {skip}",
+                false => $"{failed}; {isCurrent} but did not stay running either, and {skip}",
+                null => $"{failed}, so {isCurrent} and {skip}",
+            };
+        }
+
+        private static string Failed(string appName, SwitchOutcome outcome) => outcome.Switched is [{ Name: AppName }]
+            ? $"{To(outcome)} did not stay running"
+            : $"{appName} did not stay running with {To(outcome)}";
+
+        private static string To(SwitchOutcome outcome) => Join(outcome, package => package.To)!;
+
+        /// <summary>Null when all the switch did was install an extension.</summary>
+        private static string? Before(SwitchOutcome outcome) => Join(outcome, package => package.From);
+
+        private static string? Join(SwitchOutcome outcome, Func<PackageSwitch, Version?> version)
+        {
+            List<string> versions = outcome.Switched
+                .Where(package => version(package) != null)
+                .Select(package => IsOne(outcome) ? version(package)!.ToString() : $"{package.Name} {version(package)}")
+                .ToList();
+            return versions.Count == 0 ? null : string.Join(", ", versions);
+        }
+
+        private static bool IsOne(SwitchOutcome outcome) => outcome.Switched.Count == 1;
     }
 }

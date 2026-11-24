@@ -52,9 +52,12 @@ namespace Updaemon.Tests.Helpers
             OtherScope = TestScope.Create(Path.Combine(_temp.TempDirectory, "other"), !isSystem);
             Config = new ConfigManager(Scope);
             Secrets = new SecretsManager(Scope, Permissions);
-            SettingsStore = new AppSettingsStore(Config, Secrets);
+            SavedSecrets = new WatchedSecretsManager(Secrets);
+            SavedConfig = new SaveFailingConfigManager(Config);
+            SettingsStore = new AppSettingsStore(SavedConfig, SavedSecrets);
             Files = new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Output);
-            Versions = new VersionStore(Scope, new SymlinkManager(), Permissions, Output);
+            Links = new WatchedSymlinkManager(new SymlinkManager());
+            Versions = new VersionStore(Scope, Links, Permissions, Output);
             Deployer = new ServiceDeployer(
                 Scope,
                 Versions,
@@ -65,8 +68,11 @@ namespace Updaemon.Tests.Helpers
                 Secrets,
                 Output,
                 Time);
-            SwitcherConfig = new SaveFailingConfigManager(Config);
-            Switcher = new AppSwitcher(Versions, new SwitchRestorer(Versions, Deployer, ServiceManager), Deployer, ServiceManager, SettingsStore, SwitcherConfig, Output);
+            SwitchRestorer restorer = new SwitchRestorer(Versions, Deployer, ServiceManager);
+            Preparer = new AppPreparer(restorer, Deployer, ServiceManager, SettingsStore, Output);
+            Readiness = new SwitchReadiness(Versions, Deployer, SettingsStore);
+            Switcher = new AppSwitcher(Versions, Readiness, restorer, Deployer, ServiceManager, Output);
+            SettingsChanger = new SettingsChanger(Preparer, Deployer, ServiceManager, Output);
             Check = new ExtensionCheck(Scope, Versions) { Run = RunCheckAsync };
             RunLog = new UpdateRunLog(Scope);
             PluginUrlResolver = new GitHubPluginUrlResolver(new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" }, Scope.Platform);
@@ -129,12 +135,47 @@ namespace Updaemon.Tests.Helpers
 
         public static UpdaemonVersion RunningVersion { get; } = UpdaemonVersion.Of(1, 0, 0);
 
+        public AppPreparer Preparer { get; }
+
+        public SwitchReadiness Readiness { get; }
+
         public AppSwitcher Switcher { get; }
 
-        /// <summary>What the switcher saves an app's entry with once it has begun a switch.</summary>
-        public SaveFailingConfigManager SwitcherConfig { get; }
+        public SettingsChanger SettingsChanger { get; }
+
+        /// <summary>What an install and a change to an installed app save the entry with.</summary>
+        public SaveFailingConfigManager SavedConfig { get; }
+
+        /// <summary>What they save the secrets with.</summary>
+        public WatchedSecretsManager SavedSecrets { get; }
 
         public VersionStore Versions { get; }
+
+        public WatchedSymlinkManager Links { get; }
+
+        /// <summary>The directory everything is under.</summary>
+        public string Root => _temp.TempDirectory;
+
+        /// <summary>
+        /// Called at each step of a change that a run can be killed at: before and after each save of an app's
+        /// entry and of its secrets, after each link, at each tree made readable, each reload and before each
+        /// restart, start, stop, enabling and disabling of the service.
+        /// </summary>
+        public Action? OnStep
+        {
+            set
+            {
+                SavedConfig.OnSave = value == null ? null : _ => value();
+                SavedConfig.OnSaved = value == null ? null : _ => value();
+                SavedSecrets.OnSave = value;
+                SavedSecrets.OnSaved = value;
+                Links.OnLinked = value;
+                Permissions.OnMakeTreeReadable = value == null ? null : _ => value();
+                ServiceManager.OnDaemonReload = value;
+                ServiceManager.OnRestart = value;
+                ServiceManager.OnServiceChange = value;
+            }
+        }
 
         public ExtensionCheck Check { get; }
 
@@ -178,13 +219,13 @@ namespace Updaemon.Tests.Helpers
 
         private OtherScopeApps OtherScopeApps() => new OtherScopeApps(new ConfigManager(OtherScope), OtherScope.Owner);
 
-        private ExtensionInstaller ExtensionInstaller() => new ExtensionInstaller(Config, Versions, Deployer, Switcher, Check, Stager(), OtherScopeApps(), Scope, Output);
+        private ExtensionInstaller ExtensionInstaller() => new ExtensionInstaller(Config, Versions, Deployer, Preparer, Switcher, Check, Stager(), OtherScopeApps(), Scope, Output);
 
-        public UpdateCommand Update() => new UpdateCommand(Config, AppUpdater(), GitHubPluginUpdater(), SelfUpdater(), RunLog, Output, Time);
+        public UpdateCommand Update() => new UpdateCommand(Config, Preparer, AppUpdater(), GitHubPluginUpdater(), SelfUpdater(), RunLog, Output, Time);
 
-        private AppUpdater AppUpdater() => new AppUpdater(SwitcherConfig, Sessions(), Versions, Deployer, Switcher, Check, Output);
+        private AppUpdater AppUpdater() => new AppUpdater(Config, Sessions(), Versions, Deployer, Preparer, Readiness, Switcher, Check, Output);
 
-        private PluginSessions Sessions() => new PluginSessions(Client, Secrets, Plugins, Credentials(), Output);
+        private PluginSessions Sessions() => new PluginSessions(() => Client, Secrets, Plugins, Credentials(), Output);
 
         public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output, Credentials());
 
@@ -194,23 +235,23 @@ namespace Updaemon.Tests.Helpers
 
         public TimerCommand TimerCommand() => new TimerCommand(Timer, ServiceManager, Config, Output);
 
-        public DistListCommand DistList() => new DistListCommand(Config, Output, Client, RunningVersion);
+        public DistListCommand DistList() => new DistListCommand(Config, Output, () => Client, RunningVersion);
 
-        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Versions, Deployer, Switcher, Check, Output);
+        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Versions, Deployer, Preparer, Readiness, Switcher, Check, Output);
 
         public StatusCommand Status() => new StatusCommand(Config, Versions, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion, RunLog, Time);
 
         public LogsCommand Logs() => new LogsCommand(Config, Deployer, ServiceManager, Output);
 
-        public SetCommand Set() => new SetCommand(Config, SettingsStore, Deployer, Switcher, Output);
+        public SetCommand Set() => new SetCommand(Config, SettingsChanger, Output);
 
-        public UnsetCommand Unset() => new UnsetCommand(Config, SettingsStore, Deployer, Switcher, Output);
+        public UnsetCommand Unset() => new UnsetCommand(Config, SettingsChanger, Output);
 
-        public SetArgsCommand SetArgs() => new SetArgsCommand(Config, Deployer, Switcher, Output);
+        public SetArgsCommand SetArgs() => new SetArgsCommand(Config, SettingsChanger, Output);
 
         public SetRestartCommand SetRestart() => new SetRestartCommand(Config, Output, Deployer);
 
-        public RemoveCommand Remove() => new RemoveCommand(Config, Deployer, Switcher, RunLog, Output, Scope);
+        public RemoveCommand Remove() => new RemoveCommand(Config, Deployer, Preparer, Switcher, RunLog, Output, Scope);
 
         public ZeroXConverter Converter() => new ZeroXConverter(
             Scope, Config, Versions, Deployer, ServiceManager, Timer, new ExecutableDetector(), new SymlinkManager(), Permissions, Files, Plugins, PluginUrlResolver, Output);
@@ -378,14 +419,19 @@ namespace Updaemon.Tests.Helpers
         public void AssertUnchangedSince(IReadOnlyList<string> before)
         {
             IReadOnlyList<string> after = Snapshot();
-            List<string> changes = before.Except(after).Select(entry => "gone: " + entry).Concat(after.Except(before).Select(entry => "new: " + entry)).ToList();
-            Assert.True(changes.Count == 0, string.Join('\n', changes));
+            Assert.True(after.SequenceEqual(before), Difference(after, before));
         }
 
+        /// <summary>What <paramref name="after"/> has that <paramref name="before"/> has not, and the other way round, a line each.</summary>
+        public static string Difference(IReadOnlyList<string> after, IReadOnlyList<string> before) =>
+            string.Join('\n', before.Except(after).Select(entry => "gone: " + entry).Concat(after.Except(before).Select(entry => "new: " + entry)));
+
         private string? _cutOff;
+        private Dictionary<string, bool> _runningAtCutOff = new Dictionary<string, bool>();
+        private List<string> _enabledAtCutOff = new List<string>();
 
         /// <summary>
-        /// Keeps what is on disk now, the first time it is called: what a run killed here leaves.
+        /// Keeps what is on disk and what its services are now, the first time it is called: what a run killed here leaves.
         /// <see cref="CutOff"/> then goes back to it.
         /// </summary>
         public void KeepForCutOff()
@@ -394,20 +440,27 @@ namespace Updaemon.Tests.Helpers
             {
                 _cutOff = _temp.TempDirectory + "_cutoff";
                 Copy(_temp.TempDirectory, _cutOff);
+                _runningAtCutOff = new Dictionary<string, bool>(ServiceManager.ServiceRunningStates);
+                _enabledAtCutOff = ServiceManager.EnabledServices.ToList();
             }
         }
 
-        /// <summary>Leaves on disk what <see cref="KeepForCutOff"/> kept, as if the run had been killed there.</summary>
+        /// <summary>Leaves what <see cref="KeepForCutOff"/> kept, as if the run had been killed there.</summary>
         public void CutOff()
         {
             Assert.NotNull(_cutOff);
             Directory.Delete(_temp.TempDirectory, recursive: true);
             Directory.Move(_cutOff, _temp.TempDirectory);
             _cutOff = null;
-            ServiceManager.OnDaemonReload = null;
-            ServiceManager.OnRestart = null;
-            Permissions.OnMakeTreeReadable = null;
-            SwitcherConfig.OnSave = null;
+            ServiceManager.ServiceRunningStates.Clear();
+            foreach ((string service, bool running) in _runningAtCutOff)
+            {
+                ServiceManager.ServiceRunningStates[service] = running;
+            }
+
+            ServiceManager.EnabledServices.Clear();
+            ServiceManager.EnabledServices.UnionWith(_enabledAtCutOff);
+            OnStep = null;
             Output.Clear();
             ServiceManager.MethodCalls.Clear();
         }

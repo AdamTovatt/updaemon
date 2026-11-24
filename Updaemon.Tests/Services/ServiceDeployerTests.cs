@@ -148,40 +148,6 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task ApplySettingsAsync_EnabledServiceCrashLooping_IsRestartedOnTheNewUnitAndChecked()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallByteShelfAsync();
-                // Between two of the service manager's automatic restarts: not running now.
-                h.ServiceManager.ServiceRunningStates["byteshelf"] = false;
-                h.ServiceManager.MethodCalls.Clear();
-
-                bool staysRunning = await h.Deployer.ApplySettingsAsync(new PreparedApp((await h.Config.GetAppAsync("byteshelf"))!), h.Reachable);
-
-                Assert.True(staysRunning);
-                Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
-                Assert.Contains("Restarted byteshelf.", h.Output.Messages);
-            }
-        }
-
-        [Fact]
-        public async Task ApplySettingsAsync_ServiceDisabled_IsLeftAlone()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallByteShelfAsync();
-                await h.ServiceManager.DisableServiceAsync("byteshelf");
-                h.ServiceManager.MethodCalls.Clear();
-
-                Assert.True(await h.Deployer.ApplySettingsAsync(new PreparedApp((await h.Config.GetAppAsync("byteshelf"))!), h.Reachable));
-
-                Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
-                Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
-            }
-        }
-
-        [Fact]
         public async Task StartAsync_ServiceRestartedMeanwhile_IsUnhealthy()
         {
             using (AppHarness h = new AppHarness())

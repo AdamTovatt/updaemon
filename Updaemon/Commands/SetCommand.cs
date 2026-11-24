@@ -1,4 +1,3 @@
-using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 using Updaemon.Services;
@@ -11,17 +10,13 @@ namespace Updaemon.Commands
     public class SetCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly AppSettingsStore _settingsStore;
-        private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppSwitcher _switcher;
+        private readonly SettingsChanger _settings;
         private readonly IOutputWriter _outputWriter;
 
-        public SetCommand(IConfigManager configManager, AppSettingsStore settingsStore, IServiceDeployer serviceDeployer, AppSwitcher switcher, IOutputWriter outputWriter)
+        public SetCommand(IConfigManager configManager, SettingsChanger settings, IOutputWriter outputWriter)
         {
             _configManager = configManager;
-            _settingsStore = settingsStore;
-            _serviceDeployer = serviceDeployer;
-            _switcher = switcher;
+            _settings = settings;
             _outputWriter = outputWriter;
         }
 
@@ -52,10 +47,7 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            PreparedApp prepared = await _switcher.PrepareAsync(app, cancellationToken);
-            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
-            AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
-            AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
+            SettingsChange settings = await _settings.BeginAsync(app, cancellationToken);
             foreach (string assignment in positionals.Skip(1))
             {
                 if (!SettingAssignment.TryParse(assignment, out string key, out string value, out string? error))
@@ -63,11 +55,10 @@ namespace Updaemon.Commands
                     return _outputWriter.Fail(error);
                 }
 
-                values.Set(manifest, key, value, parser.HasFlag("--secret"));
+                settings.Change.Values.Set(settings.Manifest, key, value, parser.HasFlag("--secret"));
             }
 
-            await _settingsStore.SaveAsync(values, cancellationToken);
-            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(prepared, reachable, cancellationToken);
+            bool staysRunning = await _settings.ApplyAsync(settings, cancellationToken);
             _outputWriter.WriteLine($"Updated the settings of {appName}.");
             return _outputWriter.FinishSettingsChange(appName, staysRunning);
         }

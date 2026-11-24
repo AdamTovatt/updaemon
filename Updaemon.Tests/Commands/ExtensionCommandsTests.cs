@@ -172,7 +172,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(new[] { "Error: installing shelf/images failed: no restart today, and switching back failed: no restart today" }, h.Output.Errors);
                 Assert.Empty(h.LinkedExtensions());
                 // The restart on what is put back is still owed, so the next change makes up for it.
-                Assert.NotNull((await h.HostAsync()).Unfinished);
+                Assert.IsType<UnfinishedChange.PutBack>((await h.HostAsync()).Unfinished);
                 h.ServiceManager.RestartFailure = null;
                 h.ServiceManager.MethodCalls.Clear();
                 await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" });
@@ -509,9 +509,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallHostWithImagesAsync();
                 IReadOnlyList<string> before = h.Snapshot();
-                // What to put back is saved; that it was removed is not.
-                h.SwitcherConfig.NextSaves.Enqueue(null);
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNext(app => app.Unfinished is not UnfinishedChange.PutBack);
 
                 IOException ex = await Assert.ThrowsAsync<IOException>(() => h.Remove().ExecuteAsync(new[] { "shelf/images" }));
 
@@ -528,7 +526,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallHostWithImagesAsync();
                 IReadOnlyList<string> before = h.Snapshot();
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNext(app => app.Unfinished is UnfinishedChange.PutBack);
 
                 await Assert.ThrowsAsync<IOException>(() => h.Remove().ExecuteAsync(new[] { "shelf/images" }));
 

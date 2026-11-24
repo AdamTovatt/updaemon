@@ -194,12 +194,8 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task ConnectAsync_TwoConsecutiveCyclesOnSameClient_DoesNotThrow()
+        public async Task ConnectAsync_Again_IsRefused()
         {
-            // Regression test: prior to the fix, after the first DisposeAsync the
-            // _pluginProcess field was disposed but not nulled. The second ConnectAsync
-            // would call HasExited on a disposed Process and throw
-            // "No process is associated with this object."
             string pluginPath = TestPluginPathResolver.Resolve();
 
             DistributionServiceClient client = new DistributionServiceClient(TestPlatform);
@@ -210,12 +206,12 @@ namespace Updaemon.Tests.Services
                 Version? version = await client.GetLatestVersionAsync("first/service");
                 Assert.Equal(new Version(1, 0, 0), version);
 
+                await Assert.ThrowsAsync<InvalidOperationException>(() => client.ConnectAsync(pluginPath));
+                Assert.Equal(new Version(1, 0, 0), await client.GetLatestVersionAsync("first/service"));
+
                 await client.DisposeAsync();
 
-                await client.ConnectAsync(pluginPath);
-                await client.InitializeAsync(null);
-                Version? version2 = await client.GetLatestVersionAsync("second/service");
-                Assert.Equal(new Version(1, 0, 0), version2);
+                await Assert.ThrowsAsync<InvalidOperationException>(() => client.ConnectAsync(pluginPath));
             }
             finally
             {

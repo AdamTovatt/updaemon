@@ -1,4 +1,3 @@
-using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
 using Updaemon.Services;
@@ -11,17 +10,13 @@ namespace Updaemon.Commands
     public class UnsetCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly AppSettingsStore _settingsStore;
-        private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppSwitcher _switcher;
+        private readonly SettingsChanger _settings;
         private readonly IOutputWriter _outputWriter;
 
-        public UnsetCommand(IConfigManager configManager, AppSettingsStore settingsStore, IServiceDeployer serviceDeployer, AppSwitcher switcher, IOutputWriter outputWriter)
+        public UnsetCommand(IConfigManager configManager, SettingsChanger settings, IOutputWriter outputWriter)
         {
             _configManager = configManager;
-            _settingsStore = settingsStore;
-            _serviceDeployer = serviceDeployer;
-            _switcher = switcher;
+            _settings = settings;
             _outputWriter = outputWriter;
         }
 
@@ -52,19 +47,16 @@ namespace Updaemon.Commands
                 return 1;
             }
 
-            PreparedApp prepared = await _switcher.PrepareAsync(app, cancellationToken);
-            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
-            AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
-            AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
+            SettingsChange settings = await _settings.BeginAsync(app, cancellationToken);
             bool removedAny = false;
             foreach (string key in positionals.Skip(1))
             {
-                if (manifest.Settings.TryGetValue(key, out SettingSpec? spec) && spec.IsRequired)
+                if (settings.Manifest.Settings.TryGetValue(key, out SettingSpec? spec) && spec.IsRequired)
                 {
                     return _outputWriter.Fail($"{appName} requires {key}. Give it a new value with 'updaemon set {appName} {key}=<value>'.");
                 }
 
-                if (values.Remove(manifest, key))
+                if (settings.Change.Values.Remove(settings.Manifest, key))
                 {
                     removedAny = true;
                 }
@@ -79,8 +71,7 @@ namespace Updaemon.Commands
                 return 0;
             }
 
-            await _settingsStore.SaveAsync(values, cancellationToken);
-            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(prepared, reachable, cancellationToken);
+            bool staysRunning = await _settings.ApplyAsync(settings, cancellationToken);
             _outputWriter.WriteLine($"Updated the settings of {appName}.");
             return _outputWriter.FinishSettingsChange(appName, staysRunning);
         }

@@ -327,9 +327,9 @@ namespace Updaemon.Tests.Commands
             }
         }
 
-        /// <summary>It answered for what came before, which did not fail.</summary>
+        /// <summary>It runs until the run is over, so nothing that comes after another plugin's needs it to start again.</summary>
         [Fact]
-        public async Task Update_PluginDoesNotStartAgain_ReportsOnlyWhatWaitedForIt()
+        public async Task Update_PluginThatWouldNotStartAgain_IsNotStartedAgain()
         {
             using (AppHarness h = await InstalledAsync(newHost: true))
             {
@@ -346,11 +346,15 @@ namespace Updaemon.Tests.Commands
                 h.AfterDownloading("audio", "2.0.0", _ => h.Client.ConnectAsyncThrowsForPluginPaths.Add(github));
                 h.ForgetCalls();
 
-                Assert.Equal(1, await UpdateAsync(h));
+                Assert.Equal(0, await UpdateAsync(h));
 
-                Assert.StartsWith("Error: tool, zoo: the plugin 'github' failed to start", Assert.Single(h.Output.Errors));
-                Assert.Equal(new[] { "tool", "zoo" }, (await h.RunLog.LoadAsync())!.Failures.Select(failure => failure.Subject));
-                await AssertCurrentAsync(h, Two, "1.0.0");
+                Assert.Contains(github, h.Client.ConnectAsyncThrowsForPluginPaths);
+                Assert.Equal(Two, await h.Versions.GetCurrentAsync(new ExtensionName("shelf", "audio")));
+                Assert.Single(h.Client.MethodCalls, $"{nameof(IDistributionServiceClient.ConnectAsync)}:{github}");
+                foreach (string name in new[] { "shelf", "tool", "zoo" })
+                {
+                    Assert.Equal(Two, await h.Versions.GetCurrentAsync(new AppName(name)));
+                }
             }
         }
 
@@ -456,8 +460,6 @@ namespace Updaemon.Tests.Commands
         }
 
         /// <summary>Its every generated file differs from 1.0.0's.</summary>
-        private static readonly string ChangedManifest = AppHarness.HostManifest.Replace("\"command\": \"shelf\"", "\"command\": \"shelf2\"").Replace("\"serve\"", "\"serve2\"");
-
         [Fact]
         public async Task Update_TheSwitchFails_PutsAllBackSkipsNothingAndTriesAgainNextRun()
         {
@@ -531,7 +533,7 @@ namespace Updaemon.Tests.Commands
             using (AppHarness h = await InstalledAsync(newHost: true, newImages: true, hostManifest: ChangedManifest))
             {
                 IReadOnlyList<string> before = h.Snapshot();
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNextWithNothingLeft();
 
                 Assert.Equal(1, await UpdateAsync(h, "shelf"));
 
@@ -682,7 +684,7 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(1, await UpdateAsync(h, "shelf/images"));
 
-                Assert.Equal(new[] { "Error: shelf/images: it is not installed; the run that was installing it was cut off." }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: 'shelf/images' is not installed." }, h.Output.Errors);
             }
         }
 
@@ -697,7 +699,7 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(0, await UpdateAsync(h, "shelf"));
 
-                Assert.Contains("shelf: an earlier run was cut off while it switched versions; putting back shelf 1.0.0, shelf/images 1.0.0.", h.Output.Messages);
+                Assert.Contains("shelf: an earlier run did not finish switching versions; putting back shelf 1.0.0, shelf/images 1.0.0.", h.Output.Messages);
                 await AssertCurrentAsync(h, Two, "2.0.0");
                 Assert.Empty((await h.HostAsync()).SkippedVersions);
             }
@@ -760,8 +762,7 @@ namespace Updaemon.Tests.Commands
         {
             using (AppHarness h = await WithASkipToForgetAsync())
             {
-                h.SwitcherConfig.NextSaves.Enqueue(null);
-                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+                h.SavedConfig.FailNext(app => app.Unfinished == null && app.FindExtension("images")!.SkippedVersions.Count == 0);
 
                 Assert.Equal(0, await UpdateAsync(h));
 

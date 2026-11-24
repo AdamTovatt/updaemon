@@ -13,15 +13,17 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly IServiceDeployer _serviceDeployer;
+        private readonly AppPreparer _preparer;
         private readonly AppSwitcher _switcher;
         private readonly UpdateRunLog _runLog;
         private readonly IOutputWriter _outputWriter;
         private readonly UpdaemonScope _scope;
 
-        public RemoveCommand(IConfigManager configManager, IServiceDeployer serviceDeployer, AppSwitcher switcher, UpdateRunLog runLog, IOutputWriter outputWriter, UpdaemonScope scope)
+        public RemoveCommand(IConfigManager configManager, IServiceDeployer serviceDeployer, AppPreparer preparer, AppSwitcher switcher, UpdateRunLog runLog, IOutputWriter outputWriter, UpdaemonScope scope)
         {
             _configManager = configManager;
             _serviceDeployer = serviceDeployer;
+            _preparer = preparer;
             _switcher = switcher;
             _runLog = runLog;
             _outputWriter = outputWriter;
@@ -49,29 +51,23 @@ namespace Updaemon.Commands
                 return _outputWriter.FailUsage(this);
             }
 
-            SelectedPackage? package = await AppSelection.FindAsync(name, _configManager, _outputWriter, cancellationToken);
-            if (package == null)
+            bool purge = parser.HasFlag("--purge");
+            return ExtensionName.TryParse(name) is ExtensionName extension
+                ? await RemoveExtensionAsync(extension, purge, cancellationToken)
+                : await RemoveAppAsync(name, purge, cancellationToken);
+        }
+
+        private async Task<int> RemoveAppAsync(string name, bool purge, CancellationToken cancellationToken)
+        {
+            if (await AppSelection.FindAsync(name, _configManager, _outputWriter, cancellationToken) is not SelectedPackage { App: InstalledApp app })
             {
                 return 1;
             }
 
-            bool purge = parser.HasFlag("--purge");
-            if (package.Extension == null)
-            {
-                return await RemoveAppAsync(package.App, purge, cancellationToken);
-            }
-
-            return purge
-                ? _outputWriter.Fail($"--purge does not go with an extension, which has no data of its own. Use 'updaemon remove {name}'.")
-                : await RemoveExtensionAsync(package, package.Extension, cancellationToken);
-        }
-
-        private async Task<int> RemoveAppAsync(InstalledApp app, bool purge, CancellationToken cancellationToken)
-        {
             try
             {
-                // Puts back what a killed run left, so what is removed is what is there.
-                await _switcher.PrepareAsync(app, cancellationToken);
+                // Ends what an earlier run left unfinished, so what is removed is what is there.
+                await _preparer.PrepareAsync(app, cancellationToken);
             }
             catch (Exception ex) when (app.Unfinished != null && ex is not (OperationCanceledException or ServiceManagerUnreachableException))
             {
@@ -95,18 +91,24 @@ namespace Updaemon.Commands
             return 0;
         }
 
-        private async Task<int> RemoveExtensionAsync(SelectedPackage selected, InstalledExtension extension, CancellationToken cancellationToken)
+        private async Task<int> RemoveExtensionAsync(ExtensionName name, bool purge, CancellationToken cancellationToken)
         {
-            string name = selected.Name.ToString();
-            if (await _switcher.PrepareAsync(selected, cancellationToken) is not PreparedApp prepared)
+            if (purge)
             {
-                return _outputWriter.FailNotInstalled(name);
+                return _outputWriter.Fail($"--purge does not go with an extension, which has no data of its own. Use 'updaemon remove {name}'.");
             }
 
-            string? problem = await _switcher.RemoveExtensionAsync(prepared, extension, cancellationToken);
-            _outputWriter.WriteLine($"Removed {name}.");
-            await ForgetFailuresAsync(new[] { name }, cancellationToken);
-            return problem == null ? 0 : _outputWriter.Fail($"{problem}. {name} is removed. {ServiceDeployer.SeeLogs(selected.App.Name)}");
+            PreparedPackage? prepared = await AppSelection.PrepareAsync(name.ToString(), _configManager, _preparer, _outputWriter, cancellationToken);
+            if (prepared is not { Extension: InstalledExtension extension, Package.Name: PackageName installed })
+            {
+                return 1;
+            }
+
+            SwitchOutcome outcome = await _switcher.SwitchAsync(AppSwitch.Remove(prepared.Prepared, extension), cancellationToken);
+            _outputWriter.WriteRestartSkipped(name.Host, outcome);
+            _outputWriter.WriteLine($"Removed {installed}.");
+            await ForgetFailuresAsync(new[] { installed.ToString() }, cancellationToken);
+            return SwitchText.Problem(name.Host, outcome, ifStands: $"{installed} is removed.") is string problem ? _outputWriter.Fail(problem) : 0;
         }
 
         /// <summary>What is removed no longer fails; the removal stands without this.</summary>

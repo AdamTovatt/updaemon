@@ -7,10 +7,21 @@ namespace Updaemon.Models
     /// </summary>
     public sealed class AppValues
     {
+        /// <summary>The secrets as they are stored; null when that is not known.</summary>
+        private Dictionary<string, string>? _storedSecrets;
+
         public AppValues(InstalledApp app, Dictionary<string, string> secrets)
         {
             App = app;
             Secrets = secrets;
+        }
+
+        /// <summary>Those of an app whose secrets are stored as <paramref name="secrets"/>.</summary>
+        public static AppValues Stored(InstalledApp app, Dictionary<string, string> secrets)
+        {
+            AppValues values = new AppValues(app, secrets);
+            values.SecretsAreStored();
+            return values;
         }
 
         public InstalledApp App { get; }
@@ -46,20 +57,25 @@ namespace Updaemon.Models
             return Settings.Remove(key) | Secrets.Remove(key);
         }
 
-        /// <summary>
-        /// Drops values stored for what updaemon sets itself, from before <paramref name="manifest"/> declared
-        /// it. Returns whether there were any.
-        /// </summary>
-        public bool DropSetByUpdaemon(AppManifest manifest)
-        {
-            List<string> dropped = Settings.Keys.Concat(Secrets.Keys).Where(manifest.IsSetByUpdaemon).ToList();
-            foreach (string key in dropped)
-            {
-                Settings.Remove(key);
-                Secrets.Remove(key);
-            }
+        /// <summary>Whether <see cref="Secrets"/> may differ from what is stored.</summary>
+        public bool SecretsChanged =>
+            _storedSecrets == null || _storedSecrets.Count != Secrets.Count || Secrets.Any(secret => _storedSecrets.GetValueOrDefault(secret.Key) != secret.Value);
 
-            return dropped.Count > 0;
+        /// <summary>Called by whatever stored <see cref="Secrets"/>.</summary>
+        internal void SecretsAreStored() => _storedSecrets = new Dictionary<string, string>(Secrets);
+
+        /// <summary>Drops plain values stored for what updaemon sets itself, from before <paramref name="manifest"/> declared it.</summary>
+        public void DropSettingsSetByUpdaemon(AppManifest manifest) => DropSetByUpdaemon(manifest, Settings);
+
+        /// <summary>Drops the secret ones.</summary>
+        public void DropSecretsSetByUpdaemon(AppManifest manifest) => DropSetByUpdaemon(manifest, Secrets);
+
+        private static void DropSetByUpdaemon(AppManifest manifest, Dictionary<string, string> values)
+        {
+            foreach (string key in values.Keys.Where(manifest.IsSetByUpdaemon).ToList())
+            {
+                values.Remove(key);
+            }
         }
 
         /// <summary>Moves plain values that <paramref name="manifest"/> declares secret into the secrets.</summary>
