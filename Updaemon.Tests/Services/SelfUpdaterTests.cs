@@ -9,6 +9,7 @@ namespace Updaemon.Tests.Services
     /// <summary>
     /// Self-update against a temp scope whose updaemon is a script, with releases that are scripts too.
     /// </summary>
+    [Collection(RunsFreshScripts.Name)]
     public class SelfUpdaterTests
     {
         private static readonly UpdaemonVersion Running = AppHarness.RunningVersion;

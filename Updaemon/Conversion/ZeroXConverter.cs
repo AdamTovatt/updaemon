@@ -20,6 +20,7 @@ namespace Updaemon.Conversion
 
         private readonly UpdaemonScope _scope;
         private readonly IConfigManager _configManager;
+        private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
         private readonly IServiceManager _serviceManager;
         private readonly ITimerManager _timerManager;
@@ -34,6 +35,7 @@ namespace Updaemon.Conversion
         public ZeroXConverter(
             UpdaemonScope scope,
             IConfigManager configManager,
+            VersionStore versions,
             IServiceDeployer serviceDeployer,
             IServiceManager serviceManager,
             ITimerManager timerManager,
@@ -47,6 +49,7 @@ namespace Updaemon.Conversion
         {
             _scope = scope;
             _configManager = configManager;
+            _versions = versions;
             _serviceDeployer = serviceDeployer;
             _serviceManager = serviceManager;
             _timerManager = timerManager;
@@ -196,7 +199,7 @@ namespace Updaemon.Conversion
             Version current;
             try
             {
-                current = await _serviceDeployer.GetCurrentVersionAsync(name, cancellationToken);
+                current = await _versions.GetCurrentAsync(new AppName(name), cancellationToken);
             }
             catch (InvalidOperationException)
             {
@@ -206,7 +209,7 @@ namespace Updaemon.Conversion
                 return new BlockedApp(old, $"it has no current version (0.x 'init' never ran); {install}");
             }
 
-            string versionDirectory = Path.Combine(_scope.GetAppDirectory(name), current.ToString());
+            string versionDirectory = _versions.GetVersionDirectory(new AppName(name), current);
             string currentLink = _scope.GetCurrentLinkPath(name);
             InstalledApp app = new InstalledApp
             {
@@ -480,13 +483,15 @@ namespace Updaemon.Conversion
 
                 await WriteManifestsIntoOlderVersionsAsync(app, current.Version, cancellationToken);
                 ReachableServiceManager reachable = await _serviceManager.EnsureReachableAsync(cancellationToken);
-                await _serviceDeployer.ActivateAsync(app, current, reachable, cancellationToken);
+                await _serviceDeployer.MakeExecutableAsync(app.Name, current, cancellationToken);
+                await _versions.MakeReadableAsync(app.PackageName, cancellationToken);
+                await _serviceDeployer.ActivateAsync(app, current, reachable, cancellationToken: cancellationToken);
                 if (current.Manifest.IsService)
                 {
                     await _serviceManager.EnableServiceAsync(app.Name, cancellationToken);
                     if (app.AutoRestart && !await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken))
                     {
-                        throw new InvalidOperationException(ServiceDeployer.NotRunning(app.Name, current.Version, " with its new unit, so its 0.x unit is back"));
+                        throw new InvalidOperationException(HealthText.Failed(app.Name, current.Version, " with its new unit, so its 0.x unit is back"));
                     }
                 }
 
@@ -519,9 +524,9 @@ namespace Updaemon.Conversion
         /// <summary>Kept versions get the manifest the current one runs with, so they can be rolled back to.</summary>
         private async Task WriteManifestsIntoOlderVersionsAsync(InstalledApp app, Version current, CancellationToken cancellationToken)
         {
-            foreach (Version version in _serviceDeployer.GetRetainedVersions(app.Name).Where(version => version != current))
+            foreach (Version version in _versions.GetRetained(app.PackageName).Where(version => version != current))
             {
-                string directory = Path.Combine(_scope.GetAppDirectory(app.Name), version.ToString());
+                string directory = _versions.GetVersionDirectory(app.PackageName, version);
                 string? found = await _executableDetector.FindExecutableAsync(directory, app.Manifest!.Executable, cancellationToken);
                 if (found != null)
                 {
@@ -536,7 +541,7 @@ namespace Updaemon.Conversion
             string name = plan.Old.LocalName;
             try
             {
-                _appFileWriter.RemoveCommandAndSettings(name, plan.Current.Manifest);
+                _appFileWriter.RemoveCommandsAndSettings(name);
                 string target = Path.Combine(_scope.GetCurrentLinkPath(name), Path.GetFileName(plan.Current.Manifest.Executable));
                 foreach (string link in plan.ZeroXLinks.Where(link => !File.Exists(link)))
                 {

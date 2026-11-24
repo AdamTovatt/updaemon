@@ -92,11 +92,21 @@ namespace Updaemon
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<AppFileWriter>();
-            services.AddSingleton<AppSettingsStore>();
+            services.AddSingleton<AppEntryStore>();
             services.AddSingleton<UpdateRunLog>();
             services.AddSingleton(TimeProvider.System);
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
-            services.AddSingleton<AppRollback>();
+            services.AddSingleton<VersionStore>();
+            services.AddSingleton<SwitchRestorer>();
+            services.AddSingleton<SwitchReadiness>();
+            services.AddSingleton<AppPreparer>();
+            services.AddSingleton<AppSwitcher>();
+            services.AddSingleton<SettingsChanger>();
+            services.AddSingleton<ExtensionCheck>();
+            services.AddTransient<PluginSessions>();
+            services.AddTransient<ReleaseStager>();
+            services.AddTransient<AppUpdater>();
+            services.AddTransient<ExtensionInstaller>();
             services.AddTransient<PluginProvider>();
 
             services.AddSingleton(UpdaemonVersion.Current);
@@ -106,8 +116,8 @@ namespace Updaemon
             services.AddSingleton<IGitHubPluginReleases, GitHubPluginReleases>();
             services.AddTransient<GitHubPluginUpdater>();
 
-            // Distribution service client
-            services.AddTransient<IDistributionServiceClient, DistributionServiceClient>();
+            // Distribution service client: one for each plugin that runs
+            services.AddSingleton<Func<IDistributionServiceClient>>(_ => () => new DistributionServiceClient(scope.Platform));
 
             // HTTP client for downloading plugins, and updaemon's own builds
             services.AddSingleton<HttpClient>();

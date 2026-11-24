@@ -16,7 +16,8 @@ namespace Updaemon.Common
         DistributionServiceInformation GetServiceInformation();
 
         /// <summary>
-        /// Initializes the distribution service with secrets.
+        /// Initializes the distribution service with secrets: after updaemon connects to the plugin, and again
+        /// after a secret that a call needed is saved.
         /// </summary>
         /// <param name="secrets">Collection of secret key-value pairs.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
@@ -36,7 +37,7 @@ namespace Updaemon.Common
         /// <param name="serviceName">The remote service name to download.</param>
         /// <param name="version">The version to download.</param>
         /// <param name="runtimeIdentifier">The runtime identifier of the machine updaemon runs on (e.g. "linux-arm64"), for picking the build that runs there.</param>
-        /// <param name="targetPath">The directory path where the version should be downloaded.</param>
+        /// <param name="targetPath">The directory path where the version should be downloaded. Take nothing from its name: it is renamed once the download is complete.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         /// <returns>Whether the download was verified against a checksum its release published.</returns>
         /// <remarks>

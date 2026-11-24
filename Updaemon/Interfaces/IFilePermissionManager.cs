@@ -9,7 +9,10 @@ namespace Updaemon.Interfaces
         Task SetExecutablePermissionsAsync(string executablePath, CancellationToken cancellationToken = default);
 
         /// <summary>Makes a directory tree readable by everyone (<c>chmod -R a+rX</c>).</summary>
-        Task SetDirectoryPermissionsAsync(string directoryPath, CancellationToken cancellationToken = default);
+        Task MakeTreeReadableAsync(string directoryPath, CancellationToken cancellationToken = default);
+
+        /// <summary>Makes the directory itself readable and enterable by everyone, and nothing in it (<c>chmod a+rx</c>).</summary>
+        Task MakeDirectoryEnterableAsync(string directoryPath, CancellationToken cancellationToken = default);
 
         /// <summary>Gives <paramref name="path"/> to <paramref name="user"/>.</summary>
         Task SetOwnerAsync(string path, string user, CancellationToken cancellationToken = default);

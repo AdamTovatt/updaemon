@@ -6,59 +6,44 @@ using Updaemon.Services;
 namespace Updaemon.Commands
 {
     /// <summary>
-    /// Handles the 'update' command: updates every installed app, or one, to its latest release.
+    /// Handles the 'update' command: updates every installed app with its extensions, or one, to its latest release.
     /// </summary>
     public class UpdateCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly AppSettingsStore _settingsStore;
-        private readonly ISecretsManager _secretsManager;
-        private readonly IDistributionServiceClient _distributionClient;
-        private readonly IOutputWriter _outputWriter;
-        private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppRollback _appRollback;
-        private readonly PluginProvider _pluginProvider;
+        private readonly AppPreparer _preparer;
+        private readonly AppUpdater _appUpdater;
         private readonly GitHubPluginUpdater _gitHubPluginUpdater;
         private readonly SelfUpdater _selfUpdater;
-        private readonly PluginCredentials _credentials;
         private readonly UpdateRunLog _runLog;
+        private readonly IOutputWriter _outputWriter;
         private readonly TimeProvider _time;
 
         public UpdateCommand(
             IConfigManager configManager,
-            AppSettingsStore settingsStore,
-            ISecretsManager secretsManager,
-            IDistributionServiceClient distributionClient,
-            IOutputWriter outputWriter,
-            IServiceDeployer serviceDeployer,
-            AppRollback appRollback,
-            PluginProvider pluginProvider,
+            AppPreparer preparer,
+            AppUpdater appUpdater,
             GitHubPluginUpdater gitHubPluginUpdater,
             SelfUpdater selfUpdater,
-            PluginCredentials credentials,
             UpdateRunLog runLog,
+            IOutputWriter outputWriter,
             TimeProvider time)
         {
             _configManager = configManager;
-            _settingsStore = settingsStore;
-            _secretsManager = secretsManager;
-            _distributionClient = distributionClient;
-            _outputWriter = outputWriter;
-            _serviceDeployer = serviceDeployer;
-            _appRollback = appRollback;
-            _pluginProvider = pluginProvider;
+            _preparer = preparer;
+            _appUpdater = appUpdater;
             _gitHubPluginUpdater = gitHubPluginUpdater;
             _selfUpdater = selfUpdater;
-            _credentials = credentials;
             _runLog = runLog;
+            _outputWriter = outputWriter;
             _time = time;
         }
 
         public string Name => "update";
 
-        public string Description => "Update all apps and updaemon itself, or one app";
+        public string Description => "Update all apps and updaemon itself, or one app or extension";
 
-        public string Usage => "updaemon update [app]";
+        public string Usage => "updaemon update [app[/extension]]";
 
         public bool ChangesState(string[] args) => true;
 
@@ -70,13 +55,20 @@ namespace Updaemon.Commands
                 return _outputWriter.FailUnknownOption(unknown);
             }
 
-            IReadOnlyList<InstalledApp>? apps = await AppSelection.SelectAsync(this, parser.Positionals, _configManager, _outputWriter, cancellationToken);
-            if (apps == null)
+            IReadOnlyList<string> names;
+            switch (parser.Positionals)
             {
-                return 1;
+                case []:
+                    names = (await _configManager.GetAllAppsAsync(cancellationToken)).Select(app => app.Name).ToList();
+                    break;
+                case [string name]:
+                    names = new[] { name };
+                    break;
+                default:
+                    return _outputWriter.FailUsage(this);
             }
 
-            if (apps.Count == 0)
+            if (names.Count == 0)
             {
                 _outputWriter.WriteLine("No apps installed. Use 'updaemon install <app> --from <plugin>:<remote>' to install one.");
             }
@@ -84,13 +76,17 @@ namespace Updaemon.Commands
             UpdaemonConfig config = await _configManager.LoadConfigAsync(cancellationToken);
             UpdateFailures failures = new UpdateFailures(_outputWriter);
             bool fullRun = parser.Positionals is [];
+            IReadOnlyList<string> upToDate = Array.Empty<string>();
 
             try
             {
-                foreach (IGrouping<string, InstalledApp> pluginGroup in apps.GroupBy(app => app.Plugin))
+                IReadOnlyList<PreparedPackage>? selected = await PrepareAsync(names, failures, cancellationToken);
+                if (selected == null)
                 {
-                    await UpdateAppsForPluginAsync(pluginGroup.Key, pluginGroup.ToList(), config.ReleaseRetentionCount, failures, cancellationToken);
+                    return 1;
                 }
+
+                upToDate = await _appUpdater.RunAsync(selected, config.ReleaseRetentionCount, failures, cancellationToken);
 
                 // Last, so a run finishes on one version of the code. Updating one app leaves updaemon and its plugins alone.
                 if (fullRun)
@@ -105,16 +101,41 @@ namespace Updaemon.Commands
                 failures.Report("updaemon", ex.Message);
             }
 
-            await RecordAsync(fullRun, parser.HasFlag(TimerRun.Option) ?UpdateStarter.Timer : UpdateStarter.Person, apps, failures, cancellationToken);
+            await RecordAsync(fullRun, parser.HasFlag(TimerRun.Option) ? UpdateStarter.Timer : UpdateStarter.Person, upToDate, failures, cancellationToken);
             return failures.All.Count == 0 ? 0 : 1;
         }
 
+        /// <summary>All of them that can be changed; one that cannot is reported. Null when one is not installed, which is too.</summary>
+        private async Task<IReadOnlyList<PreparedPackage>?> PrepareAsync(IReadOnlyList<string> names, UpdateFailures failures, CancellationToken cancellationToken)
+        {
+            List<PreparedPackage> packages = new List<PreparedPackage>();
+            foreach (string name in names)
+            {
+                try
+                {
+                    PreparedPackage? package = await AppSelection.PrepareAsync(name, _configManager, _preparer, _outputWriter, cancellationToken);
+                    if (package == null)
+                    {
+                        return null;
+                    }
+
+                    packages.Add(package);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    failures.Report(name, ex.Message);
+                }
+            }
+
+            return packages;
+        }
+
         /// <summary>
-        /// Keeps a full run for 'status'. A run of named apps leaves the record alone, but clears the
-        /// failures of those it updated: they are fixed. A run that updated what it could is not failed
+        /// Keeps a full run for 'status'. A run of one app or extension leaves the record alone, but clears the
+        /// failures of what is now up to date: they are fixed. A run that updated what it could is not failed
         /// for want of its record.
         /// </summary>
-        private async Task RecordAsync(bool fullRun, UpdateStarter startedBy, IReadOnlyList<InstalledApp> apps, UpdateFailures failures, CancellationToken cancellationToken)
+        private async Task RecordAsync(bool fullRun, UpdateStarter startedBy, IReadOnlyList<string> upToDate, UpdateFailures failures, CancellationToken cancellationToken)
         {
             try
             {
@@ -122,202 +143,14 @@ namespace Updaemon.Commands
                 {
                     await _runLog.SaveAsync(new UpdateRun(_time.GetUtcNow(), startedBy, failures.All), cancellationToken);
                 }
-                else if (failures.All.Count == 0 && await _runLog.LoadAsync(cancellationToken) is UpdateRun last)
+                else
                 {
-                    UpdateRun cleared = last.WithoutFailuresOf(apps.Select(app => app.Name));
-                    if (cleared.Failures.Count < last.Failures.Count)
-                    {
-                        await _runLog.SaveAsync(cleared, cancellationToken);
-                    }
+                    await _runLog.ForgetFailuresAsync(upToDate, cancellationToken);
                 }
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 _outputWriter.WriteError($"Warning: this run could not be recorded for 'updaemon status': {ex.Message}");
-            }
-        }
-
-        private async Task UpdateAppsForPluginAsync(string pluginAlias, List<InstalledApp> apps, int retentionCount, UpdateFailures failures, CancellationToken cancellationToken)
-        {
-            string[] appNames = apps.Select(app => app.Name).ToArray();
-            InstalledPluginInfo pluginInfo;
-            try
-            {
-                pluginInfo = await _pluginProvider.GetOrInstallAsync(pluginAlias, cancellationToken);
-            }
-            catch (PluginException ex)
-            {
-                failures.Report(appNames, ex.Message);
-                return;
-            }
-
-            // The running plugin gets the secrets as stored; again after one is saved at the prompt, so
-            // the apps after that one use it too.
-            async Task InitializeAsync() =>
-                await _distributionClient.InitializeAsync(await _secretsManager.GetPluginSecretsFormattedAsync(pluginAlias, cancellationToken), cancellationToken);
-
-            try
-            {
-                await _distributionClient.ConnectAsync(pluginInfo.Path, cancellationToken);
-                await InitializeAsync();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                failures.Report(appNames, $"the plugin '{pluginAlias}' failed to start: {ex.Message}");
-                await DisposeClientAsync(pluginAlias);
-                return;
-            }
-
-            try
-            {
-                foreach (InstalledApp app in apps)
-                {
-                    try
-                    {
-                        await _credentials.RunAsync(
-                            pluginAlias,
-                            async () =>
-                            {
-                                await UpdateAppAsync(app, retentionCount, cancellationToken);
-                                return true;
-                            },
-                            handOverSavedSecret: InitializeAsync,
-                            cancellationToken);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        failures.Report(app.Name, ex.Message);
-                    }
-                }
-            }
-            finally
-            {
-                await DisposeClientAsync(pluginAlias);
-            }
-        }
-
-        private async Task UpdateAppAsync(InstalledApp app, int retentionCount, CancellationToken cancellationToken)
-        {
-            Version currentVersion = await _serviceDeployer.GetCurrentVersionAsync(app.Name, cancellationToken);
-            Version? latestVersion = await _distributionClient.GetLatestVersionAsync(app.Remote, cancellationToken);
-            if (latestVersion == null)
-            {
-                _outputWriter.WriteLine($"{app.Name}: no released version found for {app.Source}.");
-                return;
-            }
-
-            if (latestVersion <= currentVersion)
-            {
-                _outputWriter.WriteLine($"{app.Name} is up to date ({currentVersion}).");
-                return;
-            }
-
-            if (app.IsSkipped(latestVersion))
-            {
-                _outputWriter.WriteLine($"{app.Name}: {latestVersion} is skipped (it failed its health check or was rolled back from); {currentVersion} stays until a newer version is released.");
-                return;
-            }
-
-            DeployableVersion staged = await _serviceDeployer.StageAsync(app, latestVersion, _distributionClient, cancellationToken);
-
-            ReachableServiceManager reachable;
-            try
-            {
-                // Known only now: whether the new version has a service.
-                reachable = await _serviceDeployer.ReachServiceManagerAsync(app.Name, staged.Manifest, cancellationToken);
-                AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
-                values.EnsureComplete(staged.Manifest, latestVersion, currentVersion, $"updaemon update {app.Name}");
-
-                // A release can newly declare a setting secret; its value then moves out of the readable settings.
-                values.ConformTo(staged.Manifest);
-                if (staged.ManifestInDirectory)
-                {
-                    // The release ships its own manifest; one from the install flags is no longer used.
-                    app.Manifest = null;
-                }
-
-                await _settingsStore.SaveAsync(values, cancellationToken);
-                await _serviceDeployer.ActivateAsync(app, staged, reachable, cancellationToken);
-            }
-            catch
-            {
-                // A full disk or an unwritable directory included: the current version stays, and
-                // nothing of the new one is left.
-                _serviceDeployer.Discard(staged);
-                throw;
-            }
-
-            if (staged.Manifest.IsService)
-            {
-                if (app.AutoRestart)
-                {
-                    await RestartAndCheckAsync(app, latestVersion, currentVersion, reachable, cancellationToken);
-                }
-                else
-                {
-                    _outputWriter.WriteLine($"{app.Name}: restart skipped (restart=manual); the service runs {currentVersion} until it restarts.");
-                }
-            }
-
-            _outputWriter.WriteLine($"Updated {app.Name} from {currentVersion} to {latestVersion}.");
-
-            try
-            {
-                await _serviceDeployer.PruneOldVersionsAsync(app.Name, retentionCount, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _outputWriter.WriteError($"Warning: {app.Name}: failed to prune old versions: {ex.Message}");
-            }
-
-            if (app.ForgetSkipsOlderThan(latestVersion, _serviceDeployer.GetRetainedVersions(app.Name)))
-            {
-                await _configManager.SaveAppAsync(app, cancellationToken);
-            }
-        }
-
-        /// <summary>
-        /// Restarts the service on the new version and checks it stays up. If it does not, the previous
-        /// version runs again and the new one is skipped; the update then fails with that.
-        /// </summary>
-        private async Task RestartAndCheckAsync(InstalledApp app, Version newVersion, Version previousVersion, ReachableServiceManager reachable, CancellationToken cancellationToken)
-        {
-            if (await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken))
-            {
-                return;
-            }
-
-            string? skipNotRecorded;
-            bool previousStaysRunning;
-            try
-            {
-                skipNotRecorded = await _appRollback.FallBackAsync(app, newVersion, previousVersion, reachable, cancellationToken);
-                previousStaysRunning = await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                throw new InvalidOperationException(
-                    ServiceDeployer.NotRunning(app.Name, newVersion, $", and going back to {previousVersion} failed: {ex.Message.TrimEnd('.')}"));
-            }
-
-            string skip = skipNotRecorded == null
-                ? $"{newVersion} is skipped"
-                : $"{newVersion} could not be recorded as skipped ({skipNotRecorded.TrimEnd('.')}), so the next update tries it again";
-            string consequence = previousStaysRunning
-                ? $", so {previousVersion} runs again and {skip}"
-                : $"; {previousVersion} is current again but did not stay running either, and {skip}";
-            throw new InvalidOperationException(ServiceDeployer.NotRunning(app.Name, newVersion, consequence));
-        }
-
-        private async Task DisposeClientAsync(string pluginAlias)
-        {
-            try
-            {
-                await _distributionClient.DisposeAsync();
-            }
-            catch (Exception ex)
-            {
-                _outputWriter.WriteError($"Warning: failed to stop the plugin '{pluginAlias}': {ex.Message}");
             }
         }
 
@@ -327,14 +160,24 @@ namespace Updaemon.Commands
                 Update Command
 
                 Usage:
-                  updaemon update [app]
+                  updaemon update [app[/extension]]
 
                 Description:
                   Updates every installed app, or only the named one, to its latest release.
                   Each update reads the new release's updaemon.json and regenerates the app's
                   command and service unit from it. If the new release needs a setting the
-                  app has no value for, it is not activated: the current version keeps running
-                  and the message says which 'updaemon set' command to run.
+                  app has no value for, or no longer takes extensions while any is installed,
+                  it is not activated: the current version keeps running, its extensions are
+                  still updated and the message says what to run.
+
+                  An app's extensions are updated with it: everything new is downloaded
+                  first, the app is asked whether it would load each extension if it can
+                  tell, and what it accepts is switched with one restart. One it refuses
+                  stays at its version and is reported by every update until that is fixed
+                  or the extension is removed. If the app does not keep running, all that
+                  was switched goes back and is skipped. <app>/<extension> updates only that
+                  extension; a service disabled on Linux is not restarted for extensions
+                  alone.
 
                   When a plugin needs a secret, such as a githubToken for a private
                   repository, it is asked for at a terminal without echo and saved; under
@@ -347,6 +190,10 @@ namespace Updaemon.Commands
                   the new one is skipped. A skipped version, or one rolled back from, is not
                   offered again; update waits for a newer release.
 
+                  If the switch itself fails or is cancelled, everything goes back, nothing is
+                  skipped, and the next run tries again. If the run is killed, the next command
+                  that changes the app puts back what was there before.
+
                   Old version directories are pruned after each update; releaseRetentionCount
                   in config.json sets how many to keep (default 5).
 
@@ -358,11 +205,13 @@ namespace Updaemon.Commands
                   'updaemon status' shows the last run without an app named: when it
                   finished, what failed and why, and whether the update timer started it
                   (the timer runs 'updaemon {string.Join(' ', TimerRun.Arguments)}'). Updating one app does not
-                  replace that record; when it succeeds, it clears that app's failure from it.
+                  replace that record, but clears from it the failures of what it updated.
+                  So does removing an app or an extension.
 
                 Examples:
                   updaemon update
                   updaemon update byteshelf
+                  updaemon update byteshelf/images
                 """;
         }
     }

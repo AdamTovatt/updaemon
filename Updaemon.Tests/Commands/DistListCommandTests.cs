@@ -19,7 +19,7 @@ namespace Updaemon.Tests.Commands
                 MockOutputWriter output = new MockOutputWriter();
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
 
-                await new DistListCommand(configManager, output, client, AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
+                await new DistListCommand(configManager, output, () => client, AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
 
                 Assert.Empty(client.MethodCalls);
                 Assert.Contains("  Status: from updaemon 0.9.0's release; the next install or update replaces it with this version's build", output.Messages);
@@ -37,7 +37,7 @@ namespace Updaemon.Tests.Commands
                 await configManager.AddOrUpdatePluginAsync(PluginRecords.FromUrl("mine", tempHelper.CreateTempFile("plugins/mine/bin", "plugin")));
                 MockOutputWriter output = new MockOutputWriter();
 
-                await new DistListCommand(configManager, output, new MockDistributionServiceClient(), AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
+                await new DistListCommand(configManager, output, () => new MockDistributionServiceClient(), AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(
                     new[]
@@ -67,7 +67,7 @@ namespace Updaemon.Tests.Commands
                 });
                 MockOutputWriter output = new MockOutputWriter();
 
-                await new DistListCommand(configManager, output, new MockDistributionServiceClient(), AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
+                await new DistListCommand(configManager, output, () => new MockDistributionServiceClient(), AppHarness.RunningVersion).ExecuteAsync(Array.Empty<string>());
 
                 Assert.Contains(
                     "  Updates: not while self-update is off; now v2.1.0 of github:someone/updaemon-s3; " +
@@ -91,13 +91,15 @@ namespace Updaemon.Tests.Commands
                 MockOutputWriter output = new MockOutputWriter();
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
 
-                DistListCommand command = new DistListCommand(configManager, output, client, AppHarness.RunningVersion);
+                DistListCommand command = new DistListCommand(configManager, output, () => client, AppHarness.RunningVersion);
                 int exitCode = await command.ExecuteAsync(Array.Empty<string>());
                 Assert.Equal(0, exitCode);
 
                 // An alias is printed only after connecting to its plugin succeeds
                 Assert.Contains(output.Messages, line => line.Contains("Alias: github"));
                 Assert.Contains(output.Messages, line => line.Contains("Alias: byteshelf"));
+                // Stops each plugin.
+                Assert.Equal(2, client.MethodCalls.Count(call => call == nameof(MockDistributionServiceClient.DisposeAsync)));
             }
         }
 
@@ -111,7 +113,7 @@ namespace Updaemon.Tests.Commands
             MockOutputWriter output = new MockOutputWriter();
             MockDistributionServiceClient client = new MockDistributionServiceClient();
 
-            DistListCommand command = new DistListCommand(configManager, output, client, AppHarness.RunningVersion);
+            DistListCommand command = new DistListCommand(configManager, output, () => client, AppHarness.RunningVersion);
             int exitCode = await command.ExecuteAsync(Array.Empty<string>());
             Assert.Equal(0, exitCode);
 
@@ -136,7 +138,7 @@ namespace Updaemon.Tests.Commands
                 MockDistributionServiceClient client = new MockDistributionServiceClient();
                 client.ConnectAsyncThrowsForPluginPaths.Add(pluginPath);
 
-                DistListCommand command = new DistListCommand(configManager, output, client, AppHarness.RunningVersion);
+                DistListCommand command = new DistListCommand(configManager, output, () => client, AppHarness.RunningVersion);
                 int exitCode = await command.ExecuteAsync(Array.Empty<string>());
                 Assert.Equal(0, exitCode);
 

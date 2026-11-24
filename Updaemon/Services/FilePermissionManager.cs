@@ -45,11 +45,17 @@ namespace Updaemon.Services
             return Task.CompletedTask;
         }
 
-        public Task SetDirectoryPermissionsAsync(string directoryPath, CancellationToken cancellationToken = default)
+        public Task MakeTreeReadableAsync(string directoryPath, CancellationToken cancellationToken = default) =>
+            MakeReadable(directoryPath, ApplyAdditiveRead);
+
+        public Task MakeDirectoryEnterableAsync(string directoryPath, CancellationToken cancellationToken = default) =>
+            MakeReadable(directoryPath, ApplyOne);
+
+        private Task MakeReadable(string directoryPath, Action<string> apply)
         {
             try
             {
-                ApplyAdditiveRead(directoryPath);
+                apply(directoryPath);
             }
             catch (Exception ex)
             {

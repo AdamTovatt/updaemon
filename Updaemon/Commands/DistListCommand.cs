@@ -12,14 +12,14 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly IOutputWriter _outputWriter;
-        private readonly IDistributionServiceClient _distributionClient;
+        private readonly Func<IDistributionServiceClient> _createClient;
         private readonly UpdaemonVersion _updaemonVersion;
 
-        public DistListCommand(IConfigManager configManager, IOutputWriter outputWriter, IDistributionServiceClient distributionClient, UpdaemonVersion updaemonVersion)
+        public DistListCommand(IConfigManager configManager, IOutputWriter outputWriter, Func<IDistributionServiceClient> createClient, UpdaemonVersion updaemonVersion)
         {
             _configManager = configManager;
             _outputWriter = outputWriter;
-            _distributionClient = distributionClient;
+            _createClient = createClient;
             _updaemonVersion = updaemonVersion;
         }
 
@@ -64,8 +64,11 @@ namespace Updaemon.Commands
                     }
 
                     // Get metadata from plugin
-                    DistributionServiceInformation serviceInfo = await _distributionClient.ConnectAsync(plugin.Value.Path, cancellationToken);
-                    await _distributionClient.DisposeAsync();
+                    DistributionServiceInformation serviceInfo;
+                    await using (IDistributionServiceClient client = _createClient())
+                    {
+                        serviceInfo = await client.ConnectAsync(plugin.Value.Path, cancellationToken);
+                    }
 
                     _outputWriter.WriteLine($"  Alias: {plugin.Value.Alias}");
                     _outputWriter.WriteLine($"  Name: {serviceInfo.FullName}");

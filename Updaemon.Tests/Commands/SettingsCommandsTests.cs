@@ -70,7 +70,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await change(h);
 
                 Assert.Equal(1, exitCode);
-                Assert.Equal(new[] { "Error: byteshelf did not stay running after the restart. The change is kept; see 'updaemon logs byteshelf'." }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: byteshelf did not stay running after the restart. The change is kept. See 'updaemon logs byteshelf'." }, h.Output.Errors);
                 await assertKept(h);
             }
         }
@@ -244,6 +244,12 @@ namespace Updaemon.Tests.Commands
             { h => h.Set(), new[] { "byteshelf" }, "Usage: updaemon set" },
             { h => h.Set(), new[] { "missing", "A=1" }, "'missing' is not installed" },
             { h => h.Set(), new[] { "byteshelf", "A=1", "--bogus" }, "Unknown option '--bogus'" },
+            { h => h.Set(), new[] { "byteshelf", "UPDAEMON_DATA_DIR=/elsewhere" }, "UPDAEMON_DATA_DIR is set by updaemon." },
+            { h => h.Remove(), Array.Empty<string>(), "Usage: updaemon remove" },
+            { h => h.Remove(), new[] { "byteshelf", "--bogus" }, "Unknown option '--bogus'" },
+            { h => h.RollbackCommand(), new[] { "byteshelf", "not-a-version" }, "Usage: updaemon rollback" },
+            { h => h.RollbackCommand(), new[] { "byteshelf", "--bogus" }, "Unknown option '--bogus'" },
+            { h => h.Status(), new[] { "byteshelf", "other" }, "Usage: updaemon status" },
             { h => h.Unset(), new[] { "byteshelf" }, "Usage: updaemon unset" },
             { h => h.Unset(), new[] { "missing", "A" }, "'missing' is not installed" },
             { h => h.SetArgs(), new[] { "byteshelf", "serve" }, "Usage: updaemon set-args" },

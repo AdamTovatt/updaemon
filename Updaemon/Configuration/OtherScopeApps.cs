@@ -3,8 +3,8 @@ using Updaemon.Interfaces;
 namespace Updaemon.Configuration
 {
     /// <summary>
-    /// The apps of the scope this run is not in, read only so <c>install</c> can warn about an app
-    /// name both scopes would hold.
+    /// The apps of the scope this run is not in, only read: so <c>install</c> can warn about an app name both
+    /// scopes would hold, and say that an extension's host is in the other one.
     /// </summary>
     public sealed class OtherScopeApps
     {

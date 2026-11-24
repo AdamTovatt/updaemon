@@ -12,18 +12,18 @@ namespace Updaemon.Services
     {
         private readonly HttpClient _httpClient;
         private readonly IReleaseChecksums _checksums;
-        private readonly IDistributionServiceClient _distributionClient;
+        private readonly Func<IDistributionServiceClient> _createClient;
         private readonly IFilePermissionManager _filePermissionManager;
 
         public PluginDownloader(
             HttpClient httpClient,
             IReleaseChecksums checksums,
-            IDistributionServiceClient distributionClient,
+            Func<IDistributionServiceClient> createClient,
             IFilePermissionManager filePermissionManager)
         {
             _httpClient = httpClient;
             _checksums = checksums;
-            _distributionClient = distributionClient;
+            _createClient = createClient;
             _filePermissionManager = filePermissionManager;
         }
 
@@ -76,13 +76,9 @@ namespace Updaemon.Services
 
         private async Task<DistributionServiceInformation> ConnectAndGetInfoAsync(string pluginPath, CancellationToken cancellationToken)
         {
-            try
+            await using (IDistributionServiceClient client = _createClient())
             {
-                return await _distributionClient.ConnectAsync(pluginPath, cancellationToken);
-            }
-            finally
-            {
-                await _distributionClient.DisposeAsync();
+                return await client.ConnectAsync(pluginPath, cancellationToken);
             }
         }
     }

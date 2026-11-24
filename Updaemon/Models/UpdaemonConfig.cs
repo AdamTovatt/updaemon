@@ -5,7 +5,11 @@ namespace Updaemon.Models
     /// </summary>
     public class UpdaemonConfig
     {
-        /// <summary>The config format this updaemon reads and writes. 0.x configs have no format field.</summary>
+        /// <summary>
+        /// The config format this updaemon reads and writes. 0.x configs have no format field. A field that an
+        /// older updaemon would not know does not change it: self-update only goes forward, so an older one
+        /// does not come to save the file.
+        /// </summary>
         public const int CurrentFormat = 1;
 
         /// <summary>

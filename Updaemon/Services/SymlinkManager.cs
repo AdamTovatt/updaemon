@@ -10,17 +10,19 @@ namespace Updaemon.Services
     {
         /// <summary>
         /// Points <paramref name="linkPath"/> at <paramref name="targetPath"/> in one step: a new link is
-        /// made beside it and renamed over it, so the path never goes missing or points nowhere. A file
+        /// made in <paramref name="temporaryDirectory"/> (beside it when null) and renamed over it, so the
+        /// path never goes missing or points nowhere. A file
         /// at the path (an updaemon 0.x binary) is replaced the same way; a directory is refused.
         /// </summary>
-        public Task CreateOrUpdateSymlinkAsync(string linkPath, string targetPath, CancellationToken cancellationToken = default)
+        public Task CreateOrUpdateSymlinkAsync(string linkPath, string targetPath, string? temporaryDirectory = null, CancellationToken cancellationToken = default)
         {
             if (Directory.Exists(linkPath) && File.ResolveLinkTarget(linkPath, returnFinalTarget: false) == null)
             {
                 throw new InvalidOperationException($"Path '{linkPath}' is a directory, not a link.");
             }
 
-            string temporaryLink = $"{linkPath}.{Guid.NewGuid():N}.tmp";
+            string temporaryPath = temporaryDirectory == null ? linkPath : Path.Combine(temporaryDirectory, Path.GetFileName(linkPath));
+            string temporaryLink = $"{temporaryPath}.{Guid.NewGuid():N}.tmp";
             try
             {
                 File.CreateSymbolicLink(temporaryLink, targetPath);

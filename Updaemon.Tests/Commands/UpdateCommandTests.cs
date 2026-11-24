@@ -6,6 +6,7 @@ using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
 {
+    [Collection(RunsFreshScripts.Name)]
     public class UpdateCommandTests
     {
         private static readonly string RestartCall = MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf");
@@ -23,7 +24,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Contains(RestartCall, h.ServiceManager.MethodCalls);
                 Assert.Contains("Updated byteshelf from 1.0.0 to 1.1.0.", h.Output.Messages);
             }
@@ -63,7 +64,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(
                     new[] { "Error: byteshelf: 1.1.0 did not stay running, so 1.0.0 runs again and 1.1.0 is skipped. See 'updaemon logs byteshelf'." },
                     h.Output.Errors);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
                 // Two (re)starts: the new version, then the previous one after rolling back.
                 Assert.Equal(2, h.ServiceManager.MethodCalls.Count(call => call == RestartCall || call == StartCall));
@@ -115,7 +116,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallByteShelfPastACrashingReleaseAsync();
 
-                Assert.Equal(new Version(1, 2, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 2, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }
@@ -131,7 +132,7 @@ namespace Updaemon.Tests.Commands
 
                 await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                Assert.Equal(new Version(1, 2, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 2, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }
@@ -183,6 +184,18 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        private static async Task InstallFromAPluginThatIsGoneAsync(AppHarness h, params string[] names)
+        {
+            await h.AddPluginAsync("gone");
+            foreach (string name in names)
+            {
+                h.AddRelease(name, "1.0.0", """{ "executable": "bin/tool", "command": "NAME" }""".Replace("NAME", name), "bin/tool");
+                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { name, "--from", $"gone:{name}" }));
+            }
+
+            await h.Config.RemovePluginAsync("gone");
+        }
+
         [Theory]
         [InlineData(new string[0], UpdateStarter.Person)]
         [InlineData(new[] { "--timer" }, UpdateStarter.Timer)]
@@ -192,8 +205,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/byteshelf", "1.1.0", """{ "executablePath": "bin/byteshelf" }""");
-                await h.Config.SaveAppAsync(new InstalledApp { Name = "orphan", Plugin = "gone", Remote = "x/y" });
-                await h.Config.SaveAppAsync(new InstalledApp { Name = "stray", Plugin = "gone", Remote = "x/z" });
+                await InstallFromAPluginThatIsGoneAsync(h, "orphan", "stray");
                 await h.Config.AddOrUpdatePluginAsync(PluginRecords.FromGitHub("s3", "/plugins/s3/old", "someone", "updaemon-s3", "v1.0.0"));
                 h.GitHubPlugins.NextFailures.Enqueue(new HttpRequestException("rate limited"));
                 h.RunTheScopesOwnUpdaemon();
@@ -300,6 +312,28 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        /// <summary>What a killed run left of one app that cannot be ended concerns only that app.</summary>
+        [Fact]
+        public async Task Update_OneAppCannotBePutRight_UpdatesTheOthers()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                await h.InstallHostWithImagesAsync();
+                h.AddHostRelease("2.0.0");
+                h.ServiceManager.OnRestart = h.KeepForCutOff;
+                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
+                h.CutOff();
+                Directory.Delete(h.Versions.GetVersionDirectory(new AppName("shelf"), new Version(1, 0, 0)), recursive: true);
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+
+                Assert.Equal(1, await h.Update().ExecuteAsync(Array.Empty<string>()));
+
+                Assert.StartsWith("Error: shelf: putting back shelf 1.0.0 failed: ", Assert.Single(h.Output.Errors));
+                Assert.Contains("Updated byteshelf from 1.0.0 to 1.1.0.", h.Output.Messages);
+            }
+        }
+
         [Fact]
         public async Task Update_RunCannotBeRecorded_WarnsAndKeepsItsOutcome()
         {
@@ -401,7 +435,7 @@ namespace Updaemon.Tests.Commands
                 string error = Assert.Single(h.Output.Errors);
                 Assert.StartsWith("Error: byteshelf: ", error);
                 Assert.Contains("updaemon set byteshelf BYTESHELF_DEVICE=<value>", error);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.False(Directory.Exists(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "1.1.0")));
                 Assert.Empty(h.ServiceManager.MethodCalls);
             }
@@ -440,7 +474,7 @@ namespace Updaemon.Tests.Commands
 
                 await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.DoesNotContain(RestartCall, h.ServiceManager.MethodCalls);
                 Assert.DoesNotContain(StartCall, h.ServiceManager.MethodCalls);
             }
@@ -459,7 +493,7 @@ namespace Updaemon.Tests.Commands
                 await h.Update().ExecuteAsync(new[] { "tool" });
 
                 Assert.Null((await h.Config.GetAppAsync("tool"))!.Manifest);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("tool"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("tool")));
             }
         }
 
@@ -470,15 +504,14 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/byteshelf", "1.1.0", """{ "executablePath": "bin/byteshelf" }""");
-                InstalledApp orphan = new InstalledApp { Name = "orphan", Plugin = "gone", Remote = "x/y" };
-                await h.Config.SaveAppAsync(orphan);
+                await InstallFromAPluginThatIsGoneAsync(h, "orphan");
 
                 int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(1, exitCode);
                 Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: byteshelf: Invalid updaemon.json") && !e.Contains('\n'));
                 Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: orphan: the plugin 'gone' is not installed"));
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
             }
         }
 
@@ -526,7 +559,20 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(1, exitCode);
-                Assert.Contains("Error: byteshelf: Simulated restart failure", h.Output.Errors);
+                // Restarting what was put back fails the same way, so the next run tries that again.
+                Assert.Contains("Error: byteshelf: Simulated restart failure, and switching back failed: Simulated restart failure", h.Output.Errors);
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+                Assert.Empty(app.SkippedVersions);
+                Assert.True(app.Unfinished!.Restart);
+
+                h.ServiceManager.RestartFailure = null;
+                h.ServiceManager.MethodCalls.Clear();
+                Assert.Equal(0, await h.Update().ExecuteAsync(Array.Empty<string>()));
+                // Once on what was put back, once on the update tried again.
+                Assert.Equal(2, h.ServiceManager.MethodCalls.Count(call => call == MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf")));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
+                Assert.Null((await h.Config.GetAppAsync("byteshelf"))!.Unfinished);
             }
         }
 

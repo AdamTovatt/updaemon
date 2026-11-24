@@ -11,5 +11,14 @@ namespace Updaemon.IO
                 File.Delete(path);
             }
         }
+
+        /// <summary>Deletes the directory and everything in it, if it is there.</summary>
+        public static void DeleteDirectoryIfExists(string path)
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
     }
 }

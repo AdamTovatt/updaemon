@@ -7,7 +7,7 @@ namespace Updaemon.Tests.Services
 {
     public class AppWrapperTests
     {
-        public delegate string Renderer(string appName, string executablePath, string settingsFilePath, string secretsFilePath);
+        public delegate string Renderer(string appName, string executablePath, string settingsFilePath, string secretsFilePath, IReadOnlyDictionary<string, string> variables);
 
         public static TheoryData<Renderer> BothWrappers => new TheoryData<Renderer> { AppWrapper.ForCommand, AppWrapper.ForService };
 
@@ -81,7 +81,7 @@ namespace Updaemon.Tests.Services
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
             {
-                string wrapper = tempHelper.CreateTempFile("wrapper", AppWrapper.ForCommand("byteshelf", "/x", "/s", "/t"));
+                string wrapper = tempHelper.CreateTempFile("wrapper", AppWrapper.ForCommand("byteshelf", "/x", "/s", "/t", new Dictionary<string, string>()));
                 string foreign = tempHelper.CreateTempFile("foreign", "#!/bin/sh\necho hi\n");
 
                 Assert.Equal("byteshelf", AppWrapper.ReadOwner(wrapper));
@@ -90,7 +90,19 @@ namespace Updaemon.Tests.Services
             }
         }
 
-        private static async Task<(string Wrapper, string Secrets)> CreateWrapperAsync(TempFileHelper tempHelper, Renderer render)
+        [Theory]
+        [MemberData(nameof(BothWrappers))]
+        public async Task Wrapper_OwnVariable_WinsOverAStoredSettingAndSecret(Renderer render)
+        {
+            using (TempFileHelper tempHelper = new TempFileHelper())
+            {
+                (string wrapper, _) = await CreateWrapperAsync(tempHelper, render, new Dictionary<string, string> { ["URL"] = "/it's here", ["TOKEN"] = "$HOME" });
+
+                Assert.Equal("URL=/it's here\nTOKEN=$HOME\n", await Shell.RunAsync(wrapper));
+            }
+        }
+
+        private static async Task<(string Wrapper, string Secrets)> CreateWrapperAsync(TempFileHelper tempHelper, Renderer render, Dictionary<string, string>? variables = null)
         {
             string executable = tempHelper.CreateTempFile("app dir/app", Shell.PrintEnvironmentScript("URL", "TOKEN"));
             File.SetUnixFileMode(executable, AtomicFile.Executable);
@@ -99,7 +111,7 @@ namespace Updaemon.Tests.Services
             await EnvFile.WriteAsync(settings, new Dictionary<string, string> { ["URL"] = "https://x" }, AtomicFile.Readable);
             await EnvFile.WriteAsync(secrets, new Dictionary<string, string> { ["TOKEN"] = "s3cret" }, AtomicFile.OwnerOnly);
 
-            string wrapper = tempHelper.CreateTempFile("bin/app", render("app", executable, settings, secrets));
+            string wrapper = tempHelper.CreateTempFile("bin/app", render("app", executable, settings, secrets, variables ?? new Dictionary<string, string>()));
             return (wrapper, secrets);
         }
     }

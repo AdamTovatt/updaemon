@@ -101,7 +101,7 @@ namespace Updaemon.Services
             try
             {
                 Directory.CreateDirectory(_scope.BinDirectory);
-                await _symlinkManager.CreateOrUpdateSymlinkAsync(_scope.UpdaemonCommandPath, binary, cancellationToken);
+                await _symlinkManager.CreateOrUpdateSymlinkAsync(_scope.UpdaemonCommandPath, binary, cancellationToken: cancellationToken);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
@@ -173,21 +173,17 @@ namespace Updaemon.Services
 
             File.SetUnixFileMode(file, AtomicFile.Executable);
             ProcessRunner.Result smoke;
-            using (CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            try
             {
-                timeout.CancelAfter(SmokeRunTimeout);
-                try
-                {
-                    smoke = await ProcessRunner.RunAsync(file, new[] { "--version" }, timeout.Token);
-                }
-                catch (Win32Exception ex)
-                {
-                    return $"it does not run: {ex.Message.TrimEnd('.')}";
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    return $"'updaemon --version' did not finish within {SmokeRunTimeout.TotalSeconds} seconds";
-                }
+                smoke = await ProcessRunner.RunAsync(new ProcessInvocation(file, new[] { "--version" }) { Timeout = SmokeRunTimeout }, cancellationToken);
+            }
+            catch (Win32Exception ex)
+            {
+                return $"it does not run: {ex.Message.TrimEnd('.')}";
+            }
+            catch (TimeoutException)
+            {
+                return $"'updaemon --version' did not finish within {SmokeRunTimeout.TotalSeconds} seconds";
             }
 
             string printed = smoke.StdOut.Trim();

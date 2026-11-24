@@ -30,6 +30,9 @@ namespace Updaemon.Models
         // A setter, not init: the source-generated deserializer assigns every init property, null for absent ones.
         public Dictionary<string, SettingSpec> Settings { get; set; } = new Dictionary<string, SettingSpec>();
 
+        /// <summary>Present means the app loads extensions, which updaemon installs into it.</summary>
+        public ExtensionsSpec? Extensions { get; init; }
+
         [JsonIgnore]
         public bool IsCommand => Command != null;
 
@@ -44,6 +47,12 @@ namespace Updaemon.Models
             (true, false) => "command",
             _ => "service",
         };
+
+        /// <summary>Whether updaemon itself sets the variable <paramref name="key"/>, so no value can be stored for it.</summary>
+        public bool IsSetByUpdaemon(string key) => key == DataDirectoryVariable || key == Extensions?.Variable;
+
+        /// <summary>Why no value can be stored for it.</summary>
+        public static string SetByUpdaemonMessage(string key) => $"{key} is set by updaemon.";
 
         public bool IsSecret(string key) => Settings.TryGetValue(key, out SettingSpec? spec) && spec.Secret;
 
@@ -97,6 +106,11 @@ namespace Updaemon.Models
             if (manifest.Service != null)
             {
                 manifest.Service.Args ??= new List<string>();
+            }
+
+            if (manifest.Extensions != null)
+            {
+                manifest.Extensions.Known ??= new Dictionary<string, string>();
             }
 
             manifest.Validate();
@@ -163,6 +177,11 @@ namespace Updaemon.Models
                 throw new ManifestException($"'command' must be a plain file name (letters, digits, '.', '_', '-'), got '{Command}'.");
             }
 
+            if (Extensions != null)
+            {
+                ValidateExtensions(Extensions);
+            }
+
             foreach (KeyValuePair<string, SettingSpec> setting in Settings)
             {
                 if (!IsValidSettingKey(setting.Key))
@@ -170,14 +189,50 @@ namespace Updaemon.Models
                     throw new ManifestException($"setting '{setting.Key}' is not a valid environment variable name.");
                 }
 
-                if (setting.Key == DataDirectoryVariable)
+                if (IsSetByUpdaemon(setting.Key))
                 {
-                    throw new ManifestException($"setting '{DataDirectoryVariable}' is reserved; updaemon sets it.");
+                    throw new ManifestException($"setting '{setting.Key}' is reserved; updaemon sets it.");
                 }
 
                 if (setting.Value.Default != null && !SafeText.IsSafe(setting.Value.Default))
                 {
                     throw new ManifestException($"the default of '{setting.Key}' contains a control character, such as a line break.");
+                }
+            }
+        }
+
+        private static void ValidateExtensions(ExtensionsSpec extensions)
+        {
+            if (string.IsNullOrEmpty(extensions.Variable))
+            {
+                throw new ManifestException("'extensions.variable' is missing.");
+            }
+
+            if (!IsValidSettingKey(extensions.Variable))
+            {
+                throw new ManifestException($"'extensions.variable' must be an environment variable name, got '{extensions.Variable}'.");
+            }
+
+            if (extensions.Variable == DataDirectoryVariable)
+            {
+                throw new ManifestException($"'extensions.variable' cannot be {DataDirectoryVariable}; updaemon sets it.");
+            }
+
+            if (extensions.Check?.All(argument => argument != null && SafeText.IsSafe(argument)) == false)
+            {
+                throw new ManifestException("'extensions.check' contains a null or a control character, such as a line break.");
+            }
+
+            foreach (KeyValuePair<string, string> known in extensions.Known)
+            {
+                if (!IsValidAppName(known.Key))
+                {
+                    throw new ManifestException($"'extensions.known' has '{known.Key}', which is not a valid extension id (letters, digits, '.', '_', '-').");
+                }
+
+                if (known.Value == null || PackageSource.TryParse(known.Value) == null)
+                {
+                    throw new ManifestException($"the source of '{known.Key}' in 'extensions.known' must be <plugin>:<remote>, got '{known.Value}'.");
                 }
             }
         }
@@ -204,6 +259,24 @@ namespace Updaemon.Models
 
         [JsonIgnore]
         public TimeSpan HealthCheck => TimeSpan.FromSeconds(HealthCheckSeconds);
+    }
+
+    /// <summary>How the app loads extensions: folders of files updaemon installs for it.</summary>
+    public sealed class ExtensionsSpec
+    {
+        /// <summary>The environment variable that carries the folder of extensions.</summary>
+        // Validated, not 'required', so leaving it out is reported as every other invalid field is.
+        public string? Variable { get; set; }
+
+        /// <summary>
+        /// Arguments to the executable, followed by an extension's folder, that make it say whether it would
+        /// load that extension. Null means it accepts every extension.
+        /// </summary>
+        public List<string>? Check { get; set; }
+
+        /// <summary>Where extensions the app knows of come from, as <c>&lt;plugin&gt;:&lt;remote&gt;</c>, by id.</summary>
+        // A setter, not init: see AppManifest.Settings.
+        public Dictionary<string, string> Known { get; set; } = new Dictionary<string, string>();
     }
 
     public sealed class SettingSpec

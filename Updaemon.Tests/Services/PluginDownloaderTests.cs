@@ -53,7 +53,7 @@ namespace Updaemon.Tests.Services
         private static PluginDownloader Downloader(OnePlugin server, IReleaseChecksums? checksums = null, MockDistributionServiceClient? client = null, MockFilePermissionManager? permissions = null)
         {
             HttpClient httpClient = new HttpClient(server);
-            return new PluginDownloader(httpClient, checksums ?? new ReleaseChecksums(httpClient), client ?? new MockDistributionServiceClient(), permissions ?? new MockFilePermissionManager());
+            return new PluginDownloader(httpClient, checksums ?? new ReleaseChecksums(httpClient), () => client ?? new MockDistributionServiceClient(), permissions ?? new MockFilePermissionManager());
         }
 
         [Fact]
@@ -109,6 +109,8 @@ namespace Updaemon.Tests.Services
                     Assert.Equal("application/octet-stream", request.Headers.Accept.ToString());
                 });
                 Assert.NotEmpty(client.MethodCalls);
+                // Stops the plugin.
+                Assert.True(client.IsDisposed);
             }
         }
 

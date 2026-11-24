@@ -10,7 +10,10 @@ namespace Updaemon.Interfaces
         /// </summary>
         /// <param name="linkPath">The path where the symlink should be created.</param>
         /// <param name="targetPath">The path the symlink should point to.</param>
-        Task CreateOrUpdateSymlinkAsync(string linkPath, string targetPath, CancellationToken cancellationToken = default);
+        /// <param name="temporaryDirectory">
+        /// Where the new link is made before it replaces the old one, on the same filesystem; null for beside it.
+        /// </param>
+        Task CreateOrUpdateSymlinkAsync(string linkPath, string targetPath, string? temporaryDirectory = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Reads the target path of a symbolic link.

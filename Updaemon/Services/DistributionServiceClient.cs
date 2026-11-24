@@ -14,14 +14,8 @@ using Updaemon.Models;
 namespace Updaemon.Services
 {
     /// <summary>
-    /// Client for communicating with distribution service plugins via named pipes.
+    /// Client for communicating with one run of a distribution service plugin via named pipes.
     /// </summary>
-    /// <remarks>
-    /// Reuse contract: a single instance can be driven through multiple
-    /// Connect/...DisposeAsync cycles. Each ConnectAsync resets internal state
-    /// so the same instance can host a new plugin process. After DisposeAsync,
-    /// calling ConnectAsync again is supported and revives the client.
-    /// </remarks>
     public class DistributionServiceClient : IDistributionServiceClient
     {
         private readonly string _runtimeIdentifier;
@@ -43,9 +37,10 @@ namespace Updaemon.Services
                 throw new FileNotFoundException($"Plugin executable not found: {pluginExecutablePath}");
             }
 
-            await CleanupExistingConnectionAsync();
-
-            _disposed = false;
+            if (_pluginProcess != null || _disposed)
+            {
+                throw new InvalidOperationException("A client connects once.");
+            }
 
             // Keep the pipe name short. .NET hosts named pipes on Unix as a domain socket
             // at <TMPDIR>/CoreFxPipe_<name>, and macOS limits sun_path to 104 chars total.
@@ -109,7 +104,7 @@ namespace Updaemon.Services
             }
             catch
             {
-                await CleanupExistingConnectionAsync();
+                await CleanUpConnectionAsync();
                 throw;
             }
         }
@@ -170,7 +165,7 @@ namespace Updaemon.Services
             return string.IsNullOrEmpty(captured) ? "(no stderr output captured)" : captured;
         }
 
-        private async Task CleanupExistingConnectionAsync()
+        private async Task CleanUpConnectionAsync()
         {
             // Order matters: kill the process first so any pipe disposal failure
             // can't leave a child process orphaned. Then dispose the pipe in its
@@ -353,7 +348,7 @@ namespace Updaemon.Services
 
             _disposed = true;
 
-            await CleanupExistingConnectionAsync();
+            await CleanUpConnectionAsync();
         }
     }
 }

@@ -21,6 +21,22 @@ namespace Updaemon.Configuration
             return AtomicFile.WriteAsync(_scope.LastUpdateFilePath, json, AtomicFile.Readable, cancellationToken);
         }
 
+        /// <summary>Drops the failures of <paramref name="subjects"/> from the last run: they are fixed, or removed, since.</summary>
+        /// <exception cref="InvalidOperationException">The record exists but cannot be read.</exception>
+        public async Task ForgetFailuresAsync(IEnumerable<string> subjects, CancellationToken cancellationToken = default)
+        {
+            if (await LoadAsync(cancellationToken) is not UpdateRun last)
+            {
+                return;
+            }
+
+            UpdateRun cleared = last.WithoutFailuresOf(subjects);
+            if (cleared.Failures.Count < last.Failures.Count)
+            {
+                await SaveAsync(cleared, cancellationToken);
+            }
+        }
+
         /// <summary>The last run; null when none was recorded.</summary>
         /// <exception cref="InvalidOperationException">The record exists but cannot be read.</exception>
         public async Task<UpdateRun?> LoadAsync(CancellationToken cancellationToken = default)

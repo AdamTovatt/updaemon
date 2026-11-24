@@ -1,15 +1,17 @@
 using Updaemon.Configuration;
 using Updaemon.Interfaces;
 using Updaemon.Models;
+using Updaemon.Services;
 
 namespace Updaemon.Commands
 {
     /// <summary>
-    /// Handles the 'status' command: updaemon itself, then one line per app.
+    /// Handles the 'status' command: updaemon itself, then one line per app and extension.
     /// </summary>
     public class StatusCommand : ICommand
     {
         private readonly IConfigManager _configManager;
+        private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
         private readonly IServiceManager _serviceManager;
         private readonly ITimerManager _timerManager;
@@ -21,6 +23,7 @@ namespace Updaemon.Commands
 
         public StatusCommand(
             IConfigManager configManager,
+            VersionStore versions,
             IServiceDeployer serviceDeployer,
             IServiceManager serviceManager,
             ITimerManager timerManager,
@@ -31,6 +34,7 @@ namespace Updaemon.Commands
             TimeProvider time)
         {
             _configManager = configManager;
+            _versions = versions;
             _serviceDeployer = serviceDeployer;
             _serviceManager = serviceManager;
             _timerManager = timerManager;
@@ -45,7 +49,7 @@ namespace Updaemon.Commands
 
         public string Description => "Show installed apps and updaemon's own state";
 
-        public string Usage => "updaemon status [app]";
+        public string Usage => "updaemon status [app[/extension]]";
 
         public bool ChangesState(string[] args) => false;
 
@@ -57,8 +61,8 @@ namespace Updaemon.Commands
                 return _outputWriter.FailUnknownOption(unknown);
             }
 
-            IReadOnlyList<InstalledApp>? apps = await AppSelection.SelectAsync(this, parser.Positionals, _configManager, _outputWriter, cancellationToken);
-            if (apps == null)
+            IReadOnlyList<SelectedPackage>? packages = await AppSelection.SelectAsync(this, parser.Positionals, _configManager, _outputWriter, cancellationToken);
+            if (packages == null)
             {
                 return 1;
             }
@@ -77,16 +81,26 @@ namespace Updaemon.Commands
 
             _outputWriter.WriteLine(string.Empty);
 
-            if (apps.Count == 0)
+            if (packages.Count == 0)
             {
                 _outputWriter.WriteLine("No apps installed. Use 'updaemon install <app> --from <plugin>:<remote>' to install one.");
                 return 0;
             }
 
             List<string[]> rows = new List<string[]>();
-            foreach (InstalledApp app in apps.OrderBy(app => app.Name, StringComparer.Ordinal))
+            foreach (SelectedPackage package in packages.OrderBy(package => package.App.Name, StringComparer.Ordinal))
             {
-                rows.Add(await DescribeAsync(app, cancellationToken));
+                if (package.Extension != null)
+                {
+                    rows.Add(await DescribeAsync(package.Name, package.Extension, cancellationToken));
+                    continue;
+                }
+
+                rows.Add(await DescribeAsync(package.App, cancellationToken));
+                foreach (InstalledExtension extension in package.App.Extensions.OrderBy(extension => extension.Id, StringComparer.Ordinal))
+                {
+                    rows.Add(await DescribeAsync(package.App.NameOf(extension), extension, cancellationToken));
+                }
             }
 
             int[] widths = Enumerable.Range(0, rows[0].Length).Select(column => rows.Max(row => row[column].Length)).ToArray();
@@ -104,19 +118,21 @@ namespace Updaemon.Commands
                 Status Command
 
                 Usage:
-                  updaemon status [app]
+                  updaemon status [app[/extension]]
 
                 Description:
                   Shows updaemon's version, its scope (system-wide or this user's), the
                   update timer and the last update run without an app named (when, whether
                   the timer or a person started it, and what failed), then for each app: its
                   version, what it is, whether its service runs, where it comes from, and any
-                  version update skips. On Linux, for your own services, it warns when
-                  lingering is off, since they then stop when you log out.
+                  version update skips. An app's extensions are listed under it. On Linux,
+                  for your own services, it warns when lingering is off, since they then stop
+                  when you log out.
 
                 Examples:
                   updaemon status
                   updaemon status byteshelf
+                  updaemon status byteshelf/images
                 """;
         }
 
@@ -183,16 +199,6 @@ namespace Updaemon.Commands
         /// <summary>Name, version, kind, run state, source and skipped versions. One app's broken state does not stop the others.</summary>
         private async Task<string[]> DescribeAsync(InstalledApp app, CancellationToken cancellationToken)
         {
-            string version;
-            try
-            {
-                version = (await _serviceDeployer.GetCurrentVersionAsync(app.Name, cancellationToken)).ToString();
-            }
-            catch (InvalidOperationException)
-            {
-                version = "no version";
-            }
-
             AppManifest? manifest;
             try
             {
@@ -205,8 +211,17 @@ namespace Updaemon.Commands
 
             string state = _serviceDeployer.HasService(app.Name) ? await DescribeStateAsync(app.Name, cancellationToken) : "-";
 
-            string skipped = app.SkippedVersions.Count > 0 ? $"skips {string.Join(", ", app.SkippedVersions)}" : string.Empty;
-            return new[] { app.Name, version, manifest?.KindLabel ?? "?", state, app.Source, skipped };
+            return await DescribeAsync(app.PackageName, app, manifest?.KindLabel ?? "?", state, cancellationToken);
+        }
+
+        private Task<string[]> DescribeAsync(PackageName name, InstalledExtension extension, CancellationToken cancellationToken) =>
+            DescribeAsync(name, extension, "extension", "-", cancellationToken);
+
+        private async Task<string[]> DescribeAsync(PackageName name, InstalledPackage package, string kind, string state, CancellationToken cancellationToken)
+        {
+            string version = (await _versions.FindCurrentAsync(name, cancellationToken))?.ToString() ?? "no version";
+            string skipped = package.SkippedVersions.Count > 0 ? $"skips {string.Join(", ", package.SkippedVersions)}" : string.Empty;
+            return new[] { name.ToString(), version, kind, state, package.Source.ToString(), skipped };
         }
 
         private async Task<string> DescribeStateAsync(string appName, CancellationToken cancellationToken)

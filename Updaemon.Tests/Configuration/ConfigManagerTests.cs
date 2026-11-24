@@ -23,9 +23,17 @@ namespace Updaemon.Tests.Configuration
         [Theory]
         [InlineData("{\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"version\":\"1.0.0\"}},\"services\":[{\"localName\":\"api\"}]}", "is from updaemon 0.x and not converted yet. Convert it with 'sudo updaemon migrate'.")]
         [InlineData("{\"format\":null}", "cannot be read: it is not an object with a whole-number 'format'.")]
-        [InlineData("[]", "cannot be read: it is not an object with a whole-number 'format'.")]        [InlineData("{\"format\":2,\"apps\":[]}", "has format 2")]
+        [InlineData("[]", "cannot be read: it is not an object with a whole-number 'format'.")]
+        [InlineData("{\"format\":2,\"apps\":[]}", "has format 2")]
         [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\"}}}}", "config.json cannot be read: ")]
         [InlineData("{\"format\":1,\"installedPlugins\":{\"github\":{\"alias\":\"github\",\"path\":\"/p\",\"source\":{\"kind\":\"registry\",\"name\":\"github\",\"release\":\"1.3\"}}}}", "cannot be read: '1.3' is not an updaemon release version (x.y.z).")]
+        [InlineData("{\"format\":1,\"apps\":[{\"name\":\"shelf\",\"extensions\":[{\"plugin\":\"github\"}]}]}", "'id'")]
+        [InlineData("{\"format\":1,\"apps\":[{\"name\":\"shelf\",\"unfinished\":{\"kind\":\"putBack\"}}]}", "'extensions'")]
+        [InlineData("{\"format\":1,\"apps\":[{\"name\":\"shelf\",\"unfinished\":{\"kind\":\"putBack\",\"extensions\":[{\"version\":\"1.0.0\"}]}}]}", "'id'")]
+        [InlineData("{\"format\":1,\"apps\":[{\"name\":\"shelf\",\"unfinished\":{\"kind\":\"putBack\",\"extensions\":[],\"app\":{\"newManifest\":{\"executable\":\"x\"}}}}]}", "'version'")]
+        [InlineData("{\"format\":1,\"apps\":[{\"name\":\"shelf\",\"unfinished\":{\"kind\":\"putBack\",\"extensions\":[],\"app\":{\"version\":\"1.0.0\"}}}]}", "'newManifest'")]
+        [InlineData("{\"format\":1,\"apps\":[{\"name\":\"shelf\",\"unfinished\":{\"kind\":\"putBack\",\"extensions\":[],\"app\":{\"version\":\"1.0.0\",\"newManifest\":{\"executable\":\"x\"},\"removedService\":{\"enabled\":true}}}}]}", "'running'")]
+        [InlineData("{\"format\":1,\"apps\":[{\"name\":\"shelf\",\"unfinished\":{\"kind\":\"putBack\",\"extensions\":[],\"app\":{\"version\":\"1.0.0\",\"newManifest\":{\"executable\":\"x\"},\"removedService\":{\"running\":true}}}}]}", "'enabled'")]
         public async Task LoadConfigAsync_OtherFormatOrUnreadable_FailsWithOneClearLine(string json, string expected)
         {
             using (TempFileHelper tempHelper = new TempFileHelper())
@@ -63,7 +71,7 @@ namespace Updaemon.Tests.Configuration
                 InstalledApp? loaded = await new ConfigManager(TestScope.Create(tempHelper.TempDirectory)).GetAppAsync("byteshelf");
 
                 Assert.NotNull(loaded);
-                Assert.Equal("github:AdamTovatt/byteshelf", loaded.Source);
+                Assert.Equal("github:AdamTovatt/byteshelf", loaded.Source.ToString());
                 Assert.Equal("byteshelf", loaded.Manifest!.Command);
                 Assert.Equal(new[] { "sync", "run" }, loaded.Manifest.Service!.Args);
                 Assert.Equal("https://shelf.example.com", loaded.Settings["BYTESHELF_URL"]);
