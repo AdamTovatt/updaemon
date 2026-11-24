@@ -53,6 +53,7 @@ Put `updaemon.json` at the release root. It says what the app is and how to run 
 | `command` | Optional. The app is a command, put on PATH under this name. |
 | `service` | Optional. The app is a service, run with `args` (default: none). `healthCheckSeconds` (1 to 300, default 10) is how long it must keep running after a start or restart. |
 | `settings` | Optional. Environment variables the app reads, by name. |
+| `extensions` | Optional. The app takes [extensions](#extensions). |
 
 At least one of `command` and `service` is required; an app can be both. Each setting can have:
 
@@ -69,14 +70,63 @@ The `executablePath` format of updaemon 0.x is not read any more: replace `execu
 
 ## What updaemon does with it
 
-- **Command**: puts a small script named after `command` on PATH. It loads the app's settings, then runs the executable with the arguments it was given, in the caller's working directory. It loads the secrets only for the user the app runs as: root for an app installed system-wide, unless it was installed with `--run-as <user>`.
-- **Service**: writes a systemd unit (Linux) or launchd plist (macOS) that starts the same kind of script with `service.args`. The script loads the app's settings and secrets with `/bin/sh`, then runs the executable; the service restarts if it stops. Its working directory is the release root, which is replaced on each update.
+- **Command**: puts a small script named after `command` on PATH. It loads the app's settings, sets the variables updaemon sets itself, then runs the executable with the arguments it was given, in the caller's working directory. It loads the secrets only for the user the app runs as: root for an app installed system-wide, unless it was installed with `--run-as <user>`.
+- **Service**: writes a systemd unit (Linux) or launchd plist (macOS) that starts the same kind of script with `service.args`. The script loads the app's settings and secrets with `/bin/sh`, sets the variables updaemon sets itself, then runs the executable; the service restarts if it stops. Its working directory is the release root, which is replaced on each update.
 - **Settings**: `updaemon install` asks for each required setting that has no value; `updaemon set` changes them later. Secrets are kept in a file only the user the app runs as can read.
 - **Data**: every app gets a directory that is kept across updates, passed in `UPDAEMON_DATA_DIR`. Store state there.
+- **Extensions**: an app that takes extensions gets the folder they are in, passed in the variable it declares.
 
-After an update restarts a service, it must keep running for `service.healthCheckSeconds` (10 seconds unless set). Give a service that takes longer to fail, or to settle, a longer window. If it does not keep running, updaemon runs the previous version again and skips the new one until a newer release appears. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`. So do `updaemon set`, `unset` and `set-args`, which restart the service whether or not it runs (on Linux, unless its unit was disabled): the change stays, and the command fails pointing to the logs.
+`UPDAEMON_DATA_DIR` and the variable for extensions are set last, so no setting takes their place, and neither can be declared in `settings`.
 
-Each update reads the new release's manifest, so a release can add settings or change its arguments. If it adds a required setting the app has no value for, the update waits: the current version keeps running and updaemon names the `updaemon set` command to run.
+After an update restarts a service, it must keep running for `service.healthCheckSeconds` (10 seconds unless set). Give a service that takes longer to fail, or to settle, a longer window. If it does not keep running, updaemon runs the previous version again and skips the new one until a newer release appears. Extensions switched with the app go back and are skipped with it: updaemon does not work out which one was to blame. If the switch itself fails or is cancelled, everything goes back and nothing is skipped. A first install runs the same check; with nothing to go back to, the app stays installed and `updaemon install` fails, pointing to `updaemon logs <app>`. So do `updaemon set`, `unset` and `set-args`, which restart the service whether or not it runs (on Linux, unless its unit was disabled): the change stays, and the command fails pointing to the logs.
+
+Each update reads the new release's manifest, so a release can add settings or change its arguments. If it adds a required setting the app has no value for, the update waits: the current version keeps running and updaemon names the `updaemon set` command to run. A release without `extensions` waits the same way while any extension is installed, and updaemon names the `updaemon remove` commands.
+
+## Extensions
+
+An extension is a folder of files that an installed app, its host, loads. Updaemon installs it as `<app>/<extension>`, such as `byteshelf/images`, and updates it together with the host. Code for a host's extensions arrives only through updaemon; a host does not install its own.
+
+### In the host's manifest
+
+```json
+"extensions": {
+  "variable": "BYTESHELF_PLUGINS",
+  "check": ["--check-plugin"],
+  "known": { "images": "github:owner/byteshelf/byteshelf-images.zip" }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `variable` | Required. The environment variable that carries the folder of extensions, for the service and the command. It is always set, and the folder can be empty. It cannot be in `settings` too, nor be `UPDAEMON_DATA_DIR`, and `updaemon set` and `unset` refuse it. A value stored for it before the host declared it is dropped when that version becomes current. |
+| `check` | Optional. Arguments to the host's executable that make it [say whether it would load an extension](#the-check). Without it, the host accepts every extension. |
+| `known` | Optional. Where extensions come from, as `<plugin>:<remote>` by id, so `updaemon install byteshelf/images` needs no `--from`. The id follows the rules of an app name, but ids that differ only in case are one. An installed extension keeps the source it was installed from. |
+
+Releases of updaemon without support for extensions ignore the field.
+
+### What a host must do
+
+- Load every folder directly under the path in the variable, following links.
+- Resolve the links once at startup, as they change under a running host.
+- Take nothing from the folder's name.
+- Skip an extension it cannot load and stay up.
+- Keep `check` free of effects and not need root or settings.
+
+### The check
+
+Updaemon runs the executable of the host version that would run, with the `check` arguments and then the extension's folder as the last one. Exit code 0 means the host would load the extension. Anything else, or no answer in 60 seconds, is a refusal, and what the check prints is the reason.
+
+- It runs as the user the host runs as, in that host version's folder. It gets no settings or secrets, no input, and no environment but a standard `PATH` and that user's `HOME`.
+- The folder's name carries no meaning: the check sees a version's folder, while at startup the folder is named after the extension. What the extension is must come from the files inside.
+- `install`, `update` and `rollback` of an extension run it on the version to switch to. `update` runs it on each extension, also when there is nothing to update, with the host version that will run. `rollback` of the host runs it on each extension, and goes ahead when one is refused.
+
+### Publishing an extension
+
+Publish an extension as an app is published: an asset per platform or one the remote names, and a `SHA256SUMS`. Its archive needs no `updaemon.json`, and one in it is ignored. Its files get the owner and permissions the host's own have: the user the host runs as only reads them.
+
+An extension in its host's own repository must not have an asset that ends in `-<rid>.zip`, `-<rid>.tar.gz` or `-<rid>`, as updaemon would then find several for the host. Name it otherwise, such as `byteshelf-images.zip`, and name it in the remote: `github:owner/byteshelf/byteshelf-images.zip`.
+
+An extension has no settings, data or service of its own. A value it reads from the environment can be set on the host with `updaemon set`, which takes keys the host does not declare.
 
 ## Releases without a manifest
 

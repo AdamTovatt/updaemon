@@ -37,7 +37,7 @@ namespace Updaemon.Common
         /// <param name="serviceName">The remote service name to download.</param>
         /// <param name="version">The version to download.</param>
         /// <param name="runtimeIdentifier">The runtime identifier of the machine updaemon runs on (e.g. "linux-arm64"), for picking the build that runs there.</param>
-        /// <param name="targetPath">The directory path where the version should be downloaded.</param>
+        /// <param name="targetPath">The directory path where the version should be downloaded. Take nothing from its name: it is renamed once the download is complete.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         /// <returns>Whether the download was verified against a checksum its release published.</returns>
         /// <remarks>

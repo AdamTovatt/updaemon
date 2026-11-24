@@ -106,6 +106,10 @@ When a call fails for want of a secret, throw `CredentialNeededException` with a
 
 The service information a plugin returns carries `ProtocolVersion`, the `PluginProtocol.Version` of the Updaemon.Common it was built against; plugins do not set it. Updaemon refuses a plugin whose protocol version differs from its own and tells the user to reinstall it. Rebuild your plugin against the matching Updaemon.Common when the protocol changes.
 
+## Plugin Lifetime
+
+Updaemon starts a plugin at the first call to it and keeps it running until it has no more calls for any plugin: for an `update`, until every app is updated. Several plugins can run at once, and one can be idle for minutes while apps restart and their health checks run, so do not rely on a connection or a token staying valid between calls. It is then killed, so leave nothing for the end.
+
 ## IDistributionService Interface
 
 ### GetServiceInformation()
@@ -114,7 +118,7 @@ Returns static metadata about the plugin (full name, default alias, version, des
 
 ### InitializeAsync(SecretCollection secrets, CancellationToken cancellationToken = default)
 
-Called once when updaemon connects to your plugin.
+Called after updaemon connects to your plugin, and again after a secret that a call needed is saved. Throw `CredentialNeededException` from it too when a secret is needed to start.
 
 **Parameters:**
 - `secrets` - Collection of secret key-value pairs. Use `GetValue(key)` for case-sensitive lookup or `GetValueIgnoreCase(key)` for case-insensitive lookup.
@@ -151,7 +155,7 @@ Download a specific version to the target directory.
 - `serviceName` - The remote service name
 - `version` - The specific version to download (e.g., `new Version(1, 2, 3)`)
 - `runtimeIdentifier` - The runtime identifier of the machine updaemon runs on (e.g., `linux-arm64`, `osx-arm64`), for picking the build that runs there. A source that holds one build per version can ignore it.
-- `targetPath` - The directory path where files should be downloaded (e.g., `/opt/my-app/1.2.3/`)
+- `targetPath` - The directory path where files should be downloaded (e.g., `/opt/my-app/1.2.3.partial`). Take nothing from its name: updaemon renames it once the download is complete
 - `cancellationToken` - Cancellation token to cancel the operation.
 
 **Returns:**
@@ -242,7 +246,7 @@ Communication between updaemon and your plugin uses JSON-RPC over named pipes. R
 `parameters` is itself JSON: a string for `GetLatestVersionAsync`, a key-value object of secrets for `InitializeAsync`, and for `DownloadVersionAsync` a `DownloadVersionParameters` object:
 
 ```json
-"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"
+"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3.partial\"}"
 ```
 
 Its result is a `DownloadResult` object: `"{\"verified\":true}"`.

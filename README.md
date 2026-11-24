@@ -19,19 +19,21 @@
 - **Updates on a schedule**: `updaemon timer 1h` checks for new releases every hour, of your apps and of updaemon itself.
 - **Health check and rollback**: a service that does not keep running after an update goes back to the previous version, and the failed version is skipped. `updaemon rollback` goes back by hand.
 - **Settings and secrets**: a release declares the settings it needs; updaemon asks for them and keeps secrets in a file only the user the app runs as can read.
+- **Extensions**: `updaemon install byteshelf/images` installs an extension of an app, such as a plugin the app loads. It is updated together with the app, with one restart.
 - **Any release source**: GitHub releases out of the box; distribution plugins add other sources.
 - **System-wide or per user**: run as root for system services, or as yourself for your own.
 - **One native binary**: nothing else to install.
 
 ## Publishing with Updaemon
 
-To make your releases installable, see [PublishingWithUpdaemon.md](PublishingWithUpdaemon.md). It describes `updaemon.json`, settings, and what updaemon does with them.
+To make your releases installable, see [PublishingWithUpdaemon.md](PublishingWithUpdaemon.md). It describes `updaemon.json`, settings, extensions, and what updaemon does with them.
 
 ## Table of Contents
 
 **Getting Started:**
 - [Installing Updaemon](#installation)
 - [Installing an app](#installing-an-app)
+- [Installing an extension](#installing-an-extension)
 - [System-wide or per user](#system-wide-or-per-user)
 - [Upgrading from 0.x](#upgrading-from-0x)
 
@@ -86,6 +88,14 @@ sudo updaemon secret-set github githubToken
 
 A used-up rate limit is only reported, with when it resets. The `github` plugin's token also serves `dist-install github:<owner>/<repo>`, so plugins can come from private repositories too.
 
+### Installing an extension
+
+```bash
+sudo updaemon install byteshelf/images
+```
+
+An extension is a folder of files that an installed app, its host, loads. It is named `<app>/<extension>` and belongs to its host: it is in the host's scope, is updated with it and is removed with it. Its host often knows where it comes from; otherwise `--from` says so, as for an app, and the two can come from different plugins. Before an extension is installed or switched to another version, updaemon asks the host whether it would load it, if the host can tell. How an app takes extensions is in [Publishing with Updaemon](PublishingWithUpdaemon.md#extensions).
+
 ### System-wide or per user
 
 Who runs updaemon decides which apps it manages. As root, it manages system-wide apps. As anyone else, it manages that user's own apps, kept apart from the system's and from other users'. Every command works the same either way. Each command that changes something first names the scope and how to get the other one, for example "For user adam only (run with sudo for the whole machine)." `install` also warns when the other scope already has an app of the same name.
@@ -102,7 +112,7 @@ On Linux, `$XDG_DATA_HOME` and `$XDG_CONFIG_HOME` move the user paths when set.
 
 A system-wide service runs as root unless installed with `--run-as <user>`. A user's services run as that user. On Linux they run only while the user is logged in, unless lingering is on for that user (`sudo loginctl enable-linger <user>`). updaemon does not turn it on for you, but `install` of a service and `status` warn while it is off.
 
-A user's services and update timer need that user's service manager. On Linux, systemd's user manager runs while the user is logged in, and always once lingering is on; updaemon finds it from a `su` or `sudo -u` shell too. On macOS, the user's launchd session exists only while the user is logged in to the Mac's desktop. Without it, `timer`, and `install`, `set`, `unset`, `set-args`, `remove` and `rollback` of an app with a service, change nothing and say how to fix it. `update` fails only the apps with a service and updates the others. `install.sh` still installs updaemon, and says to turn the timer on once that is fixed. Apps without a service never need it.
+A user's services and update timer need that user's service manager. On Linux, systemd's user manager runs while the user is logged in, and always once lingering is on; updaemon finds it from a `su` or `sudo -u` shell too. On macOS, the user's launchd session exists only while the user is logged in to the Mac's desktop. Without it, `timer`, and `install`, `set`, `unset`, `set-args`, `remove` and `rollback` of an app with a service or of an extension of one, change nothing and say how to fix it. `update` fails only the apps with a service, with their extensions, and updates the others. `install.sh` still installs updaemon, and says to turn the timer on once that is fixed. Apps without a service never need it.
 
 The macOS update timer logs to `updaemon.log` in the service log directory above.
 
@@ -122,19 +132,19 @@ An app is left out, and keeps running as before, when its unit was edited by han
 
 ## CLI Commands
 
-An argument in angle brackets (`< >`) is required; one in square brackets (`[ ]`) is optional. `[app]` means one app, or every app when left out. Use `sudo` for system-wide apps and leave it out for your own.
+An argument in angle brackets (`< >`) is required; one in square brackets (`[ ]`) is optional. `[app]` means one app, or every app when left out, and `<app>/<extension>` an extension of an app. `logs`, `set`, `unset`, `set-args` and `set-restart` work on apps only; given an extension, they name the command for its host. Use `sudo` for system-wide apps and leave it out for your own.
 
 | Command | Description |
 | --- | --- |
-| [install](#install) | Install an app from a distribution plugin. |
-| [update](#update) | Update every app and updaemon itself, or one app. |
-| [rollback](#rollback) | Go back to an earlier version of an app. |
-| [status](#status) | Show the apps, their versions and whether they run. |
+| [install](#install) | Install an app, or an extension of one, from a distribution plugin. |
+| [update](#update) | Update every app and updaemon itself, or one app or extension. |
+| [rollback](#rollback) | Go back to an earlier version of an app or extension. |
+| [status](#status) | Show the apps, their extensions, their versions and whether they run. |
 | [logs](#logs) | Show an app's service log. |
 | [set, unset](#set-and-unset) | Change an app's settings. |
 | [set-args](#set-args) | Change the arguments a service runs with. |
-| [set-restart](#set-restart) | Choose whether `update` restarts a service. |
-| [remove](#remove) | Remove an app. |
+| [set-restart](#set-restart) | Choose whether changes of version restart a service. |
+| [remove](#remove) | Remove an app or an extension. |
 | [timer](#timer) | Check for updates on a schedule. |
 | [self-update](#self-update) | Turn updaemon's own updates on or off. |
 | [dist-install](#dist-install) | Install a distribution plugin. |
@@ -147,6 +157,7 @@ An argument in angle brackets (`< >`) is required; one in square brackets (`[ ]`
 
 ```bash
 updaemon install <app> --from <plugin>:<remote> [--set KEY=VALUE]... [--command <name>] [--service] [--run-as <user>]
+updaemon install <app>/<extension> [--from <plugin>:<remote>]
 ```
 
 Downloads the latest release, reads its `updaemon.json`, asks for each required setting without a value, writes the app's command and service, and starts the service. `<app>` is the local name: the app's directory, service and data directory are named after it.
@@ -155,48 +166,57 @@ A service must keep running for its health-check window after it starts: 10 seco
 
 A release that publishes a `SHA256SUMS` must match it, or nothing is installed; one without a line for the download fails before anything is downloaded. A download its plugin could not check against a published checksum is still installed, and `install` says it was not verified (see [Publishing with Updaemon](PublishingWithUpdaemon.md) for `SHA256SUMS`).
 
+For `<app>/<extension>`, downloads the extension's latest release, asks the app whether it would load it and restarts the app. Without `--from`, it comes from where the app's `updaemon.json` knows it to; that source is stored, so a later release that knows another does not move it. If the app refuses the extension, or does not keep running with it, the extension is not installed, and the command fails with the reason. An app that is not a service, is set to manual restart or whose service is disabled is not restarted. The options that say what an app is, its settings and who runs it are refused: an extension runs in its app. A value it reads from the environment can be set on the app with `updaemon set`.
+
 ```bash
 sudo updaemon install byteshelf --from github:owner/byteshelf --set BYTESHELF_URL=https://shelf.example
 updaemon install mytool --from github:me/mytool --command mytool
+sudo updaemon install byteshelf/images
 ```
 
 ### update
 
 ```bash
-updaemon update [app]
+updaemon update [app[/extension]]
 ```
 
-Installs each app's latest release, checked against its `SHA256SUMS` as `install` does. The new release's `updaemon.json` is read again, so a release can add settings or change its arguments. If it needs a setting the app has no value for, the current version keeps running and the message names the `updaemon set` command to run.
+Installs each app's latest release, checked against its `SHA256SUMS` as `install` does. The new release's `updaemon.json` is read again, so a release can add settings or change its arguments. If it needs a setting the app has no value for, the current version keeps running and the message names the `updaemon set` command to run. So it does when the new release takes no extensions while any is installed; the message then names the `updaemon remove` commands.
 
-A restarted service must keep running for its health-check window, as after `install`. If it does not, the previous version runs again, `update` fails pointing to `updaemon logs <app>`, and the new version is skipped: later updates pass over it until a newer release appears. `updaemon status` lists skipped versions.
+An app and its extensions are updated together, whichever plugins they come from: everything is downloaded first, then the app's version that will run is asked about each extension, then what it accepts is switched to, with one restart. One that cannot be downloaded or is refused stays at its version and is tried again by the next run; the others and the app are still updated. When the app itself cannot be updated, its current version is asked instead. Every run asks about the extensions' versions that will run, so one the app does not load fails each run, and shows in `status`, until that is fixed or it is removed. If the app takes the update and loads neither version of an extension, the extension stays installed and the app runs without it. `update <app>/<extension>` updates only that extension. For extensions alone, a disabled service is not restarted.
+
+A restarted service must keep running for its health-check window, as after `install`. If it does not, the previous versions of all that was switched, the app and its extensions, run again, `update` fails pointing to `updaemon logs <app>`, and the failed versions are skipped: later updates pass over them until newer releases appear. `updaemon status` lists skipped versions.
+
+If the switch itself fails, as when a command name is taken or the service cannot be restarted, or is cancelled with Ctrl+C, everything goes back too, but nothing is skipped: the next run tries again. See also [When a command is cut off](#when-a-command-is-cut-off).
 
 After an update, old versions are deleted down to `releaseRetentionCount` in `config.json` (5 by default). The current version is always kept.
 
 Without an app named, and while self-update is on, `update` ends by updating GitHub plugins and updaemon itself; see [self-update](#self-update).
 
-A full disk or an unwritable directory fails the app in question: its current version stays, nothing of the new one is left, and the error names the path that could not be written.
+A full disk or an unwritable directory fails the app or extension in question: its current version stays, nothing of the new one is left, and the error names the path that could not be written.
 
-`status` shows the last run without an app named: when it finished, whether the timer started it, and what failed and why. Each such run replaces that record. Updating one app leaves it as it is, except that a successful update clears that app's failure from it.
+`status` shows the last run without an app named: when it finished, whether the timer started it, and what failed and why. Each such run replaces that record. Updating one app or extension leaves it as it is, except that it clears the failures of what did not fail. Removing an app or extension clears its failures too.
 
 ### rollback
 
 ```bash
-updaemon rollback <app> [version]
+updaemon rollback <app>[/<extension>] [version]
 ```
 
-Makes an earlier kept version current again: the newest one older than the current version that is not skipped, or the version named. It rebuilds the app's command and service from that version's `updaemon.json`, checks it has every setting it needs, and restarts the service. The version rolled back from is skipped, so `update` does not install it again.
+Makes an earlier kept version current again: the newest one older than the current version that is not skipped, or the version named. It rebuilds the app's command and service from that version's `updaemon.json`, checks it has every setting it needs, and restarts the service. A version that takes no extensions is refused while any is installed. The version rolled back from is skipped, so `update` does not install it again.
 
 Naming a newer kept version switches forward to it, for example to undo a rollback.
+
+Rolling back an app leaves its extensions at their versions. The version rolled back to is asked about each; one it refuses is named, and that version runs without it. An extension is rolled back only to a version the app accepts. The app is then restarted, unless it is not a service, is set to manual restart or its service is disabled.
 
 If `config.json` cannot be saved, on a full disk say, the rollback is switched back and fails naming the file, so nothing changes.
 
 ### status
 
 ```bash
-updaemon status [app]
+updaemon status [app[/extension]]
 ```
 
-Shows updaemon's version, its scope, the update timer, whether self-update is on and the last update run (for example `Last update: 2h ago by the timer, 1 failed (byteshelf: ...)`, or `never`), then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions. On Linux, in a user's own scope with at least one service, it also warns while lingering is off, since the services then stop at logout.
+Shows updaemon's version, its scope, the update timer, whether self-update is on and the last update run (for example `Last update: 2h ago by the timer, 1 failed (byteshelf: ...)`, or `never`), then one line per app: version, whether it is a command, a service or both, whether the service runs, where it comes from, and any skipped versions. An app's extensions are listed under it, each with its version, where it comes from and any skipped versions. `status` does not ask the app about them; the last update run did. On Linux, in a user's own scope with at least one service, it also warns while lingering is off, since the services then stop at logout.
 
 ### logs
 
@@ -213,7 +233,7 @@ updaemon set <app> KEY=VALUE... [--secret]
 updaemon unset <app> KEY...
 ```
 
-Changes the app's settings and restarts its service, also one that is stopped or crash-looping: on Linux unless its unit was disabled, on macOS always. The restarted service must keep running for its health-check window, as after an update; if it does not, the command fails pointing to `updaemon logs <app>`, and the change stays. A setting the app's `updaemon.json` declares secret is stored as a secret; `--secret` does the same for one it does not declare. A required setting cannot be unset.
+Changes the app's settings and restarts its service, also one that is stopped or crash-looping: on Linux unless its unit was disabled, on macOS always. The restarted service must keep running for its health-check window, as after an update; if it does not, the command fails pointing to `updaemon logs <app>`, and the change stays. A setting the app's `updaemon.json` declares secret is stored as a secret; `--secret` does the same for one it does not declare. A required setting cannot be unset. The variables updaemon sets itself, `UPDAEMON_DATA_DIR` and the one that tells an app where its extensions are, can be neither set nor unset. A value stored for such a variable before the app's `updaemon.json` declared it is dropped when a version that declares it becomes current.
 
 ### set-args
 
@@ -229,15 +249,18 @@ Sets the arguments the service runs with, in place of the ones in its `updaemon.
 updaemon set-restart <app> auto|manual
 ```
 
-With `manual`, `update` installs a new version but leaves the running service alone; it runs the new version when it next restarts. Useful for an app that applies updates on its own schedule. `auto`, the default, restarts it.
+With `manual`, `update` installs a new version but leaves the running service alone; it runs the new version when it next restarts. The same goes for installing, rolling back and removing an extension. Useful for an app that applies updates on its own schedule. `auto`, the default, restarts it. Rolling back the app itself restarts it either way.
 
 ### remove
 
 ```bash
 updaemon remove <app> [--purge]
+updaemon remove <app>/<extension>
 ```
 
-Stops and deletes the app's service, its command, all its versions, its settings and its secrets. Its data directory is kept unless `--purge` is given, which on macOS also deletes its log files.
+Stops and deletes the app's service, its command, all its versions, its extensions, its settings and its secrets, and names the extensions. Its data directory is kept unless `--purge` is given, which on macOS also deletes its log files.
+
+`<app>/<extension>` removes only that extension and restarts the app, unless it is not a service, is set to manual restart or its service is disabled. If the app then does not keep running, the removal stays and the command fails pointing to `updaemon logs <app>`. `--purge` is refused: an extension has no data.
 
 ### timer
 
@@ -301,6 +324,16 @@ updaemon migrate [--dry-run]
 
 Converts what is left of an updaemon 0.x setup (see [Upgrading from 0.x](#upgrading-from-0x)). With `--dry-run`, only shows what it would do.
 
+### When a command is cut off
+
+Before it switches an app or its extensions to other versions, updaemon saves in `config.json` what to put back. If the run is then killed, the machine goes down or putting it back fails, the next command that changes the app puts it back first: `update`, `rollback`, `set`, `unset`, `set-args`, `remove`, and `install` of an extension. This needs neither the network nor a plugin, and skips no version.
+
+A rollback or a removal of an extension that was already recorded stands instead, as does what `set`, `unset` or `set-args` saved. The next command that changes the app then writes the app's files from that, and restarts its service if the command that was cut off was to restart it: one that is disabled is not restarted for its settings.
+
+Secrets are saved before the rest of a change and are not put back, so a `set` that was cut off can leave a secret without the plain settings given with it.
+
+If it cannot be put back or written, for example because the directory of a version was deleted by hand, those commands fail and say why. `updaemon remove <app>` still removes the app. If only the restart fails, they warn and go on, as a changed setting may be what lets the service start; the restart is tried again by the next command that changes the app.
+
 [↑ Back to top](#updaemon)
 
 ## Configuration
@@ -319,19 +352,27 @@ data/<app>/            each app's data, kept across updates; passed as UPDAEMON_
 0.x-backup/            what converting an updaemon 0.x setup replaced (system scope only)
 ```
 
-Each app's versions sit next to a `current` link to the one that runs. A service also gets a `run` script there, which its unit or plist starts: it loads the app's settings and secrets, then runs the executable. A command on PATH is the same kind of script, so no secret is ever written into a unit or plist.
+Each app's versions sit next to a `current` link to the one that runs. A service also gets a `run` script there, which its unit or plist starts: it loads the app's settings and secrets, then runs the executable. A command on PATH is the same kind of script, so no secret is ever written into a unit or plist. Both set `UPDAEMON_DATA_DIR`, and the variable that tells an app where its extensions are, after the settings and secrets, so no stored value takes their place.
 
 ```
 /opt/my-api/
 ├── 1.0.0/
 ├── 1.1.0/
 ├── current -> 1.1.0
-└── run
+├── run
+├── extensions/
+│   └── images -> /opt/my-api/extension-versions/images/2.0.0
+└── extension-versions/
+    └── images/
+        ├── 1.0.0/
+        └── 2.0.0/
 ```
+
+`extensions/` is there for an app that takes extensions, and holds a link to the current version of each; it can be empty. A download is called `<version>.partial` until it is complete and ready to run. One that a killed run left is deleted by the next download of that app or extension.
 
 ### config.json
 
-Updaemon writes this file; the commands above change it. One setting is meant for editing by hand: `releaseRetentionCount`, how many versions of each app to keep (5 by default).
+Updaemon writes this file; the commands above change it. One setting is meant for editing by hand: `releaseRetentionCount`, how many versions of each app and extension to keep (5 by default).
 
 ```json
 {
@@ -350,6 +391,9 @@ Updaemon writes this file; the commands above change it. One setting is meant fo
       "remote": "owner/byteshelf",
       "settings": { "BYTESHELF_URL": "https://shelf.example" },
       "autoRestart": true,
+      "extensions": [
+        { "id": "images", "plugin": "github", "remote": "owner/byteshelf/byteshelf-images.zip", "skippedVersions": [] }
+      ],
       "skippedVersions": [ "1.4.0" ]
     }
   ],
@@ -358,7 +402,7 @@ Updaemon writes this file; the commands above change it. One setting is meant fo
 }
 ```
 
-`skippedVersions` lists the versions `update` passes over: each failed its health check or was rolled back from. A registry plugin's `release` is the updaemon release it came from. A GitHub plugin's source is `{ "kind": "github", "owner": "...", "repo": "...", "tag": "v2.1.0" }`, with the tag of the release installed, and `"skippedTag"` when a later release was refused. `selfUpdate` is what `updaemon self-update on|off` sets.
+`skippedVersions` lists the versions `update` passes over: each failed its health check or was rolled back from. An app's `unfinished` is there only while it is changed, or after a change that was [cut off](#when-a-command-is-cut-off), could not be put back or still owes a restart. A registry plugin's `release` is the updaemon release it came from. A GitHub plugin's source is `{ "kind": "github", "owner": "...", "repo": "...", "tag": "v2.1.0" }`, with the tag of the release installed, and `"skippedTag"` when a later release was refused. `selfUpdate` is what `updaemon self-update on|off` sets.
 
 [↑ Back to top](#updaemon)
 
@@ -424,7 +468,7 @@ The RPC types (`RpcRequest` and `RpcResponse`) are defined in `Updaemon.Common.R
 }
 ```
 
-`DownloadVersionAsync` takes an object: `"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3\"}"`, and returns whether the download was verified against a checksum: `"{\"verified\":true}"`.
+`DownloadVersionAsync` takes an object: `"{\"serviceName\":\"MyApp\",\"version\":\"1.2.3\",\"runtimeIdentifier\":\"linux-arm64\",\"targetPath\":\"/opt/my-app/1.2.3.partial\"}"`, and returns whether the download was verified against a checksum: `"{\"verified\":true}"`.
 
 **Response:**
 ```json
@@ -535,9 +579,17 @@ graph TB
     end
 
     subgraph Core
+        Updater["App Updater<br/>download all, ask the host, switch"]
+        Preparer["App Preparer<br/>end what an earlier run left unfinished"]
+        Switcher["App Switcher<br/>switch, restart once, put back what fails"]
+        Changer["Settings Changer<br/>apply settings, restart"]
+        Restorer["Switch Restorer<br/>put back, or write the files that are to follow"]
+        Check["Extension Check<br/>would the host load it?"]
         Deployer["Service Deployer<br/>stage, activate, start, health check"]
+        Versions["Version Store<br/>downloads, links, old versions"]
         Files["App File Writer<br/>command, unit, settings file"]
         SettingsStore[Settings and secrets]
+        Sessions["Plugin Sessions<br/>each plugin started once"]
         PluginProvider[Plugin Provider]
         Scope["UpdaemonScope<br/>every path"]
     end
@@ -550,12 +602,37 @@ graph TB
     Manager["systemd (Linux) / launchd (macOS)"]
 
     Commands --> Deployer
-    Commands --> SettingsStore
-    Install --> PluginProvider
-    Update --> PluginProvider
+    Install --> SettingsStore
+    Settings --> Changer
+    Commands --> Preparer
+    Commands --> Switcher
+    Install --> Sessions
+    Install --> Check
+    Rollback --> Check
+    Update --> Updater
+    Updater --> Sessions
+    Updater --> Check
+    Updater --> Preparer
+    Updater --> Switcher
+    Preparer --> Restorer
+    Preparer --> SettingsStore
+    Preparer --> Manager
+    Changer --> Preparer
+    Changer --> Deployer
+    Changer --> Manager
+    Switcher --> Restorer
+    Switcher --> Deployer
+    Switcher --> Versions
+    Switcher --> Manager
+    Restorer --> Deployer
+    Restorer --> Versions
+    Restorer --> Manager
+    Sessions --> PluginProvider
+    Sessions --> DistClient
     Deployer --> Files
     Deployer --> Manager
-    Deployer --> DistClient
+    Deployer --> Versions
+    Versions --> DistClient
     DistClient -->|JSON-RPC over a named pipe| Plugins
     Core -.-> Scope
 ```
@@ -569,20 +646,30 @@ sequenceDiagram
     participant Update as update
     participant Plugin as Distribution plugin
     participant Disk as App directory
+    participant Host as Host's executable
     participant Manager as systemd / launchd
 
-    Update->>Plugin: Latest version of owner/repo?
-    Plugin-->>Update: 1.1.0 (current 1.0.0, not skipped)
-    Update->>Plugin: Download 1.1.0
-    Plugin->>Disk: Files into 1.1.0/
-    Update->>Disk: Read 1.1.0/updaemon.json, check every required setting has a value
-    Update->>Disk: Repoint current to 1.1.0, write command, unit and settings file
-    Update->>Manager: Restart
+    Update->>Disk: End what an earlier run left unfinished
+    loop The app, then each of its extensions
+        Update->>Plugin: Latest version of owner/repo?
+        Plugin-->>Update: 1.1.0 (current 1.0.0, not skipped)
+        Update->>Plugin: Download 1.1.0
+        Plugin->>Disk: Files into 1.1.0.partial/
+        Update->>Disk: Read its updaemon.json (the app's), make it readable, rename to 1.1.0/
+    end
+    Update->>Disk: Check every required setting has a value
+    Update->>Host: Would this version load each extension?
+    Host-->>Update: Yes, or why not
+    Update->>Disk: Save what to put back
+    Update->>Disk: Repoint current, write command, unit and settings file, repoint the accepted extensions
+    Update->>Manager: Restart, once
     Update->>Manager: Still running after its health-check window, not restarted?
     alt it is
+        Update->>Disk: Save that the switch stands
         Update->>Disk: Prune old versions
     else it is not
-        Update->>Disk: Repoint current to 1.0.0, rewrite its files, skip 1.1.0
+        Update->>Disk: Repoint all of it back, rewrite the app's files
+        Update->>Disk: Save that it is back, and the failed versions as skipped
         Update->>Manager: Restart
     end
     Note over Update: After every app: GitHub plugins, then self-update, the same way for updaemon's own binary
@@ -630,17 +717,23 @@ graph TB
         V100["1.0.0/"]
         V110["1.1.0/<br/>with its updaemon.json"]
         Current["current"]
+        ExtensionVersions["extension-versions/id/<br/>each extension's versions"]
+        Extensions["extensions/id"]
     end
 
     Unit["service unit or plist"]
     Command["command on PATH"]
 
     Updaemon[updaemon] -->|Downloads| V110
+    Updaemon -->|Downloads| ExtensionVersions
     Updaemon -->|Repoints| Current
+    Updaemon -->|Repoints| Extensions
     Updaemon -->|Writes from the manifest| Unit
     Updaemon -->|Writes from the manifest| Command
     Updaemon -->|Writes| AppFiles
     Current --> V110
+    Extensions --> ExtensionVersions
+    V110 -.->|Loads| Extensions
     Unit -->|Runs| Current
     Command -->|Runs| Current
     Unit -.->|Reads| AppFiles
@@ -658,7 +751,7 @@ graph LR
         B{New release, not skipped?}
         C[Download it]
     end
-    D["• Read its updaemon.json<br/>• Rewrite command and service<br/>• Repoint current<br/>• Restart and check it stays up<br/>• Otherwise go back and skip it"]
+    D["• Read its updaemon.json<br/>• Ask it about its extensions<br/>• Rewrite command and service<br/>• Repoint current and extensions<br/>• Restart and check it stays up<br/>• Otherwise go back and skip it"]
 
     A --> B
     B -->|Yes| C
