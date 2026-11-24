@@ -16,7 +16,8 @@ namespace Updaemon.Common
         DistributionServiceInformation GetServiceInformation();
 
         /// <summary>
-        /// Initializes the distribution service with secrets.
+        /// Initializes the distribution service with secrets: after updaemon connects to the plugin, and again
+        /// after a secret that a call needed is saved.
         /// </summary>
         /// <param name="secrets">Collection of secret key-value pairs.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>

@@ -17,8 +17,12 @@ namespace Updaemon.Tests.Mocks
         /// <summary>What the next saves of an app do, in order; the ones after that work. Null is one that works.</summary>
         public Queue<Exception?> NextSaves { get; } = new Queue<Exception?>();
 
+        /// <summary>Called with the app before each save, to look at what is there then.</summary>
+        public Action<InstalledApp>? OnSave { get; set; }
+
         public Task SaveAppAsync(InstalledApp app, CancellationToken cancellationToken = default)
         {
+            OnSave?.Invoke(app);
             return NextSaves.TryDequeue(out Exception? failure) && failure != null ? Task.FromException(failure) : _inner.SaveAppAsync(app, cancellationToken);
         }
 

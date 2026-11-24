@@ -6,7 +6,7 @@ namespace Updaemon.Tests.Mocks
     {
         public List<string> MethodCalls { get; } = new List<string>();
         public List<string> ExecutablePermissionsCalls { get; } = new List<string>();
-        public List<string> DirectoryPermissionsCalls { get; } = new List<string>();
+        public List<string> TreesMadeReadable { get; } = new List<string>();
 
         public Task SetExecutablePermissionsAsync(string executablePath, CancellationToken cancellationToken = default)
         {
@@ -16,17 +16,23 @@ namespace Updaemon.Tests.Mocks
             return Task.CompletedTask;
         }
 
-        public Task SetDirectoryPermissionsAsync(string directoryPath, CancellationToken cancellationToken = default)
+        public Task MakeTreeReadableAsync(string directoryPath, CancellationToken cancellationToken = default)
         {
-            string methodCall = $"SetDirectoryPermissionsAsync:{directoryPath}";
+            string methodCall = $"MakeTreeReadableAsync:{directoryPath}";
             MethodCalls.Add(methodCall);
-            DirectoryPermissionsCalls.Add(directoryPath);
-            OnSetDirectoryPermissions?.Invoke(directoryPath);
+            TreesMadeReadable.Add(directoryPath);
+            OnMakeTreeReadable?.Invoke(directoryPath);
             return Task.CompletedTask;
         }
 
-        /// <summary>Called with the path at each <see cref="SetDirectoryPermissionsAsync"/>, to look at what is there then.</summary>
-        public Action<string>? OnSetDirectoryPermissions { get; set; }
+        public Task MakeDirectoryEnterableAsync(string directoryPath, CancellationToken cancellationToken = default)
+        {
+            MethodCalls.Add($"MakeDirectoryEnterableAsync:{directoryPath}");
+            return Task.CompletedTask;
+        }
+
+        /// <summary>Called with the path at each <see cref="MakeTreeReadableAsync"/>, to look at what is there then.</summary>
+        public Action<string>? OnMakeTreeReadable { get; set; }
 
         /// <summary>Users <see cref="UserExistsAsync"/> reports as existing.</summary>
         public HashSet<string> ExistingUsers { get; } = new HashSet<string>();

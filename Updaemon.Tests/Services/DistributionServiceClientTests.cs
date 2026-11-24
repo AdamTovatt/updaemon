@@ -13,6 +13,7 @@ namespace Updaemon.Tests.Services
     /// is exercised end-to-end. Logic-only stubbing via MockDistributionServiceClient
     /// cannot catch lifecycle bugs in the real client.
     /// </summary>
+    [Collection(RunsFreshScripts.Name)]
     public class DistributionServiceClientTests
     {
         private static readonly HostPlatform TestPlatform = new HostPlatform(false, "linux-arm64");

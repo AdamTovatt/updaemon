@@ -21,16 +21,27 @@ namespace Updaemon.Services
         private const int MaxReasonLength = 1000;
 
         private readonly UpdaemonScope _scope;
+        private readonly VersionStore _versions;
 
-        public ExtensionCheck(UpdaemonScope scope)
+        public ExtensionCheck(UpdaemonScope scope, VersionStore versions)
         {
             _scope = scope;
+            _versions = versions;
         }
 
         internal Func<ProcessInvocation, CancellationToken, Task<ProcessRunner.Result>> Run { get; init; } = ProcessRunner.RunAsync;
 
-        /// <summary>Why <paramref name="hostVersion"/> would not load the extension in <paramref name="extensionDirectory"/>; null when it would.</summary>
-        public async Task<string?> FindRefusalAsync(InstalledApp host, DeployableVersion hostVersion, string extensionDirectory, CancellationToken cancellationToken = default)
+        /// <summary>Null when <paramref name="hostVersion"/> would load that kept version of the extension.</summary>
+        /// <exception cref="InvalidOperationException">The version is not kept; the message lists the kept ones.</exception>
+        public async Task<ExtensionRefusal?> FindRefusalAsync(
+            InstalledApp host, DeployableVersion hostVersion, ExtensionName name, Version version, CancellationToken cancellationToken = default)
+        {
+            return await FindReasonAsync(host, hostVersion, _versions.OpenRetained(name, version), cancellationToken) is string reason
+                ? new ExtensionRefusal(host.Name, hostVersion.Version, version, reason)
+                : null;
+        }
+
+        private async Task<string?> FindReasonAsync(InstalledApp host, DeployableVersion hostVersion, string extensionDirectory, CancellationToken cancellationToken)
         {
             ExtensionsSpec? extensions = hostVersion.Manifest.Extensions;
             if (extensions == null)

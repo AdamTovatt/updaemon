@@ -58,7 +58,7 @@ namespace Updaemon.Commands
             PreparedApp prepared = await _switcher.PrepareAsync(host, cancellationToken);
             if (host.FindExtension(name.Id) is InstalledExtension installed)
             {
-                return _outputWriter.Fail($"'{host.NameOf(installed)}' is already installed.");
+                return _outputWriter.Fail($"'{host.NameOf(installed)}' is already installed. Use 'updaemon update {host.NameOf(installed)}' to update it.");
             }
 
             // Checked again before the switch; here, so nothing is downloaded for an install that cannot be.
@@ -86,7 +86,7 @@ namespace Updaemon.Commands
             {
                 version = await _stager.StageLatestAsync(
                     source,
-                    (latest, client) => _versions.DownloadAsync(name, extension, latest, client, _ => Task.FromResult(latest), cancellationToken),
+                    (latest, client) => _versions.DownloadAsync(name, extension, latest, client, cancellationToken),
                     cancellationToken);
             }
             catch (Exception ex) when (ex is CredentialNeededException or PluginException or NoReleaseException)
@@ -113,10 +113,9 @@ namespace Updaemon.Commands
         {
             InstalledApp host = prepared.App;
             ExtensionName name = host.NameOf(extension);
-            string directory = _versions.GetVersionDirectory(name, version);
-            if (await _check.FindRefusalAsync(host, hostVersion, directory, cancellationToken) is string refusal)
+            if (await _check.FindRefusalAsync(host, hostVersion, name, version, cancellationToken) is ExtensionRefusal refusal)
             {
-                return _outputWriter.Fail($"{name} was not installed: {host.Name} {hostVersion.Version} refused {version}: {refusal}.");
+                return _outputWriter.Fail($"{name} was not installed: {refusal}.");
             }
 
             try

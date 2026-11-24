@@ -97,9 +97,12 @@ namespace Updaemon
             services.AddSingleton(TimeProvider.System);
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();
             services.AddSingleton<VersionStore>();
+            services.AddSingleton<SwitchRestorer>();
             services.AddSingleton<AppSwitcher>();
             services.AddSingleton<ExtensionCheck>();
+            services.AddTransient<PluginSessions>();
             services.AddTransient<ReleaseStager>();
+            services.AddTransient<AppUpdater>();
             services.AddTransient<ExtensionInstaller>();
             services.AddTransient<PluginProvider>();
 

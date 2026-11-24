@@ -17,7 +17,7 @@ namespace Updaemon.Services
         {
             _appName = appName;
             _one = switched.Count == 1;
-            string to = Join(switched, package => package.To!);
+            string to = Join(switched, package => package.To);
             _failed = _one && switched[0].Name is AppName ? $"{to} did not stay running" : $"{appName} did not stay running with {to}";
             _before = Join(switched.Where(package => package.From != null).ToList(), package => package.From!);
             _skipped = _one ? to : "each of the new versions";

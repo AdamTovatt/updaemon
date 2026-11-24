@@ -183,6 +183,18 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        private static async Task InstallFromAPluginThatIsGoneAsync(AppHarness h, params string[] names)
+        {
+            await h.AddPluginAsync("gone");
+            foreach (string name in names)
+            {
+                h.AddRelease(name, "1.0.0", """{ "executable": "bin/tool", "command": "NAME" }""".Replace("NAME", name), "bin/tool");
+                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { name, "--from", $"gone:{name}" }));
+            }
+
+            await h.Config.RemovePluginAsync("gone");
+        }
+
         [Theory]
         [InlineData(new string[0], UpdateStarter.Person)]
         [InlineData(new[] { "--timer" }, UpdateStarter.Timer)]
@@ -192,8 +204,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/byteshelf", "1.1.0", """{ "executablePath": "bin/byteshelf" }""");
-                await h.Config.SaveAppAsync(new InstalledApp { Name = "orphan", Plugin = "gone", Remote = "x/y" });
-                await h.Config.SaveAppAsync(new InstalledApp { Name = "stray", Plugin = "gone", Remote = "x/z" });
+                await InstallFromAPluginThatIsGoneAsync(h, "orphan", "stray");
                 await h.Config.AddOrUpdatePluginAsync(PluginRecords.FromGitHub("s3", "/plugins/s3/old", "someone", "updaemon-s3", "v1.0.0"));
                 h.GitHubPlugins.NextFailures.Enqueue(new HttpRequestException("rate limited"));
                 h.RunTheScopesOwnUpdaemon();
@@ -470,8 +481,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/byteshelf", "1.1.0", """{ "executablePath": "bin/byteshelf" }""");
-                InstalledApp orphan = new InstalledApp { Name = "orphan", Plugin = "gone", Remote = "x/y" };
-                await h.Config.SaveAppAsync(orphan);
+                await InstallFromAPluginThatIsGoneAsync(h, "orphan");
 
                 int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 

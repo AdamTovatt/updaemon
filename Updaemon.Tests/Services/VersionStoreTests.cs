@@ -9,24 +9,38 @@ namespace Updaemon.Tests.Services
         private static readonly ExtensionName Images = new ExtensionName("shelf", "images");
 
         private static Task<Version> DownloadAsync(AppHarness h, string version) => h.Versions.DownloadAsync(
-            Images, new InstalledExtension { Id = "images", Remote = "owner/images" }, Version.Parse(version), h.Client, _ => Task.FromResult(Version.Parse(version)));
+            Images, new InstalledExtension { Id = "images", Remote = "owner/images" }, Version.Parse(version), h.Client);
 
-        /// <summary>A run killed while downloading must not leave what a rollback could take for a version.</summary>
-        [Fact]
-        public async Task DownloadAsync_IsAVersionOnlyOnceComplete()
+        /// <summary>A run killed before the download is read and readable must not leave what a rollback could take for a version.</summary>
+        [Theory]
+        [InlineData("downloading")]
+        [InlineData("reading")]
+        [InlineData("making readable")]
+        public async Task DownloadAsync_IsAVersionOnlyOnceReady(string killedWhile)
         {
             using (AppHarness h = new AppHarness())
             {
                 h.AddExtensionRelease("owner/images", "1.0.0");
-                IReadOnlyList<Version>? whileDownloading = null;
-                h.AfterDownloading("owner/images", "1.0.0", _ =>
+                List<string> steps = new List<string>();
+                void Step(string step)
                 {
-                    whileDownloading = h.Versions.GetRetained(Images);
-                    h.KeepForCutOff();
-                });
+                    steps.Add(step);
+                    Assert.Empty(h.Versions.GetRetained(Images));
+                    if (step == killedWhile)
+                    {
+                        h.KeepForCutOff();
+                    }
+                }
 
-                await DownloadAsync(h, "1.0.0");
-                Assert.Empty(whileDownloading!);
+                h.AfterDownloading("owner/images", "1.0.0", _ => Step("downloading"));
+                h.Permissions.OnMakeTreeReadable = _ => Step("making readable");
+                await h.Versions.DownloadAsync(Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client, directory =>
+                {
+                    Assert.True(File.Exists(Path.Combine(directory, "plugin.dll")));
+                    Step("reading");
+                    return Task.FromResult(true);
+                });
+                Assert.Equal(new[] { "downloading", "reading", "making readable" }, steps);
                 Assert.Equal(new[] { new Version(1, 0, 0) }, h.Versions.GetRetained(Images));
 
                 h.CutOff();
@@ -134,11 +148,41 @@ namespace Updaemon.Tests.Services
                 });
                 VersionStore versions = new VersionStore(h.Scope, new SymlinkManager(), new FilePermissionManager(h.Output), h.Output);
 
-                await versions.DownloadAsync(Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client, _ => Task.FromResult(true));
+                await versions.DownloadAsync(Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client);
 
                 string directory = versions.GetVersionDirectory(Images, new Version(1, 0, 0));
                 Assert.True(File.GetUnixFileMode(directory).HasFlag(UnixFileMode.OtherRead | UnixFileMode.OtherExecute));
                 Assert.True(File.GetUnixFileMode(Path.Combine(directory, "plugin.dll")).HasFlag(UnixFileMode.OtherRead));
+            }
+        }
+
+        /// <summary>The umask of root, who installs, can deny everyone else the directories; what else is in them is not touched.</summary>
+        [Fact]
+        public async Task DownloadAsync_MakesItsVersionReachableAndLeavesTheOthersAlone()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+                string[] parents =
+                {
+                    h.Scope.GetAppDirectory("shelf"),
+                    Path.GetDirectoryName(h.Scope.Locate(Images).VersionsDirectory)!,
+                    h.Scope.Locate(Images).VersionsDirectory,
+                };
+                string[] others = { h.Versions.GetVersionDirectory(new AppName("shelf"), new Version(1, 0, 0)), h.Versions.GetVersionDirectory(Images, new Version(0, 9)) };
+                foreach (string directory in parents.Concat(others))
+                {
+                    Directory.CreateDirectory(directory);
+                    File.SetUnixFileMode(directory, ownerOnly);
+                }
+
+                h.AddExtensionRelease("owner/images", "1.0.0");
+                VersionStore versions = new VersionStore(h.Scope, new SymlinkManager(), new FilePermissionManager(h.Output), h.Output);
+
+                await versions.DownloadAsync(Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client);
+
+                Assert.All(parents, directory => Assert.True(File.GetUnixFileMode(directory).HasFlag(UnixFileMode.OtherRead | UnixFileMode.OtherExecute)));
+                Assert.All(others, directory => Assert.Equal(ownerOnly, File.GetUnixFileMode(directory)));
             }
         }
 

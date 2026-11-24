@@ -9,6 +9,24 @@ namespace Updaemon.Tests.Commands
     public class InstallCommandTests
     {
         [Fact]
+        public async Task Install_PluginDoesNotStart_FailsInOneLineAndLeavesNothing()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.AddPluginAsync();
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
+                string path = (await h.Config.GetPluginAsync("github"))!.Path;
+                h.Client.ConnectAsyncThrowsForPluginPaths.Add(path);
+                IReadOnlyList<string> before = h.Snapshot();
+
+                Assert.Equal(1, await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" }));
+
+                Assert.Equal(new[] { $"Error: byteshelf: the plugin 'github' failed to start: Mock failure connecting to '{path}'" }, h.Output.Errors);
+                h.AssertUnchangedSince(before);
+            }
+        }
+
+        [Fact]
         public async Task Install_FromManifest_SetsUpTheCommandWithSettingsAndSecretsAndStartsTheService()
         {
             using (AppHarness h = new AppHarness())

@@ -66,8 +66,8 @@ namespace Updaemon.Tests.Helpers
                 Output,
                 Time);
             SwitcherConfig = new SaveFailingConfigManager(Config);
-            Switcher = new AppSwitcher(Versions, Deployer, ServiceManager, SettingsStore, SwitcherConfig, Output);
-            Check = new ExtensionCheck(Scope) { Run = RunCheckAsync };
+            Switcher = new AppSwitcher(Versions, new SwitchRestorer(Versions, Deployer, ServiceManager), Deployer, ServiceManager, SettingsStore, SwitcherConfig, Output);
+            Check = new ExtensionCheck(Scope, Versions) { Run = RunCheckAsync };
             RunLog = new UpdateRunLog(Scope);
             PluginUrlResolver = new GitHubPluginUrlResolver(new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" }, Scope.Platform);
             PluginInstaller = new PluginInstaller(PluginUrlResolver, GitHubPlugins, PluginDownloader, Config, Scope);
@@ -174,13 +174,17 @@ namespace Updaemon.Tests.Helpers
         public InstallCommand Install() => new InstallCommand(
             Config, SettingsStore, Stager(), Versions, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, OtherScopeApps(), ExtensionInstaller());
 
-        private ReleaseStager Stager() => new ReleaseStager(Client, Secrets, Plugins, Credentials());
+        private ReleaseStager Stager() => new ReleaseStager(Sessions());
 
         private OtherScopeApps OtherScopeApps() => new OtherScopeApps(new ConfigManager(OtherScope), OtherScope.Owner);
 
         private ExtensionInstaller ExtensionInstaller() => new ExtensionInstaller(Config, Versions, Deployer, Switcher, Check, Stager(), OtherScopeApps(), Scope, Output);
 
-        public UpdateCommand Update() => new UpdateCommand(Config, Secrets, Client, Output, Versions, Deployer, Switcher, Plugins, GitHubPluginUpdater(), SelfUpdater(), Credentials(), RunLog, Time);
+        public UpdateCommand Update() => new UpdateCommand(Config, AppUpdater(), GitHubPluginUpdater(), SelfUpdater(), RunLog, Output, Time);
+
+        private AppUpdater AppUpdater() => new AppUpdater(SwitcherConfig, Sessions(), Versions, Deployer, Switcher, Check, Output);
+
+        private PluginSessions Sessions() => new PluginSessions(Client, Secrets, Plugins, Credentials(), Output);
 
         public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output, Credentials());
 
@@ -192,7 +196,7 @@ namespace Updaemon.Tests.Helpers
 
         public DistListCommand DistList() => new DistListCommand(Config, Output, Client, RunningVersion);
 
-        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Versions, Deployer, Switcher, Output);
+        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Versions, Deployer, Switcher, Check, Output);
 
         public StatusCommand Status() => new StatusCommand(Config, Versions, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion, RunLog, Time);
 
@@ -273,10 +277,29 @@ namespace Updaemon.Tests.Helpers
         {
             await InstallHostAsync(manifest);
             Assert.Equal(0, await Install().ExecuteAsync(new[] { "shelf/images" }));
+            ForgetCalls();
+        }
+
+        /// <summary>A run killed while it installed the extension images into the host, which is installed.</summary>
+        public async Task KilledInstallOfImagesAsync()
+        {
+            ServiceManager.OnRestart = KeepForCutOff;
+            Assert.Equal(0, await Install().ExecuteAsync(new[] { "shelf/images" }));
+            CutOff();
+        }
+
+        /// <summary>Forgets what was printed, checked and called so far.</summary>
+        public void ForgetCalls()
+        {
             Output.Clear();
             Checks.Clear();
             ServiceManager.MethodCalls.Clear();
+            Client.MethodCalls.Clear();
         }
+
+        /// <summary>The host's check refuses, always or only <paramref name="which"/>, with this output.</summary>
+        internal void Refuse(string because, Func<ProcessInvocation, bool>? which = null) =>
+            AnswerCheck = check => which == null || which(check) ? new ProcessRunner.Result(1, string.Empty, because) : new ProcessRunner.Result(0, string.Empty, string.Empty);
 
         /// <summary>How often the host's service was restarted since the calls were last cleared.</summary>
         public int HostRestarts() => ServiceManager.MethodCalls.Count(call => call == MockServiceManager.Call(nameof(MockServiceManager.RestartServiceAsync), "shelf"));
@@ -383,7 +406,8 @@ namespace Updaemon.Tests.Helpers
             _cutOff = null;
             ServiceManager.OnDaemonReload = null;
             ServiceManager.OnRestart = null;
-            Permissions.OnSetDirectoryPermissions = null;
+            Permissions.OnMakeTreeReadable = null;
+            SwitcherConfig.OnSave = null;
             Output.Clear();
             ServiceManager.MethodCalls.Clear();
         }

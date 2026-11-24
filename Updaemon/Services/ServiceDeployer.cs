@@ -51,31 +51,27 @@ namespace Updaemon.Services
             return await TryReadCurrentManifestAsync(appName, cancellationToken) ?? throw VersionStore.NotDeployed(new AppName(appName));
         }
 
-        public Task<DeployableVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default)
+        public async Task<DeployableVersion> StageAsync(InstalledApp app, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default)
         {
-            return _versions.DownloadAsync(
+            (AppManifest manifest, bool inDirectory) = await _versions.DownloadAsync(
                 app.PackageName,
                 app,
                 version,
                 distributionClient,
-                async versionDirectory =>
+                async directory =>
                 {
-                    DeployableVersion staged = await ResolveAsync(app, version, versionDirectory, cancellationToken);
-                    await MakeExecutableAsync(app.Name, staged, cancellationToken);
-                    return staged;
+                    AppManifest? releaseManifest = await AppManifest.ReadAsync(directory, cancellationToken);
+                    AppManifest resolved = releaseManifest ?? await FindManifestAsync(app, version, directory, cancellationToken);
+                    await MakeExecutableAsync(app.Name, version, resolved, directory, cancellationToken);
+                    return (resolved, releaseManifest != null);
                 },
                 cancellationToken);
+            return new DeployableVersion { Version = version, Directory = _versions.GetVersionDirectory(app.PackageName, version), Manifest = manifest, ManifestInDirectory = inDirectory };
         }
 
-        /// <summary>A downloaded version with its manifest: the release's own, else the app's from install flags.</summary>
-        private async Task<DeployableVersion> ResolveAsync(InstalledApp app, Version version, string versionDirectory, CancellationToken cancellationToken)
+        /// <summary>The manifest of a release that ships none: the app's from install flags.</summary>
+        private async Task<AppManifest> FindManifestAsync(InstalledApp app, Version version, string directory, CancellationToken cancellationToken)
         {
-            AppManifest? releaseManifest = await AppManifest.ReadAsync(versionDirectory, cancellationToken);
-            if (releaseManifest != null)
-            {
-                return new DeployableVersion { Version = version, Directory = versionDirectory, Manifest = releaseManifest, ManifestInDirectory = true };
-            }
-
             if (app.Manifest == null)
             {
                 throw new MissingManifestException($"{app.Name} {version} has no {AppManifest.FileName}.");
@@ -83,24 +79,27 @@ namespace Updaemon.Services
 
             // A manifest from install flags names the executable by file name only; find it in the release.
             string executableName = Path.GetFileName(app.Manifest.Executable);
-            string? executablePath = await _executableDetector.FindExecutableAsync(versionDirectory, executableName, cancellationToken);
+            string? executablePath = await _executableDetector.FindExecutableAsync(directory, executableName, cancellationToken);
             if (executablePath == null)
             {
                 throw new InvalidOperationException($"Could not find an executable named '{executableName}' in {app.Name} {version}.");
             }
 
-            AppManifest manifest = app.Manifest with { Executable = Path.GetRelativePath(versionDirectory, executablePath) };
-            return new DeployableVersion { Version = version, Directory = versionDirectory, Manifest = manifest, ManifestInDirectory = false };
+            return app.Manifest with { Executable = Path.GetRelativePath(directory, executablePath) };
         }
 
-        public async Task MakeExecutableAsync(string appName, DeployableVersion version, CancellationToken cancellationToken = default)
+        public Task MakeExecutableAsync(string appName, DeployableVersion version, CancellationToken cancellationToken = default) =>
+            MakeExecutableAsync(appName, version.Version, version.Manifest, version.Directory, cancellationToken);
+
+        private async Task MakeExecutableAsync(string appName, Version version, AppManifest manifest, string directory, CancellationToken cancellationToken)
         {
-            if (!File.Exists(version.ExecutablePath))
+            string path = Path.Combine(directory, manifest.Executable);
+            if (!File.Exists(path))
             {
-                throw new InvalidOperationException($"{appName} {version.Version}: the executable '{version.Manifest.Executable}' named in {AppManifest.FileName} is not in the release.");
+                throw new InvalidOperationException($"{appName} {version}: the executable '{manifest.Executable}' named in {AppManifest.FileName} is not in the release.");
             }
 
-            await _filePermissionManager.SetExecutablePermissionsAsync(version.ExecutablePath, cancellationToken);
+            await _filePermissionManager.SetExecutablePermissionsAsync(path, cancellationToken);
         }
 
         public async Task<ReachableServiceManager> ReachServiceManagerAsync(string appName, AppManifest? next = null, CancellationToken cancellationToken = default)
@@ -147,16 +146,18 @@ namespace Updaemon.Services
             await _appFileWriter.WriteAsync(app, manifest, previous, cancellationToken);
         }
 
-        public async Task RegenerateAsync(InstalledApp app, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
+        public async Task RegenerateAsync(PreparedApp prepared, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
+            InstalledApp app = prepared.App;
             AppManifest manifest = await GetCurrentManifestAsync(app.Name, cancellationToken);
             await _appFileWriter.WriteAsync(app, manifest, manifest, cancellationToken);
         }
 
         public async Task<bool> ApplySettingsAsync(PreparedApp prepared, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
+            prepared.BeginChange();
             InstalledApp app = prepared.App;
-            await RegenerateAsync(app, reachable, cancellationToken);
+            await RegenerateAsync(prepared, reachable, cancellationToken);
             if (!HasService(app.Name) || !await _serviceManager.IsEnabledAsync(app.Name, cancellationToken))
             {
                 return true;

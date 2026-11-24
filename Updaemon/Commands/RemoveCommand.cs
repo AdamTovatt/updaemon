@@ -63,7 +63,7 @@ namespace Updaemon.Commands
 
             return purge
                 ? _outputWriter.Fail($"--purge does not go with an extension, which has no data of its own. Use 'updaemon remove {name}'.")
-                : await RemoveExtensionAsync(package.App, package.Extension, cancellationToken);
+                : await RemoveExtensionAsync(package, package.Extension, cancellationToken);
         }
 
         private async Task<int> RemoveAppAsync(InstalledApp app, bool purge, CancellationToken cancellationToken)
@@ -95,20 +95,18 @@ namespace Updaemon.Commands
             return 0;
         }
 
-        private async Task<int> RemoveExtensionAsync(InstalledApp host, InstalledExtension selected, CancellationToken cancellationToken)
+        private async Task<int> RemoveExtensionAsync(SelectedPackage selected, InstalledExtension extension, CancellationToken cancellationToken)
         {
-            string name = host.NameOf(selected).ToString();
-            PreparedApp prepared = await _switcher.PrepareAsync(host, cancellationToken);
-            if (host.FindExtension(selected.Id) is not InstalledExtension extension)
+            string name = selected.Name.ToString();
+            if (await _switcher.PrepareAsync(selected, cancellationToken) is not PreparedApp prepared)
             {
-                // A killed install of it, taken out again by the preparing.
                 return _outputWriter.FailNotInstalled(name);
             }
 
             string? problem = await _switcher.RemoveExtensionAsync(prepared, extension, cancellationToken);
             _outputWriter.WriteLine($"Removed {name}.");
             await ForgetFailuresAsync(new[] { name }, cancellationToken);
-            return problem == null ? 0 : _outputWriter.Fail($"{problem}. {name} is removed. {ServiceDeployer.SeeLogs(host.Name)}");
+            return problem == null ? 0 : _outputWriter.Fail($"{problem}. {name} is removed. {ServiceDeployer.SeeLogs(selected.App.Name)}");
         }
 
         /// <summary>What is removed no longer fails; the removal stands without this.</summary>

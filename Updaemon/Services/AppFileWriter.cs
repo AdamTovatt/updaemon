@@ -94,7 +94,7 @@ namespace Updaemon.Services
             {
                 variables[manifest.Extensions.Variable!] = extensionsDirectory;
                 Directory.CreateDirectory(extensionsDirectory);
-                await _filePermissionManager.SetDirectoryPermissionsAsync(extensionsDirectory, cancellationToken);
+                await _filePermissionManager.MakeTreeReadableAsync(extensionsDirectory, cancellationToken);
             }
             else if (previous?.Extensions != null && Directory.Exists(extensionsDirectory) && !Directory.EnumerateFileSystemEntries(extensionsDirectory).Any())
             {

@@ -42,9 +42,13 @@ namespace Updaemon.Tests.Mocks
         public Task InitializeAsync(string? secrets, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add($"{nameof(InitializeAsync)}:{secrets ?? "(null)"}");
+            OnInitialize?.Invoke();
             InitializedSecrets = secrets;
             return Task.CompletedTask;
         }
+
+        /// <summary>Called at each <see cref="InitializeAsync"/>, to make it fail.</summary>
+        public Action? OnInitialize { get; set; }
 
         /// <summary>Remotes the plugin refuses, with the message it gives.</summary>
         public Dictionary<string, string> RefusedRemotes { get; } = new Dictionary<string, string>();

@@ -98,7 +98,7 @@ namespace Updaemon.Tests.Conversion
                 await h.Converter().RunAsync(dryRun: false);
 
                 Assert.Contains(Path.Combine(h.Scope.GetAppDirectory("my-api"), "1.0.0", "my-api"), h.Permissions.ExecutablePermissionsCalls);
-                Assert.Contains(h.Scope.GetAppDirectory("my-api"), h.Permissions.DirectoryPermissionsCalls);
+                Assert.Contains(h.Scope.GetAppDirectory("my-api"), h.Permissions.TreesMadeReadable);
             }
         }
 

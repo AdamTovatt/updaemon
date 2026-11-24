@@ -1,13 +1,16 @@
 using System.Diagnostics;
+using Updaemon.Configuration;
 using Updaemon.IO;
 using Updaemon.Models;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
+using static Updaemon.Tests.Helpers.ShelfPackages;
 
 namespace Updaemon.Tests.Services
 {
     /// <summary>The check a host runs on an extension: what is generated to run it, and real runs of it as this user.</summary>
+    [Collection(RunsFreshScripts.Name)]
     public class ExtensionCheckTests
     {
         private static readonly InstalledApp Host = new InstalledApp { Name = "shelf" };
@@ -26,22 +29,40 @@ namespace Updaemon.Tests.Services
             };
         }
 
-        private static Task<string?> RunAsync(TempFileHelper temp, string script) =>
-            new ExtensionCheck(TestScope.Create(temp.TempDirectory)).FindRefusalAsync(Host, HostVersion(temp, script), temp.CreateTempDirectory("image plugin"));
+        /// <summary>Its path has a space.</summary>
+        private static UpdaemonScope Scope(TempFileHelper temp, bool isSystem = false, bool isMacOS = false) =>
+            TestScope.Create(temp.CreateTempDirectory("a root"), isSystem, isMacOS);
+
+        /// <summary>A kept version of the extension for the host to be asked about.</summary>
+        private static string ExtensionDirectory(UpdaemonScope scope) =>
+            Directory.CreateDirectory(Path.Combine(scope.Locate(Images).VersionsDirectory, Two.ToString())).FullName;
+
+        private static ExtensionCheck Check(UpdaemonScope scope, Func<ProcessInvocation, CancellationToken, Task<ProcessRunner.Result>>? run = null)
+        {
+            ExtensionDirectory(scope);
+            return new ExtensionCheck(scope, new VersionStore(scope, new SymlinkManager(), new MockFilePermissionManager(), new MockOutputWriter())) { Run = run ?? ProcessRunner.RunAsync };
+        }
+
+        /// <summary>What it says of the extension's version, without the versions in front.</summary>
+        private static async Task<string?> ReasonAsync(ExtensionCheck check, InstalledApp host, DeployableVersion version, CancellationToken cancellationToken = default)
+        {
+            ExtensionRefusal? refusal = await check.FindRefusalAsync(host, version, Images, Two, cancellationToken);
+            Assert.True(refusal == null || refusal.ToString() == $"shelf 1.0.0 refuses 2.0.0: {refusal.Reason}");
+            return refusal?.Reason;
+        }
+
+        private static Task<string?> RunAsync(TempFileHelper temp, string script) => ReasonAsync(Check(Scope(temp)), Host, HostVersion(temp, script));
 
         /// <summary>What would be run for a host in this scope, without running it.</summary>
         private static async Task<ProcessInvocation> InvocationAsync(TempFileHelper temp, bool isSystem, bool isMacOS, string? runAs)
         {
             ProcessInvocation? invocation = null;
-            ExtensionCheck check = new ExtensionCheck(TestScope.Create(temp.TempDirectory, isSystem, isMacOS))
+            ExtensionCheck check = Check(Scope(temp, isSystem, isMacOS), (ran, _) =>
             {
-                Run = (ran, _) =>
-                {
-                    invocation = ran;
-                    return Task.FromResult(new ProcessRunner.Result(0, string.Empty, string.Empty));
-                },
-            };
-            await check.FindRefusalAsync(new InstalledApp { Name = "shelf", RunAs = runAs }, HostVersion(temp), "/versions/images/2.0.0");
+                invocation = ran;
+                return Task.FromResult(new ProcessRunner.Result(0, string.Empty, string.Empty));
+            });
+            await ReasonAsync(check, new InstalledApp { Name = "shelf", RunAs = runAs }, HostVersion(temp));
             return invocation!;
         }
 
@@ -59,7 +80,7 @@ namespace Updaemon.Tests.Services
                 ProcessStartInfo startInfo = ProcessRunner.StartInfo(invocation);
 
                 Assert.Equal(temp.GetFullPath("1.0.0/bin/shelf"), startInfo.FileName);
-                Assert.Equal(new[] { "--check-plugin", "/versions/images/2.0.0" }, startInfo.ArgumentList);
+                Assert.Equal(new[] { "--check-plugin", ExtensionDirectory(Scope(temp, isSystem, isMacOS)) }, startInfo.ArgumentList);
                 Assert.Equal(temp.GetFullPath("1.0.0"), startInfo.WorkingDirectory);
                 Assert.Equal(expectedUser ?? string.Empty, startInfo.UserName);
                 Assert.False(startInfo.UseShellExecute);
@@ -82,12 +103,9 @@ namespace Updaemon.Tests.Services
         {
             using (TempFileHelper temp = new TempFileHelper())
             {
-                ExtensionCheck check = new ExtensionCheck(TestScope.Create(temp.TempDirectory, isSystem: true))
-                {
-                    Run = (_, _) => throw new InvalidOperationException("It ran."),
-                };
+                ExtensionCheck check = Check(Scope(temp, isSystem: true), (_, _) => throw new InvalidOperationException("It ran."));
 
-                string? refusal = await check.FindRefusalAsync(new InstalledApp { Name = "shelf", RunAs = "no such user" }, HostVersion(temp), "/x");
+                string? refusal = await ReasonAsync(check, new InstalledApp { Name = "shelf", RunAs = "no such user" }, HostVersion(temp));
 
                 Assert.Equal("its check cannot run: there is no user named 'no such user'", refusal);
             }
@@ -98,7 +116,7 @@ namespace Updaemon.Tests.Services
         {
             using (TempFileHelper temp = new TempFileHelper())
             {
-                Assert.Null(await RunAsync(temp, $"[ \"$1\" = --check-plugin ] && [ \"$2\" = '{temp.GetFullPath("image plugin")}' ] && [ $# = 2 ]"));
+                Assert.Null(await RunAsync(temp, $"[ \"$1\" = --check-plugin ] && [ \"$2\" = '{ExtensionDirectory(Scope(temp))}' ] && [ $# = 2 ]"));
             }
         }
 
@@ -158,7 +176,7 @@ namespace Updaemon.Tests.Services
                 DeployableVersion version = HostVersion(temp);
                 File.Delete(version.ExecutablePath);
 
-                string? refusal = await new ExtensionCheck(TestScope.Create(temp.TempDirectory)).FindRefusalAsync(Host, version, "/x");
+                string? refusal = await ReasonAsync(Check(Scope(temp)), Host, version);
 
                 Assert.StartsWith("its check cannot run: ", refusal);
             }
@@ -170,12 +188,9 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper temp = new TempFileHelper())
             {
                 string pidFile = temp.GetFullPath("pid");
-                ExtensionCheck check = new ExtensionCheck(TestScope.Create(temp.TempDirectory))
-                {
-                    Run = (invocation, token) => ProcessRunner.RunAsync(invocation with { Timeout = TimeSpan.FromSeconds(1) }, token),
-                };
+                ExtensionCheck check = Check(Scope(temp), (invocation, token) => ProcessRunner.RunAsync(invocation with { Timeout = TimeSpan.FromSeconds(1) }, token));
 
-                string? refusal = await check.FindRefusalAsync(Host, HostVersion(temp, $"echo $$ > '{pidFile}'; exec sleep 30"), "/x");
+                string? refusal = await ReasonAsync(check, Host, HostVersion(temp, $"echo $$ > '{pidFile}'; exec sleep 30"));
 
                 Assert.Equal("its check gave no answer in 60 seconds", refusal);
                 Assert.Throws<ArgumentException>(() => Process.GetProcessById(int.Parse(File.ReadAllText(pidFile))));
@@ -189,8 +204,7 @@ namespace Updaemon.Tests.Services
             using (CancellationTokenSource cancellation = new CancellationTokenSource())
             {
                 string pidFile = temp.GetFullPath("pid");
-                Task<string?> check = new ExtensionCheck(TestScope.Create(temp.TempDirectory))
-                    .FindRefusalAsync(Host, HostVersion(temp, $"echo $$ > '{pidFile}'; exec sleep 30"), "/x", cancellation.Token);
+                Task<string?> check = ReasonAsync(Check(Scope(temp)), Host, HostVersion(temp, $"echo $$ > '{pidFile}'; exec sleep 30"), cancellation.Token);
                 for (int i = 0; i < 200 && !(File.Exists(pidFile) && File.ReadAllText(pidFile).EndsWith('\n')); i++)
                 {
                     await Task.Delay(50);
@@ -211,7 +225,8 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper temp = new TempFileHelper())
             {
                 DeployableVersion version = HostVersion(temp, "/usr/bin/id -un; /usr/bin/id -Gn; echo \"$HOME\"; /bin/cat \"$2/plugin.dll\"; : > \"$2/written\" && echo wrote; exit 1");
-                string extension = temp.CreateTempDirectory("images");
+                UpdaemonScope scope = Scope(temp, isSystem: true);
+                string extension = ExtensionDirectory(scope);
                 string plugin = Path.Combine(extension, "plugin.dll");
                 File.WriteAllText(plugin, "readable\n");
                 const UnixFileMode onlyRoot = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
@@ -222,10 +237,9 @@ namespace Updaemon.Tests.Services
 
                 FilePermissionManager permissions = new FilePermissionManager(new MockOutputWriter());
                 await permissions.SetExecutablePermissionsAsync(version.ExecutablePath);
-                await permissions.SetDirectoryPermissionsAsync(temp.TempDirectory);
+                await permissions.MakeTreeReadableAsync(temp.TempDirectory);
 
-                string? refusal = await new ExtensionCheck(TestScope.Create(temp.TempDirectory, isSystem: true))
-                    .FindRefusalAsync(new InstalledApp { Name = "shelf", RunAs = "daemon" }, version, extension);
+                string? refusal = await ReasonAsync(Check(scope), new InstalledApp { Name = "shelf", RunAs = "daemon" }, version);
 
                 // Before it, the shell's own words on what it could not write.
                 Assert.EndsWith($"daemon / daemon / {LibC.FindUser("daemon")!.Home} / readable", refusal);
@@ -249,7 +263,7 @@ namespace Updaemon.Tests.Services
             {
                 DeployableVersion version = HostVersion(temp, "exit 1", """{ "executable": "bin/shelf", "command": "shelf", "extensions": { "variable": "P" } }""");
 
-                Assert.Null(await new ExtensionCheck(TestScope.Create(temp.TempDirectory)).FindRefusalAsync(Host, version, "/x"));
+                Assert.Null(await ReasonAsync(Check(Scope(temp)), Host, version));
             }
         }
 
@@ -260,7 +274,7 @@ namespace Updaemon.Tests.Services
             {
                 DeployableVersion version = HostVersion(temp, "exit 0", """{ "executable": "bin/shelf", "command": "shelf" }""");
 
-                Assert.Equal("shelf 1.0.0 takes no extensions", await new ExtensionCheck(TestScope.Create(temp.TempDirectory)).FindRefusalAsync(Host, version, "/x"));
+                Assert.Equal("shelf 1.0.0 takes no extensions", await ReasonAsync(Check(Scope(temp)), Host, version));
             }
         }
     }

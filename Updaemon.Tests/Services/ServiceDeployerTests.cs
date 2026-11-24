@@ -138,8 +138,12 @@ namespace Updaemon.Tests.Services
 
                 DeployableVersion staged = await h.Deployer.StageAsync(App(), new Version(1, 0, 0), h.Client);
 
-                Assert.Equal(new[] { staged.ExecutablePath }, h.Permissions.ExecutablePermissionsCalls);
-                Assert.Equal(new[] { h.Scope.GetAppDirectory("byteshelf") }, h.Permissions.DirectoryPermissionsCalls);
+                Assert.Equal(h.Versions.GetVersionDirectory(new AppName("byteshelf"), new Version(1, 0, 0)), staged.Directory);
+                Assert.True(File.Exists(staged.ExecutablePath));
+                // Before it is a version: a run killed in between leaves none that is not ready.
+                string partial = staged.Directory + ".partial";
+                Assert.Equal(new[] { Path.Combine(partial, staged.Manifest.Executable) }, h.Permissions.ExecutablePermissionsCalls);
+                Assert.Equal(new[] { partial }, h.Permissions.TreesMadeReadable);
             }
         }
 

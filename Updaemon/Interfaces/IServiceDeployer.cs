@@ -51,10 +51,17 @@ namespace Updaemon.Interfaces
         /// wrapper and service unit from its manifest. Does not start or restart the service. What is
         /// current when this fails partway is for the caller to put back (see <see cref="Services.AppSwitcher"/>).
         /// </summary>
+        /// <remarks>
+        /// Takes no <see cref="PreparedApp"/>, as a first install, a conversion from 0.x and putting a version
+        /// back have none. A command that switches an installed app goes through <see cref="Services.AppSwitcher"/>.
+        /// </remarks>
         Task ActivateAsync(InstalledApp app, DeployableVersion version, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
-        /// <summary>Regenerates the app's settings file, command wrapper and service unit for its current version.</summary>
-        Task RegenerateAsync(InstalledApp app, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Regenerates the app's settings file, command wrapper and service unit for its current version. A
+        /// step of a change that has begun: it takes the proof, so no command calls it unprepared, and does not begin one.
+        /// </summary>
+        Task RegenerateAsync(PreparedApp prepared, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// After a change to the app's settings or arguments: regenerates its settings file, command

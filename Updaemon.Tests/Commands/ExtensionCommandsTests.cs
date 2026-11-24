@@ -52,7 +52,7 @@ namespace Updaemon.Tests.Commands
                 string directory = h.Versions.GetVersionDirectory(new ExtensionName("shelf", "images"), new Version(1, 0, 0));
                 h.AnswerCheck = _ =>
                 {
-                    Assert.Contains(h.Scope.GetAppDirectory("shelf"), h.Permissions.DirectoryPermissionsCalls);
+                    Assert.Contains(directory + ".partial", h.Permissions.TreesMadeReadable);
                     Assert.True(File.Exists(Path.Combine(directory, "plugin.dll")));
                     Assert.Empty(h.LinkedExtensions());
                     return new ProcessRunner.Result(0, string.Empty, string.Empty);
@@ -133,7 +133,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.Install().ExecuteAsync(new[] { "shelf/images" });
 
                 Assert.Equal(1, exitCode);
-                Assert.Equal(new[] { "Error: shelf/images was not installed: shelf 1.0.0 refused 1.0.0: needs shelf 2." }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: shelf/images was not installed: shelf 1.0.0 refuses 1.0.0: needs shelf 2." }, h.Output.Errors);
                 Assert.Empty(h.ServiceManager.MethodCalls);
                 h.AssertUnchangedSince(before);
             }
@@ -360,7 +360,7 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
-        public async Task Install_AlreadyInstalled_IsRefused()
+        public async Task Install_AlreadyInstalled_PointsToUpdate()
         {
             using (AppHarness h = new AppHarness())
             {
@@ -368,7 +368,7 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(1, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
 
-                Assert.Equal(new[] { "Error: 'shelf/images' is already installed." }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: 'shelf/images' is already installed. Use 'updaemon update shelf/images' to update it." }, h.Output.Errors);
             }
         }
 
@@ -383,7 +383,7 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(1, await h.Install().ExecuteAsync(new[] { "shelf/Images", "--from", "github:owner/shelf/images.zip" }));
 
-                Assert.Equal(new[] { "Error: 'shelf/images' is already installed." }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: 'shelf/images' is already installed. Use 'updaemon update shelf/images' to update it." }, h.Output.Errors);
                 h.AssertUnchangedSince(before);
             }
         }
@@ -509,6 +509,8 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallHostWithImagesAsync();
                 IReadOnlyList<string> before = h.Snapshot();
+                // What to put back is saved; that it was removed is not.
+                h.SwitcherConfig.NextSaves.Enqueue(null);
                 h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
 
                 IOException ex = await Assert.ThrowsAsync<IOException>(() => h.Remove().ExecuteAsync(new[] { "shelf/images" }));
@@ -516,6 +518,21 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal("disk full", ex.Message);
                 h.AssertUnchangedSince(before);
                 Assert.Equal(0, h.HostRestarts());
+            }
+        }
+
+        [Fact]
+        public async Task Remove_Extension_WhatToPutBackCannotBeSaved_ChangesNothing()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                IReadOnlyList<string> before = h.Snapshot();
+                h.SwitcherConfig.NextSaves.Enqueue(new IOException("disk full"));
+
+                await Assert.ThrowsAsync<IOException>(() => h.Remove().ExecuteAsync(new[] { "shelf/images" }));
+
+                h.AssertUnchangedSince(before);
             }
         }
 
@@ -581,9 +598,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallHostAsync();
                 IReadOnlyList<string> before = h.Snapshot();
-                h.ServiceManager.OnRestart = h.KeepForCutOff;
-                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
-                h.CutOff();
+                await h.KilledInstallOfImagesAsync();
 
                 Assert.Equal(1, await h.Remove().ExecuteAsync(new[] { "shelf/images" }));
 
@@ -659,8 +674,6 @@ namespace Updaemon.Tests.Commands
             { "unset", h => h.Unset(), new[] { "shelf/images", "A" }, "updaemon unset shelf KEY..." },
             { "set-args", h => h.SetArgs(), new[] { "shelf/images", "--", "x" }, "updaemon set-args shelf [-- args...]" },
             { "set-restart", h => h.SetRestart(), new[] { "shelf/images", "manual" }, "updaemon set-restart shelf auto|manual" },
-            { "update", h => h.Update(), new[] { "shelf/images" }, "updaemon update shelf" },
-            { "rollback", h => h.RollbackCommand(), new[] { "shelf/images" }, "updaemon rollback shelf [version]" },
         };
 
         [Theory]

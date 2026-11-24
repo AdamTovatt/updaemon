@@ -83,7 +83,8 @@ namespace Updaemon.Commands
 
                 Description:
                   Controls whether a service is restarted after 'update' deploys a new version
-                  and after one of its extensions is installed or removed.
+                  and after one of its extensions is installed, rolled back or removed. Rolling
+                  back the app itself restarts it either way.
 
                     auto    (default) Restart the service after the change.
                     manual  Deploy the new version (download, repoint symlink, prune) but leave

@@ -63,14 +63,17 @@ namespace Updaemon.Services
             return Directory.Exists(directory) ? directory : throw NotKept(name, version);
         }
 
-        public InvalidOperationException NotKept(PackageName name, Version version) =>
-            new InvalidOperationException($"{name} {version} is not kept. Kept versions: {string.Join(", ", GetRetained(name))}.");
+        public InvalidOperationException NotKept(PackageName name, Version version)
+        {
+            IReadOnlyList<Version> kept = GetRetained(name);
+            return new InvalidOperationException($"{name} {version} is not kept. Kept versions: {(kept.Count == 0 ? "none" : string.Join(", ", kept))}.");
+        }
 
         /// <summary>
         /// Downloads a version, has <paramref name="read"/> make of it what the caller needs and makes it
-        /// readable. It becomes a version directory only once that is done; nothing is left if anything fails.
+        /// readable. It becomes a version directory only once all that is done; nothing is left if anything fails.
         /// </summary>
-        /// <param name="read">Given the complete version's directory.</param>
+        /// <param name="read">Given where the complete download is, which is not yet its version directory.</param>
         public async Task<T> DownloadAsync<T>(
             PackageName name, InstalledPackage package, Version version, IDistributionServiceClient distributionClient, Func<string, Task<T>> read, CancellationToken cancellationToken = default)
         {
@@ -82,7 +85,6 @@ namespace Updaemon.Services
             PackageLocation location = _scope.Locate(name);
             string versionDirectory = GetVersionDirectory(name, version);
             string partialDirectory = versionDirectory + PartialSuffix;
-            bool complete = false;
             try
             {
                 _outputWriter.WriteLine($"Downloading {name} {version}...");
@@ -94,25 +96,55 @@ namespace Updaemon.Services
                     _outputWriter.WriteLine($"Not verified: {name} {version} came without a checksum to check it against.");
                 }
 
+                T content = await read(partialDirectory);
+                await _filePermissionManager.MakeTreeReadableAsync(partialDirectory, cancellationToken);
+                await MakeEnterableAsync(location, cancellationToken);
+
                 // Left over from an attempt that was not activated.
                 Files.DeleteDirectoryIfExists(versionDirectory);
                 Directory.Move(partialDirectory, versionDirectory);
-                complete = true;
-                T content = await read(versionDirectory);
-                await MakeReadableAsync(name, cancellationToken);
                 return content;
             }
             catch
             {
-                TryDelete(complete ? versionDirectory : partialDirectory);
+                TryDelete(partialDirectory);
                 DeleteEmptyDirectories(location);
                 throw;
             }
         }
 
-        /// <summary>Lets everyone read what updaemon put there: whoever runs the app, or loads the extension, need not be who installed it.</summary>
-        public Task MakeReadableAsync(PackageName name, CancellationToken cancellationToken = default) =>
-            _filePermissionManager.SetDirectoryPermissionsAsync(_scope.Locate(name).AppDirectory, cancellationToken);
+        /// <summary>Downloads a version of which the caller needs nothing more.</summary>
+        /// <returns>The version.</returns>
+        public Task<Version> DownloadAsync(
+            PackageName name, InstalledPackage package, Version version, IDistributionServiceClient distributionClient, CancellationToken cancellationToken = default) =>
+            DownloadAsync(name, package, version, distributionClient, _ => Task.FromResult(version), cancellationToken);
+
+        /// <summary>
+        /// Lets everyone read every version of the app, whoever put them there, as <see cref="DownloadAsync"/>
+        /// does for the one it downloads: whoever runs the app, or loads the extension, need not be who installed it.
+        /// </summary>
+        public Task MakeReadableAsync(AppName name, CancellationToken cancellationToken = default) =>
+            _filePermissionManager.MakeTreeReadableAsync(_scope.Locate(name).AppDirectory, cancellationToken);
+
+        /// <summary>Lets everyone reach the versions, each of which has permissions of its own.</summary>
+        private async Task MakeEnterableAsync(PackageLocation location, CancellationToken cancellationToken)
+        {
+            foreach (string directory in GetDirectories(location))
+            {
+                await _filePermissionManager.MakeDirectoryEnterableAsync(directory, cancellationToken);
+            }
+        }
+
+        /// <summary>Where the versions are and what that is in, up to the app's own directory.</summary>
+        private static IEnumerable<string> GetDirectories(PackageLocation location)
+        {
+            for (string? directory = location.VersionsDirectory;
+                directory != null && directory.StartsWith(location.AppDirectory, StringComparison.Ordinal);
+                directory = Path.GetDirectoryName(directory))
+            {
+                yield return directory;
+            }
+        }
 
         /// <summary>Makes a kept version current.</summary>
         public Task PointAsync(PackageName name, Version version, CancellationToken cancellationToken = default)
@@ -138,6 +170,19 @@ namespace Updaemon.Services
             PackageLocation location = _scope.Locate(name);
             Files.DeleteDirectoryIfExists(location.VersionsDirectory);
             DeleteEmptyDirectories(location);
+        }
+
+        /// <summary>The same, where what it fails to delete may stay: it is not linked, and goes with the host or when it is installed again.</summary>
+        public void TryDeleteAll(PackageName name)
+        {
+            try
+            {
+                DeleteAll(name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _outputWriter.WriteError($"Warning: could not delete the versions of {name}: {ex.Message}");
+            }
         }
 
         /// <summary>Deletes a downloaded version that will not be activated, and the directories that leaves empty.</summary>
@@ -193,9 +238,7 @@ namespace Updaemon.Services
         {
             try
             {
-                for (string? directory = location.VersionsDirectory;
-                    directory != null && directory.StartsWith(location.AppDirectory, StringComparison.Ordinal);
-                    directory = Path.GetDirectoryName(directory))
+                foreach (string directory in GetDirectories(location))
                 {
                     if (Directory.Exists(directory))
                     {
