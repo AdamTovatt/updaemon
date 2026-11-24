@@ -160,23 +160,16 @@ namespace Updaemon.Services
             return await StaysRunningAsync(appName, cancellationToken);
         }
 
-        /// <summary>
-        /// What a false <see cref="StartAsync"/> or <see cref="RestartAsync"/> means:
-        /// <c>{version} did not stay running{consequence}.</c>, then where to look. The caller names the app in front.
-        /// </summary>
-        public static string NotRunning(string appName, Version version, string consequence = "") =>
-            $"{version} did not stay running{consequence}. {SeeLogs(appName)}";
-
-        /// <summary>What <see cref="NotRunning"/> says where no version needs naming: the start of a sentence, without its period.</summary>
-        public static string NotRunningAfterRestart(string appName) => $"{appName} did not stay running after the restart";
-
-        /// <summary>Where a service that did not stay running says why.</summary>
-        public static string SeeLogs(string appName) => $"See 'updaemon logs {appName}'.";
-
         public async Task<bool> RestartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
         {
             await _serviceManager.RestartServiceAsync(appName, cancellationToken);
             return await StaysRunningAsync(appName, cancellationToken);
+        }
+
+        public async Task RestartForAsync(AppChange change, ReachableServiceManager reachable, CancellationToken cancellationToken = default)
+        {
+            await _serviceManager.RestartServiceAsync(change.Before.Name, cancellationToken);
+            await change.ServiceRestartedAsync(_outputWriter);
         }
 
         public async Task RemoveAsync(InstalledApp app, bool purge, ReachableServiceManager reachable, CancellationToken cancellationToken = default)

@@ -146,8 +146,16 @@ namespace Updaemon.Services
             }
         }
 
-        /// <summary>Makes a kept version current.</summary>
-        public Task PointAsync(PackageName name, Version version, CancellationToken cancellationToken = default)
+        /// <summary>Makes a kept version of an app current.</summary>
+        public Task PointAsync(AppName name, Version version, CancellationToken cancellationToken = default) => LinkAsync(name, version, cancellationToken);
+
+        /// <summary>Makes a version of an extension current that its host loads.</summary>
+        public Task PointAsync(AcceptedExtension accepted, CancellationToken cancellationToken = default) => LinkAsync(accepted.Name, accepted.Version, cancellationToken);
+
+        /// <summary>Makes the version of an extension current again that was before a change, whatever its host says to it.</summary>
+        public Task PointBackAsync(ExtensionName name, Version version, CancellationToken cancellationToken = default) => LinkAsync(name, version, cancellationToken);
+
+        private Task LinkAsync(PackageName name, Version version, CancellationToken cancellationToken)
         {
             PackageLocation location = _scope.Locate(name);
             // The new link is made among the versions, not beside the old one: a host loads whatever is in its folder of extensions.

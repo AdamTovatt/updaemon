@@ -176,7 +176,8 @@ namespace Updaemon.Commands
                   stays at its version and is reported by every update until that is fixed
                   or the extension is removed. If the app does not keep running, all that
                   was switched goes back and is skipped. <app>/<extension> updates only that
-                  extension; a disabled service is not restarted for extensions alone.
+                  extension; a service disabled on Linux is not restarted for extensions
+                  alone.
 
                   When a plugin needs a secret, such as a githubToken for a private
                   repository, it is asked for at a terminal without echo and saved; under

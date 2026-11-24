@@ -32,12 +32,17 @@ namespace Updaemon.Services
         public async Task RestoreVersionsAsync(InstalledApp app, UnfinishedChange.PutBack putBack, ReachableServiceManager reachable)
         {
             List<string> problems = new List<string>();
-            foreach (VersionBefore before in putBack.Versions)
+            if (putBack.App is AppBefore before)
             {
-                await TryAsync(() => RestoreVersionAsync(app, before, putBack, reachable), problems);
+                await TryAsync(() => RestoreAppAsync(app, before, reachable), problems);
             }
 
-            if (problems.Count == 0 && putBack.RemovedService is ServiceBefore service)
+            foreach (ExtensionBefore extension in putBack.Extensions)
+            {
+                await TryAsync(() => RestoreExtensionAsync(app, extension), problems);
+            }
+
+            if (problems.Count == 0 && putBack.App?.RemovedService is ServiceBefore service)
             {
                 // Last: it starts with what is there then.
                 await TryAsync(() => RestoreServiceAsync(app.Name, service), problems);
@@ -61,19 +66,18 @@ namespace Updaemon.Services
             }
         }
 
-        private async Task RestoreVersionAsync(InstalledApp app, VersionBefore before, UnfinishedChange.PutBack putBack, ReachableServiceManager reachable)
+        private async Task RestoreAppAsync(InstalledApp app, AppBefore before, ReachableServiceManager reachable)
         {
-            if (before.Extension == null)
-            {
-                DeployableVersion version = await _serviceDeployer.OpenRetainedAsync(app.Name, before.Version!, CancellationToken.None);
-                await _serviceDeployer.ActivateAsync(app, version, reachable, putBack.NewManifest, CancellationToken.None);
-                return;
-            }
+            DeployableVersion version = await _serviceDeployer.OpenRetainedAsync(app.Name, before.Version, CancellationToken.None);
+            await _serviceDeployer.ActivateAsync(app, version, reachable, before.NewManifest, CancellationToken.None);
+        }
 
-            PackageName name = before.NameIn(app);
+        private async Task RestoreExtensionAsync(InstalledApp app, ExtensionBefore before)
+        {
+            ExtensionName name = new ExtensionName(app.Name, before.Id);
             if (before.Version != null)
             {
-                await _versions.PointAsync(name, before.Version, CancellationToken.None);
+                await _versions.PointBackAsync(name, before.Version, CancellationToken.None);
                 return;
             }
 
@@ -99,25 +103,6 @@ namespace Updaemon.Services
             if (before.Running && !(await _serviceManager.GetStateAsync(appName, CancellationToken.None)).IsActive)
             {
                 await _serviceManager.StartServiceAsync(appName, CancellationToken.None);
-            }
-        }
-
-        /// <summary>Restarts the service if there is one, without a health check. Returns what failed, or null.</summary>
-        public async Task<string?> RestartAsync(string appName)
-        {
-            if (!_serviceDeployer.HasService(appName))
-            {
-                return null;
-            }
-
-            try
-            {
-                await _serviceManager.RestartServiceAsync(appName, CancellationToken.None);
-                return null;
-            }
-            catch (Exception ex)
-            {
-                return ex.Message;
             }
         }
     }

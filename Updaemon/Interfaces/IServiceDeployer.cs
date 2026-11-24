@@ -80,6 +80,12 @@ namespace Updaemon.Interfaces
         Task<bool> RestartAsync(string appName, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Restarts the service for <paramref name="change"/>, which then owes no restart. That is saved here, before
+        /// the health check, which is the caller's next step: cancelling it leaves nothing to make up for.
+        /// </summary>
+        Task RestartForAsync(AppChange change, ReachableServiceManager reachable, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// The health check, right after a (re)start: whether the service came up and kept running for its
         /// current version's <see cref="ServiceSpec.HealthCheck"/> without the service manager starting it again.
         /// </summary>

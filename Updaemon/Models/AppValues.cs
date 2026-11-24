@@ -92,7 +92,7 @@ namespace Updaemon.Models
         {
             if (manifest.IsSetByUpdaemon(key))
             {
-                throw new InvalidOperationException(AppManifest.SetByUpdaemon(key));
+                throw new InvalidOperationException(AppManifest.SetByUpdaemonMessage(key));
             }
         }
 

@@ -10,11 +10,11 @@ namespace Updaemon.Configuration
     /// </summary>
     public sealed class AppChange
     {
-        private readonly AppSettingsStore _store;
+        private readonly AppEntryStore _store;
         private InstalledApp _saved;
         private bool _owesRestart;
 
-        internal AppChange(InstalledApp before, AppValues after, AppSettingsStore store)
+        internal AppChange(InstalledApp before, AppValues after, AppEntryStore store)
         {
             _store = store;
             _saved = before;
@@ -57,13 +57,22 @@ namespace Updaemon.Configuration
             _saved = await _store.SaveEntryAsync(entry, WithOwedRestart(left), CancellationToken.None);
         }
 
-        /// <summary>The service was restarted, so no restart is owed any more. Saved by whatever saves next.</summary>
-        internal void ServiceRestarted() => _owesRestart = false;
+        /// <summary>
+        /// The service was restarted, so no restart is owed any more. Of a change that stands nothing is left to do
+        /// then; one that is still to be put back stays noted until that is saved.
+        /// </summary>
+        internal async Task ServiceRestartedAsync(IOutputWriter outputWriter)
+        {
+            _owesRestart = false;
+            if (_saved.Unfinished is UnfinishedChange.CarryOut)
+            {
+                await ClearNoteAsync(outputWriter);
+            }
+        }
 
         /// <summary>
         /// Nothing is left to do: saves what is saved already without its note. Runs to its end. A failure is only
-        /// a warning, as what the note says is done. Called before a health check, so cancelling that leaves nothing
-        /// to make up for.
+        /// a warning, as what the note says is done.
         /// </summary>
         internal async Task ClearNoteAsync(IOutputWriter outputWriter)
         {
@@ -77,6 +86,9 @@ namespace Updaemon.Configuration
                 outputWriter.WriteError($"Warning: the next change to {After.Name} {again} once more: {ex.Message}");
             }
         }
+
+        /// <summary>Once it stands: the app as it is saved, for a change to follow.</summary>
+        internal PreparedApp PrepareNext() => new PreparedApp(_saved, _store);
 
         private UnfinishedChange? WithOwedRestart(UnfinishedChange? note) =>
             _owesRestart ? (note ?? new UnfinishedChange.CarryOut()) with { Restart = true } : note;

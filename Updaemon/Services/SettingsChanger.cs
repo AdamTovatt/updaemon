@@ -56,9 +56,7 @@ namespace Updaemon.Services
                 return true;
             }
 
-            await _serviceManager.RestartServiceAsync(appName, cancellationToken);
-            change.ServiceRestarted();
-            await change.ClearNoteAsync(_outputWriter);
+            await _serviceDeployer.RestartForAsync(change, settings.Reachable, cancellationToken);
             _outputWriter.WriteLine($"Restarted {appName}.");
             return await _serviceDeployer.StaysRunningAsync(appName, cancellationToken);
         }

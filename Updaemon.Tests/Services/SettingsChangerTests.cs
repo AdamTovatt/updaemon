@@ -85,24 +85,32 @@ namespace Updaemon.Tests.Services
             }
         }
 
-        /// <summary>A change of plain settings, or of none, has nothing to write there.</summary>
-        [Fact]
-        public async Task ApplyAsync_SecretsUnchanged_DoesNotWriteThem()
+        public static TheoryData<string, Func<AppHarness, Task<int>>, int> ChangesAndSavesOfSecrets => new TheoryData<string, Func<AppHarness, Task<int>>, int>
         {
+            { "plain setting", h => h.Set().ExecuteAsync(new[] { "byteshelf", "A=1" }), 0 },
+            { "another value of a secret", h => h.Set().ExecuteAsync(new[] { "byteshelf", "BYTESHELF_API_KEY=key2" }), 1 },
+            { "same value of a secret", h => h.Set().ExecuteAsync(new[] { "byteshelf", "BYTESHELF_API_KEY=key1" }), 0 },
+            { "another secret", h => h.Set().ExecuteAsync(new[] { "byteshelf", "B=2", "--secret" }), 1 },
+            { "one secret less", h => h.Unset().ExecuteAsync(new[] { "byteshelf", "EXTRA" }), 1 },
+            { "nothing", h => h.Unset().ExecuteAsync(new[] { "byteshelf", "NOTHING" }), 0 },
+        };
+
+        /// <summary>A change of plain settings, or of none, has nothing to write there.</summary>
+        [Theory]
+        [MemberData(nameof(ChangesAndSavesOfSecrets))]
+        public async Task ApplyAsync_WritesTheSecretsOnlyWhenTheyChanged(string name, Func<AppHarness, Task<int>> change, int expectedSaves)
+        {
+            _ = name; // Names the case in the test's display name.
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallByteShelfAsync();
+                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "byteshelf", "EXTRA=1", "--secret" }));
                 int saves = 0;
                 h.SavedSecrets.OnSave = () => saves++;
 
-                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "byteshelf", "A=1" }));
-                Assert.Equal(0, saves);
-                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "byteshelf", "BYTESHELF_API_KEY=key2" }));
-                Assert.Equal(1, saves);
-                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "byteshelf", "B=2", "--secret" }));
-                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "byteshelf", "B" }));
-                Assert.Equal(3, saves);
-                Assert.Equal(new Dictionary<string, string> { ["BYTESHELF_API_KEY"] = "key2" }, await h.Secrets.GetAppSecretsAsync("byteshelf"));
+                Assert.Equal(0, await change(h));
+
+                Assert.Equal(expectedSaves, saves);
             }
         }
 

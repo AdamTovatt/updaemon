@@ -53,8 +53,8 @@ namespace Updaemon.Tests.Helpers
             Config = new ConfigManager(Scope);
             Secrets = new SecretsManager(Scope, Permissions);
             SavedSecrets = new WatchedSecretsManager(Secrets);
-            SavedConfig = new SaveFailingConfigManager(Config);
-            SettingsStore = new AppSettingsStore(SavedConfig, SavedSecrets);
+            SavedConfig = new WatchedConfigManager(Config);
+            EntryStore = new AppEntryStore(SavedConfig, SavedSecrets);
             Files = new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Output);
             Links = new WatchedSymlinkManager(new SymlinkManager());
             Versions = new VersionStore(Scope, Links, Permissions, Output);
@@ -69,8 +69,8 @@ namespace Updaemon.Tests.Helpers
                 Output,
                 Time);
             SwitchRestorer restorer = new SwitchRestorer(Versions, Deployer, ServiceManager);
-            Preparer = new AppPreparer(restorer, Deployer, ServiceManager, SettingsStore, Output);
-            Readiness = new SwitchReadiness(Versions, Deployer, SettingsStore);
+            Preparer = new AppPreparer(restorer, Deployer, ServiceManager, EntryStore, Output);
+            Readiness = new SwitchReadiness(Versions, Deployer, EntryStore);
             Switcher = new AppSwitcher(Versions, Readiness, restorer, Deployer, ServiceManager, Output);
             SettingsChanger = new SettingsChanger(Preparer, Deployer, ServiceManager, Output);
             Check = new ExtensionCheck(Scope, Versions) { Run = RunCheckAsync };
@@ -144,7 +144,7 @@ namespace Updaemon.Tests.Helpers
         public SettingsChanger SettingsChanger { get; }
 
         /// <summary>What an install and a change to an installed app save the entry with.</summary>
-        public SaveFailingConfigManager SavedConfig { get; }
+        public WatchedConfigManager SavedConfig { get; }
 
         /// <summary>What they save the secrets with.</summary>
         public WatchedSecretsManager SavedSecrets { get; }
@@ -196,7 +196,7 @@ namespace Updaemon.Tests.Helpers
 
         public SecretsManager Secrets { get; }
 
-        public AppSettingsStore SettingsStore { get; }
+        public AppEntryStore EntryStore { get; }
 
         public ServiceDeployer Deployer { get; }
 
@@ -213,7 +213,7 @@ namespace Updaemon.Tests.Helpers
         public MockOutputWriter Output { get; } = new MockOutputWriter();
 
         public InstallCommand Install() => new InstallCommand(
-            Config, SettingsStore, Stager(), Versions, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, OtherScopeApps(), ExtensionInstaller());
+            Config, EntryStore, Stager(), Versions, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, OtherScopeApps(), ExtensionInstaller());
 
         private ReleaseStager Stager() => new ReleaseStager(Sessions());
 
@@ -223,7 +223,7 @@ namespace Updaemon.Tests.Helpers
 
         public UpdateCommand Update() => new UpdateCommand(Config, Preparer, AppUpdater(), GitHubPluginUpdater(), SelfUpdater(), RunLog, Output, Time);
 
-        private AppUpdater AppUpdater() => new AppUpdater(Config, Sessions(), Versions, Deployer, Preparer, Readiness, Switcher, Check, Output);
+        private AppUpdater AppUpdater() => new AppUpdater(Sessions(), Versions, Deployer, Readiness, Switcher, Check, Output);
 
         private PluginSessions Sessions() => new PluginSessions(() => Client, Secrets, Plugins, Credentials(), Output);
 

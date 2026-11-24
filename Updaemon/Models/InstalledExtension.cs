@@ -4,6 +4,6 @@ namespace Updaemon.Models
     public sealed class InstalledExtension : InstalledPackage
     {
         /// <summary>Its name after the slash, as in <c>byteshelf/images</c>.</summary>
-        public string Id { get; set; } = string.Empty;
+        public required string Id { get; set; }
     }
 }

@@ -140,7 +140,8 @@ namespace Updaemon.Commands
                   too, and on macOS its log files.
 
                   <app>/<extension> removes only that extension and restarts the app, unless it
-                  is not a service, is set to manual restart or is disabled.
+                  is not a service, is set to manual restart or, on Linux, is disabled. Its
+                  files stay while such an app may still read them.
 
                 Examples:
                   updaemon remove byteshelf

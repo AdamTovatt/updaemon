@@ -26,6 +26,20 @@ namespace Updaemon.Tests.Configuration
             }
         }
 
+        /// <summary>What was edited past the copy would otherwise be saved with no note of it.</summary>
+        [Fact]
+        public async Task BeginChangeAsync_AppWasEdited_IsRefused()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                PreparedApp prepared = await h.Preparer.PrepareAsync(await h.HostAsync());
+                prepared.App.Settings["A"] = "1";
+
+                await Assert.ThrowsAsync<InvalidOperationException>(() => prepared.BeginChangeAsync());
+            }
+        }
+
         /// <summary>Editing the copy is not seen, nor saved, until it is committed.</summary>
         [Fact]
         public async Task BeginChangeAsync_HandsOutACopyOfItsOwn()

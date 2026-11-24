@@ -12,32 +12,26 @@ namespace Updaemon.Services
     /// </summary>
     public class AppUpdater
     {
-        private readonly IConfigManager _configManager;
         private readonly PluginSessions _sessions;
         private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppPreparer _preparer;
         private readonly SwitchReadiness _readiness;
         private readonly AppSwitcher _switcher;
         private readonly ExtensionCheck _check;
         private readonly IOutputWriter _outputWriter;
 
         public AppUpdater(
-            IConfigManager configManager,
             PluginSessions sessions,
             VersionStore versions,
             IServiceDeployer serviceDeployer,
-            AppPreparer preparer,
             SwitchReadiness readiness,
             AppSwitcher switcher,
             ExtensionCheck check,
             IOutputWriter outputWriter)
         {
-            _configManager = configManager;
             _sessions = sessions;
             _versions = versions;
             _serviceDeployer = serviceDeployer;
-            _preparer = preparer;
             _readiness = readiness;
             _switcher = switcher;
             _check = check;
@@ -65,6 +59,8 @@ namespace Updaemon.Services
                 Run run = new Run(session, packages, retentionCount, failures);
                 foreach (Target target in targets)
                 {
+                    // One that was cancelled while it went back has told what failed and ends here.
+                    cancellationToken.ThrowIfCancellationRequested();
                     await UpdateAsync(target, run, cancellationToken);
                 }
             }
@@ -83,34 +79,36 @@ namespace Updaemon.Services
             /// <summary>Those a plugin that does not start is reported for: all of its, but those that failed before.</summary>
             private readonly List<SelectedPackage> _waiting;
 
+            private readonly UpdateFailures _failures;
+
             public Run(PluginSession session, IEnumerable<SelectedPackage> packages, int retentionCount, UpdateFailures failures)
             {
                 Session = session;
                 _waiting = packages.ToList();
                 RetentionCount = retentionCount;
-                Failures = failures;
+                _failures = failures;
             }
 
             public PluginSession Session { get; }
 
             public int RetentionCount { get; }
 
-            public UpdateFailures Failures { get; }
+            public void Report(PackageName package, string reason) => Report(new[] { package }, reason);
 
-            public void Report(SelectedPackage package, string reason)
+            /// <summary>One failure of all of them.</summary>
+            public void Report(IReadOnlyList<PackageName> packages, string reason)
             {
-                _waiting.Remove(package);
-                Failures.Report(package.Name.ToString(), reason);
+                _waiting.RemoveAll(package => packages.Contains(package.Name));
+                _failures.Report(packages.Select(package => package.ToString()).ToArray(), reason);
             }
 
             /// <summary>Reported for every package still waiting for the plugin, so it is not once more when their turn comes.</summary>
             public void ReportUnavailable(string plugin, string reason)
             {
-                string[] waiting = _waiting.Where(package => package.Package.Plugin == plugin).Select(package => package.Name.ToString()).ToArray();
-                _waiting.RemoveAll(package => package.Package.Plugin == plugin);
+                PackageName[] waiting = _waiting.Where(package => package.Package.Plugin == plugin).Select(package => package.Name).ToArray();
                 if (waiting.Length > 0)
                 {
-                    Failures.Report(waiting, reason);
+                    Report(waiting, reason);
                 }
             }
         }
@@ -148,26 +146,24 @@ namespace Updaemon.Services
 
         private async Task UpdateAsync(Target target, Run run, CancellationToken cancellationToken)
         {
-            AppSwitch? change = null;
+            AppSwitch? appSwitch = null;
             await using (StagedVersions staged = new StagedVersions(_versions))
             {
                 try
                 {
                     await StageAllAsync(target, staged, run, cancellationToken);
-                    change = await ChooseAsync(target, staged, run, cancellationToken);
-                    if (change != null)
+                    appSwitch = await ChooseAsync(target, staged, run, cancellationToken);
+                    if (appSwitch != null)
                     {
-                        await SwitchAsync(change, staged, run, cancellationToken);
+                        await SwitchAsync(appSwitch, staged, run, cancellationToken);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    run.Failures.Report(change == null ? new[] { target.Packages[0].Name.ToString() } : Names(change), ex.Message);
+                    run.Report(appSwitch?.Names ?? new[] { target.Packages[0].Name }, ex.Message);
                 }
             }
         }
-
-        private static string[] Names(AppSwitch change) => change.Names.Select(name => name.ToString()).ToArray();
 
         /// <summary>What was downloaded for one target. Disposing deletes it again, except what was kept, whatever failed: a full disk included.</summary>
         private sealed class StagedVersions : IAsyncDisposable
@@ -197,9 +193,9 @@ namespace Updaemon.Services
                 _unused[package.Name] = version;
             }
 
-            public void Keep(AppSwitch change)
+            public void Keep(AppSwitch appSwitch)
             {
-                foreach (PackageName name in change.Names)
+                foreach (PackageName name in appSwitch.Names)
                 {
                     _unused.Remove(name);
                 }
@@ -273,7 +269,7 @@ namespace Updaemon.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                run.Report(selected, ex.Message);
+                run.Report(name, ex.Message);
             }
 
             return null;
@@ -292,25 +288,28 @@ namespace Updaemon.Services
             };
         }
 
-        private async Task SwitchAsync(AppSwitch change, StagedVersions staged, Run run, CancellationToken cancellationToken)
+        private async Task SwitchAsync(AppSwitch appSwitch, StagedVersions staged, Run run, CancellationToken cancellationToken)
         {
-            string app = change.App.Name;
-            SwitchOutcome outcome = await _switcher.SwitchAsync(change, cancellationToken);
+            string app = appSwitch.App.Name;
+            SwitchOutcome outcome = await _switcher.SwitchAsync(appSwitch, cancellationToken);
             // Also those that do not stand: though skipped, so they can be rolled forward to by name.
-            staged.Keep(change);
+            staged.Keep(appSwitch);
             if (SwitchText.Problem(app, outcome) is string problem)
             {
-                run.Failures.Report(Names(change), problem);
+                run.Report(appSwitch.Names, problem);
                 return;
             }
 
             _outputWriter.WriteRestartSkipped(app, outcome);
-            foreach (PackageSwitch package in outcome.Switched)
+            foreach (PackageSwitch.Moved package in outcome.Switched.OfType<PackageSwitch.Moved>())
             {
                 _outputWriter.WriteLine($"Updated {package.Name} from {package.From} to {package.To}.");
             }
 
-            await CleanUpAsync(app, outcome.Switched, run.RetentionCount, cancellationToken);
+            if (outcome is SwitchOutcome.Stands stands)
+            {
+                await CleanUpAsync(stands, run.RetentionCount, cancellationToken);
+            }
         }
 
         /// <summary>Whether the app can be updated; when not, which is reported, its extensions still are.</summary>
@@ -318,12 +317,12 @@ namespace Updaemon.Services
         {
             try
             {
-                await _readiness.MakeReadyAsync(app, next, AppSwitch.RetryUpdate(app.Name), cancellationToken);
+                await _readiness.MakeReadyAsync(app, NextAppVersion.ToUpdateTo(next, app.Name), cancellationToken);
                 return true;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                run.Failures.Report(app.Name, ex.Message);
+                run.Report(app.PackageName, ex.Message);
                 return false;
             }
         }
@@ -346,23 +345,23 @@ namespace Updaemon.Services
             DeployableVersion host = newHost ?? await _serviceDeployer.OpenCurrentAsync(app.Name, cancellationToken);
             foreach (InstalledExtension extension in extensions)
             {
-                string name = app.NameOf(extension).ToString();
+                ExtensionName name = app.NameOf(extension);
                 Version? staged = newExtensions.GetValueOrDefault(extension);
                 try
                 {
-                    ExtensionVerdict? ofStaged = staged == null ? null : await _check.AskAsync(app, host, app.NameOf(extension), staged, cancellationToken);
+                    ExtensionVerdict? ofStaged = staged == null ? null : await _check.AskAsync(app, host, name, staged, cancellationToken);
                     if (ofStaged is AcceptedExtension newVersion)
                     {
                         accepted.Add(newVersion);
                     }
                     else if (await FindProblemAsync(app, host, extension, ofStaged as ExtensionRefusal, cancellationToken) is string problem)
                     {
-                        run.Failures.Report(name, problem);
+                        run.Report(name, problem);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    run.Failures.Report(name, ex.Message);
+                    run.Report(name, ex.Message);
                 }
             }
 
@@ -387,17 +386,16 @@ namespace Updaemon.Services
         }
 
         /// <summary>After a switch that stands: deletes old versions and forgets the skips that no longer matter. A failure is only a warning.</summary>
-        private async Task CleanUpAsync(string appName, IReadOnlyList<PackageSwitch> switched, int retentionCount, CancellationToken cancellationToken)
+        private async Task CleanUpAsync(SwitchOutcome.Stands outcome, int retentionCount, CancellationToken cancellationToken)
         {
             try
             {
-                InstalledApp app = (await _configManager.GetAppAsync(appName, cancellationToken))!;
-                AppChange change = await (await _preparer.PrepareAsync(app, cancellationToken)).BeginChangeAsync(cancellationToken);
+                AppChange change = await outcome.App.BeginChangeAsync(cancellationToken);
                 bool forgot = false;
-                foreach (PackageSwitch package in switched)
+                foreach (PackageSwitch.Moved package in outcome.Switched.OfType<PackageSwitch.Moved>())
                 {
                     await _versions.PruneAsync(package.Name, retentionCount, cancellationToken);
-                    forgot |= change.After.Find(package.Name)!.ForgetSkipsOlderThan(package.To!, _versions.GetRetained(package.Name));
+                    forgot |= change.After.Find(package.Name)?.ForgetSkipsOlderThan(package.To, _versions.GetRetained(package.Name)) == true;
                 }
 
                 if (forgot)
@@ -407,7 +405,7 @@ namespace Updaemon.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _outputWriter.WriteError($"Warning: {appName}: failed to clean up after the update: {ex.Message}");
+                _outputWriter.WriteError($"Warning: {outcome.App.App.Name}: failed to clean up after the update: {ex.Message}");
             }
         }
     }

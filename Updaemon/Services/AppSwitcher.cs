@@ -48,12 +48,12 @@ namespace Updaemon.Services
         /// </summary>
         /// <exception cref="ServiceManagerUnreachableException">Nothing was written: it cannot be reached.</exception>
         /// <exception cref="InvalidOperationException">Nothing was written, as <see cref="SwitchReadiness"/> says why; or it failed, and the message says whether all is back.</exception>
-        public async Task<SwitchOutcome> SwitchAsync(AppSwitch change, CancellationToken cancellationToken = default)
+        public async Task<SwitchOutcome> SwitchAsync(AppSwitch appSwitch, CancellationToken cancellationToken = default)
         {
-            ReachableServiceManager reachable = await _readiness.MakeReadyAsync(change, cancellationToken);
-            RestartDecision restart = await DecideRestartAsync(change, cancellationToken);
-            Begun begun = await BeginAsync(change, restart, reachable, cancellationToken);
-            return change.IfDown == IfDown.GoBack
+            ReachableServiceManager reachable = await _readiness.MakeReadyAsync(appSwitch, cancellationToken);
+            RestartDecision restart = await DecideRestartAsync(appSwitch, cancellationToken);
+            Begun begun = await BeginAsync(appSwitch, restart, reachable, cancellationToken);
+            return appSwitch.IfDown == IfDown.GoBack
                 ? await SwitchIfItStaysUpAsync(begun, cancellationToken)
                 : await SwitchWhateverItDoesAsync(begun, cancellationToken);
         }
@@ -69,13 +69,13 @@ namespace Updaemon.Services
                 restarting = begun.Restarts;
                 if (restarting)
                 {
-                    staysUp = await _serviceDeployer.RestartAsync(begun.AppName, begun.Reachable, cancellationToken);
-                    begun.Entry.ServiceRestarted();
+                    await _serviceDeployer.RestartForAsync(begun.Change, begun.Reachable, cancellationToken);
+                    staysUp = await _serviceDeployer.StaysRunningAsync(begun.AppName, cancellationToken);
                 }
 
                 if (staysUp)
                 {
-                    await begun.Entry.CommitAsync(left: null, cancellationToken);
+                    await begun.Change.CommitAsync(left: null, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -89,8 +89,8 @@ namespace Updaemon.Services
                 return await FallBackAsync(begun, cancellationToken);
             }
 
-            await CleanUpAsync(begun, cancellationToken);
-            return new SwitchOutcome.Stands(begun.Switched, begun.Restart);
+            await DropSecretsSetByUpdaemonAsync(begun, cancellationToken);
+            return begun.Stands();
         }
 
         /// <summary>The switch stands before the service is restarted, and whatever that does with it.</summary>
@@ -99,7 +99,7 @@ namespace Updaemon.Services
             try
             {
                 await ApplyAsync(begun, cancellationToken);
-                await begun.Entry.CommitAsync(begun.Restarts ? new UnfinishedChange.CarryOut { Restart = true } : null, cancellationToken);
+                await begun.Change.CommitAsync(begun.Restarts ? new UnfinishedChange.CarryOut { Restart = true } : null, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -107,40 +107,37 @@ namespace Updaemon.Services
                 throw;
             }
 
-            await CleanUpAsync(begun, cancellationToken);
-            if (!begun.Restarts)
+            await DropSecretsSetByUpdaemonAsync(begun, cancellationToken);
+            if (begun.Restarts)
             {
-                return new SwitchOutcome.Stands(begun.Switched, begun.Restart);
+                try
+                {
+                    await _serviceDeployer.RestartForAsync(begun.Change, begun.Reachable, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Still to be restarted: the next change to the app does it.
+                    return new SwitchOutcome.StandsDown(begun.Switched, begun.Restart, ex.Message);
+                }
             }
 
-            try
-            {
-                await _serviceManager.RestartServiceAsync(begun.AppName, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Still to be restarted: the next change to the app does it.
-                return new SwitchOutcome.StandsDown(begun.Switched, begun.Restart, ex.Message);
-            }
-
-            begun.Entry.ServiceRestarted();
-            await begun.Entry.ClearNoteAsync(_outputWriter);
-            return await _serviceDeployer.StaysRunningAsync(begun.AppName, cancellationToken)
-                ? new SwitchOutcome.Stands(begun.Switched, begun.Restart)
+            DeleteRemoved(begun);
+            return !begun.Restarts || await _serviceDeployer.StaysRunningAsync(begun.AppName, cancellationToken)
+                ? begun.Stands()
                 : new SwitchOutcome.StandsDown(begun.Switched, begun.Restart, RestartFailure: null);
         }
 
         /// <summary>Made before anything changes, so a service manager that cannot tell changes nothing.</summary>
-        private async Task<RestartDecision> DecideRestartAsync(AppSwitch change, CancellationToken cancellationToken)
+        private async Task<RestartDecision> DecideRestartAsync(AppSwitch appSwitch, CancellationToken cancellationToken)
         {
-            InstalledApp app = change.App;
-            bool switchesApp = change.NewVersion != null;
-            if (!(change.NewVersion?.Manifest.IsService ?? _serviceDeployer.HasService(app.Name)))
+            InstalledApp app = appSwitch.App;
+            bool switchesApp = appSwitch.Next != null;
+            if (!(appSwitch.Next?.Version.Manifest.IsService ?? _serviceDeployer.HasService(app.Name)))
             {
                 return RestartDecision.NoService;
             }
 
-            if (switchesApp && change.IfDown == IfDown.Stand)
+            if (switchesApp && appSwitch.IfDown == IfDown.Stand)
             {
                 return RestartDecision.Restart;
             }
@@ -157,80 +154,88 @@ namespace Updaemon.Services
         /// <param name="PutBack">What is saved to put back.</param>
         /// <param name="Manifest">That of the app's version that will run; null when the switch does not need it.</param>
         private sealed record Begun(
-            AppSwitch Change,
-            AppChange Entry,
+            AppSwitch AppSwitch,
+            AppChange Change,
             IReadOnlyList<PackageSwitch> Switched,
             UnfinishedChange.PutBack PutBack,
             AppManifest? Manifest,
             RestartDecision Restart,
             ReachableServiceManager Reachable)
         {
-            public string AppName => Entry.Before.Name;
+            public string AppName => Change.Before.Name;
 
             public bool Restarts => Restart == RestartDecision.Restart;
+
+            public SwitchOutcome Stands() => new SwitchOutcome.Stands(Switched, Restart, Change.PrepareNext());
         }
 
         /// <summary>Makes the entry what it is once the switch stands, and saves what to put back until then.</summary>
-        private async Task<Begun> BeginAsync(AppSwitch change, RestartDecision restart, ReachableServiceManager reachable, CancellationToken cancellationToken)
+        private async Task<Begun> BeginAsync(AppSwitch appSwitch, RestartDecision restart, ReachableServiceManager reachable, CancellationToken cancellationToken)
         {
-            AppChange entry = await change.Prepared.BeginChangeAsync(cancellationToken);
-            IReadOnlyList<PackageSwitch> switched = await FindSwitchedAsync(change, cancellationToken);
-            AppManifest? manifest = change.OnlyRemoves
-                ? null
-                : change.NewVersion?.Manifest ?? await _serviceDeployer.GetCurrentManifestAsync(change.App.Name, cancellationToken);
-            Record(change, switched, manifest, entry);
-            UnfinishedChange.PutBack putBack = new UnfinishedChange.PutBack
-            {
-                Restart = restart == RestartDecision.Restart,
-                Versions = switched.Select(package => new VersionBefore { Extension = (package.Name as ExtensionName)?.Id, Version = package.From }).ToList(),
-                NewManifest = change.NewVersion?.Manifest,
-                RemovedService = change.NewVersion?.Manifest.IsService == false ? await FindServiceAsync(change.App.Name, cancellationToken) : null,
-            };
-            await entry.SaveNoteAsync(putBack, cancellationToken);
-            return new Begun(change, entry, switched, putBack, manifest, restart, reachable);
-        }
-
-        private async Task<IReadOnlyList<PackageSwitch>> FindSwitchedAsync(AppSwitch change, CancellationToken cancellationToken)
-        {
+            AppChange change = await appSwitch.Prepared.BeginChangeAsync(cancellationToken);
             List<PackageSwitch> switched = new List<PackageSwitch>();
-            if (change.NewVersion is DeployableVersion next)
+            AppBefore? appBefore = null;
+            if (appSwitch.Next is NextAppVersion next)
             {
-                switched.Add(new PackageSwitch(change.App.PackageName, await _versions.GetCurrentAsync(change.App.PackageName, cancellationToken), next.Version));
+                AppName name = appSwitch.App.PackageName;
+                PackageSwitch.Moved app = new PackageSwitch.Moved(name, await _versions.GetCurrentAsync(name, cancellationToken), next.Version.Version);
+                switched.Add(app);
+                appBefore = new AppBefore
+                {
+                    Version = app.From,
+                    NewManifest = next.Version.Manifest,
+                    RemovedService = next.Version.Manifest.IsService ? null : await FindServiceAsync(appSwitch.App.Name, cancellationToken),
+                };
             }
 
-            foreach (ExtensionChange extension in change.Extensions)
+            List<ExtensionBefore> extensionsBefore = new List<ExtensionBefore>();
+            foreach (ExtensionChange extension in appSwitch.Extensions)
             {
-                switched.Add(new PackageSwitch(extension.Name, await _versions.FindCurrentAsync(extension.Name, cancellationToken), extension.To?.Version));
+                Version? current = await _versions.FindCurrentAsync(extension.Name, cancellationToken);
+                switched.Add(Describe(extension, current));
+                extensionsBefore.Add(new ExtensionBefore { Id = extension.Name.Id, Version = current });
             }
 
-            return switched;
+            AppManifest? manifest = appSwitch.OnlyRemoves
+                ? null
+                : appSwitch.Next?.Version.Manifest ?? await _serviceDeployer.GetCurrentManifestAsync(appSwitch.App.Name, cancellationToken);
+            Record(appSwitch, switched, manifest, change);
+            UnfinishedChange.PutBack putBack = new UnfinishedChange.PutBack { Restart = restart == RestartDecision.Restart, App = appBefore, Extensions = extensionsBefore };
+            await change.SaveNoteAsync(putBack, cancellationToken);
+            return new Begun(appSwitch, change, switched, putBack, manifest, restart, reachable);
         }
 
-        /// <summary>Makes <paramref name="entry"/> what it is once the switch stands.</summary>
-        private static void Record(AppSwitch change, IReadOnlyList<PackageSwitch> switched, AppManifest? manifest, AppChange entry)
+        private static PackageSwitch Describe(ExtensionChange extension, Version? current) => extension switch
         {
-            InstalledApp after = entry.After;
-            if (change.NewVersion is DeployableVersion next)
+            ExtensionChange.Install install => new PackageSwitch.Installed(install.Name, install.Accepted.Version, install.Source),
+            ExtensionChange.Switch move => new PackageSwitch.Moved(move.Name, current ?? throw VersionStore.NotDeployed(move.Name), move.Accepted.Version),
+            ExtensionChange.Remove remove => new PackageSwitch.Removed(remove.Name),
+            _ => throw new InvalidOperationException($"There is no switch for {extension.GetType().Name}."),
+        };
+
+        /// <summary>Makes what <paramref name="change"/> saves what it is once the switch stands.</summary>
+        private static void Record(AppSwitch appSwitch, IReadOnlyList<PackageSwitch> switched, AppManifest? manifest, AppChange change)
+        {
+            if (appSwitch.Next?.Version is DeployableVersion next)
             {
-                after.RecordSwitch(switched[0].From!, next.Version);
                 if (next.ManifestInDirectory)
                 {
                     // The release ships its own manifest; one from the install flags is no longer used.
-                    after.Manifest = null;
+                    change.After.Manifest = null;
                 }
 
                 // A release can newly declare a setting secret; its value then moves out of the readable settings.
-                entry.Values.ConformTo(next.Manifest);
+                change.Values.ConformTo(next.Manifest);
             }
 
             if (manifest != null)
             {
-                entry.Values.DropSettingsSetByUpdaemon(manifest);
+                change.Values.DropSettingsSetByUpdaemon(manifest);
             }
 
-            foreach (ExtensionChange extension in change.Extensions)
+            foreach (PackageSwitch package in switched)
             {
-                extension.Record(after, switched.Single(package => package.Name == extension.Name).From);
+                package.Record(change.After);
             }
         }
 
@@ -247,24 +252,30 @@ namespace Updaemon.Services
 
         private async Task ApplyAsync(Begun begun, CancellationToken cancellationToken)
         {
-            AppSwitch change = begun.Change;
-            await begun.Entry.SaveSecretsAsync(cancellationToken);
-            if (change.NewVersion != null)
+            AppSwitch appSwitch = begun.AppSwitch;
+            await begun.Change.SaveSecretsAsync(cancellationToken);
+            if (appSwitch.Next?.Version is DeployableVersion next)
             {
-                await _serviceDeployer.ActivateAsync(begun.Entry.After, change.NewVersion, begun.Reachable, cancellationToken: cancellationToken);
+                bool addsService = next.Manifest.IsService && !_serviceDeployer.HasService(begun.AppName);
+                await _serviceDeployer.ActivateAsync(begun.Change.After, next, begun.Reachable, cancellationToken: cancellationToken);
+                if (addsService)
+                {
+                    // As installing it would have, so it starts at boot too. Going back disables it with its unit.
+                    await _serviceManager.EnableServiceAsync(begun.AppName, cancellationToken);
+                }
             }
-            else if (!change.OnlyRemoves)
+            else if (!appSwitch.OnlyRemoves)
             {
                 // Needed for a host activated by an updaemon that knew no extensions, without their folder and its
                 // variable. For any other it writes the same again.
-                await _serviceDeployer.RegenerateAsync(begun.Entry, begun.Reachable, cancellationToken);
+                await _serviceDeployer.RegenerateAsync(begun.Change, begun.Reachable, cancellationToken);
             }
 
-            foreach (ExtensionChange extension in change.Extensions)
+            foreach (ExtensionChange extension in appSwitch.Extensions)
             {
                 if (extension.To is AcceptedExtension to)
                 {
-                    await _versions.PointAsync(to.Name, to.Version, cancellationToken);
+                    await _versions.PointAsync(to, cancellationToken);
                 }
                 else
                 {
@@ -273,14 +284,28 @@ namespace Updaemon.Services
             }
         }
 
-        /// <summary>Once the switch stands, which what fails here does not change.</summary>
-        private async Task CleanUpAsync(Begun begun, CancellationToken cancellationToken)
+        /// <summary>
+        /// Once the service was restarted without them, or is none. One that still runs with them may read their
+        /// files: those go with the host, or when the extension is installed again.
+        /// </summary>
+        private void DeleteRemoved(Begun begun)
         {
-            foreach (PackageSwitch removed in begun.Switched.Where(package => package.To == null))
+            if (begun.Restart is RestartDecision.Restart or RestartDecision.NoService)
             {
-                _versions.TryDeleteAll(removed.Name);
+                foreach (PackageSwitch.Removed removed in begun.Switched.OfType<PackageSwitch.Removed>())
+                {
+                    _versions.TryDeleteAll(removed.Name);
+                }
             }
+        }
 
+        /// <summary>
+        /// Drops the secrets stored for what updaemon sets, from before the app declared it. Only once the switch
+        /// stands, as secrets are not put back; their wrapper already overrides them, so one left behind changes
+        /// nothing, and neither does it that this fails.
+        /// </summary>
+        private async Task DropSecretsSetByUpdaemonAsync(Begun begun, CancellationToken cancellationToken)
+        {
             if (begun.Manifest == null)
             {
                 return;
@@ -288,10 +313,8 @@ namespace Updaemon.Services
 
             try
             {
-                // Values stored for what updaemon sets now, from before the app declared it. Only now, as secrets
-                // are not put back; their wrapper already overrides them, so one left behind changes nothing.
-                begun.Entry.Values.DropSecretsSetByUpdaemon(begun.Manifest);
-                await begun.Entry.SaveSecretsAsync(cancellationToken);
+                begun.Change.Values.DropSecretsSetByUpdaemon(begun.Manifest);
+                await begun.Change.SaveSecretsAsync(cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -306,20 +329,17 @@ namespace Updaemon.Services
         /// <exception cref="InvalidOperationException">Putting back failed too; the next change to the app tries again.</exception>
         private async Task UndoAsync(Begun begun, bool restarting, Exception failure)
         {
-            string? problem;
+            string? problem = null;
             try
             {
-                await _restorer.RestoreVersionsAsync(begun.Entry.Before, begun.PutBack, begun.Reachable);
-                problem = restarting ? await _restorer.RestartAsync(begun.AppName) : null;
-                if (problem == null)
+                await _restorer.RestoreVersionsAsync(begun.Change.Before, begun.PutBack, begun.Reachable);
+                // What is current again may be no service.
+                if (restarting && _serviceDeployer.HasService(begun.AppName))
                 {
-                    if (restarting)
-                    {
-                        begun.Entry.ServiceRestarted();
-                    }
-
-                    await begun.Entry.RevertAsync();
+                    await _serviceDeployer.RestartForAsync(begun.Change, begun.Reachable, CancellationToken.None);
                 }
+
+                await begun.Change.RevertAsync();
             }
             catch (Exception ex)
             {
@@ -343,7 +363,8 @@ namespace Updaemon.Services
         /// <summary>
         /// After the service did not stay up with the new versions: makes the ones before current again and
         /// skips the new ones. They stay current even when the skips cannot be recorded, as the new ones are
-        /// known not to run.
+        /// known not to run. Runs to its end but for the health check, so what failed is told also when the run
+        /// is cancelled.
         /// </summary>
         private async Task<SwitchOutcome> FallBackAsync(Begun begun, CancellationToken cancellationToken)
         {
@@ -351,13 +372,13 @@ namespace Updaemon.Services
             bool? staysUp = null;
             try
             {
-                await _restorer.RestoreVersionsAsync(begun.Entry.Before, begun.PutBack, begun.Reachable);
+                await _restorer.RestoreVersionsAsync(begun.Change.Before, begun.PutBack, begun.Reachable);
 
                 // What is current again may be no service.
                 bool hasService = _serviceDeployer.HasService(begun.AppName);
                 try
                 {
-                    await begun.Entry.RevertAsync(entry => Skip(begun.Switched, entry), hasService ? new UnfinishedChange.CarryOut { Restart = true } : null);
+                    await begun.Change.RevertAsync(entry => Skip(begun.Switched, entry), hasService ? new UnfinishedChange.CarryOut { Restart = true } : null);
                 }
                 catch (Exception ex)
                 {
@@ -366,17 +387,15 @@ namespace Updaemon.Services
 
                 if (hasService)
                 {
-                    await _serviceManager.RestartServiceAsync(begun.AppName, cancellationToken);
-                    begun.Entry.ServiceRestarted();
-                    if (skipNotRecorded == null)
-                    {
-                        await begun.Entry.ClearNoteAsync(_outputWriter);
-                    }
-
+                    await _serviceDeployer.RestartForAsync(begun.Change, begun.Reachable, CancellationToken.None);
                     staysUp = await _serviceDeployer.StaysRunningAsync(begun.AppName, cancellationToken);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The run ends where it next looks.
+            }
+            catch (Exception ex)
             {
                 return new SwitchOutcome.NotBack(begun.Switched, begun.Restart, ex.Message);
             }
@@ -387,9 +406,9 @@ namespace Updaemon.Services
         /// <summary>None for what the switch installed: it is not in the entry.</summary>
         private static void Skip(IReadOnlyList<PackageSwitch> switched, InstalledApp entry)
         {
-            foreach (PackageSwitch package in switched.Where(package => package.From != null && package.To != null))
+            foreach (PackageSwitch.Moved package in switched.OfType<PackageSwitch.Moved>())
             {
-                entry.Find(package.Name)!.RecordSwitch(from: package.To!, to: package.From!);
+                package.Skip(entry);
             }
         }
     }

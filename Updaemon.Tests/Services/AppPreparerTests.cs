@@ -254,6 +254,91 @@ namespace Updaemon.Tests.Services
             }
         }
 
+        public static TheoryData<bool, bool, int, string[]> ServicesOwedARestart => new TheoryData<bool, bool, int, string[]>
+        {
+            // enabled, running, restarts, what is said
+            { true, true, 1, Array.Empty<string>() },
+            { true, false, 1, Array.Empty<string>() },
+            { false, true, 1, Array.Empty<string>() },
+            { false, false, 0, new[] { "shelf: not restarted, as its service is stopped and disabled." } },
+        };
+
+        /// <summary>One the user has both stopped and disabled stays so; any other may run what was given up, or is to run.</summary>
+        [Theory]
+        [MemberData(nameof(ServicesOwedARestart))]
+        public async Task OwedRestart_IsPaidUnlessTheServiceIsStoppedAndDisabled(bool enabled, bool running, int restarts, string[] said)
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                h.ServiceManager.RestartFailure = new InvalidOperationException("no restart today");
+                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Set().ExecuteAsync(new[] { "shelf", "A=1" }));
+                h.ServiceManager.RestartFailure = null;
+                if (!enabled)
+                {
+                    await h.ServiceManager.DisableServiceAsync("shelf");
+                }
+
+                h.ServiceManager.ServiceRunningStates["shelf"] = running;
+                h.ForgetCalls();
+
+                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
+
+                Assert.Equal(restarts, h.HostRestarts());
+                Assert.Equal(said, h.Output.Messages.Where(message => message.Contains("not restarted")));
+                Assert.Null((await h.HostAsync()).Unfinished);
+            }
+        }
+
+        /// <summary>A run ends what an earlier one left before its first change only: the update has come to stand by then.</summary>
+        [Fact]
+        public async Task OwedRestart_FailsAgainBeforeAManualUpdate_IsNotPaidByTheCleanupAfterIt()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                h.ServiceManager.RestartFailure = new InvalidOperationException("no restart today");
+                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Set().ExecuteAsync(new[] { "shelf", "A=1" }));
+                Assert.Equal(0, await h.SetRestart().ExecuteAsync(new[] { "shelf", "manual" }));
+                h.AddHostRelease("2.0.0");
+                // The next works again.
+                h.ServiceManager.OnRestart = () => h.ServiceManager.OnRestart = () => h.ServiceManager.RestartFailure = null;
+                h.ForgetCalls();
+
+                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
+
+                Assert.Contains("shelf: restart skipped (restart=manual); the service runs 1.0.0 until it restarts.", h.Output.Messages);
+                Assert.Equal(1, h.HostRestarts());
+                Assert.Equal(new UnfinishedChange.CarryOut { Restart = true }, (await h.HostAsync()).Unfinished);
+            }
+        }
+
+        /// <summary>The files to write anew include the unit, which the service manager reads.</summary>
+        [Fact]
+        public async Task KilledSet_ChecksTheServiceManagerBeforeItWritesTheFiles()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                h.SavedConfig.OnSaved = app =>
+                {
+                    if (app.Settings.ContainsKey("A"))
+                    {
+                        h.KeepForCutOff();
+                    }
+                };
+                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "shelf", "A=1" }));
+                h.CutOff();
+                h.ServiceManager.Unreachable = "unreachable";
+                IReadOnlyList<string> before = h.Snapshot();
+
+                await Assert.ThrowsAsync<ServiceManagerUnreachableException>(() => h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
+
+                h.AssertUnchangedSince(before);
+                Assert.Empty(h.Output.Messages);
+            }
+        }
+
         /// <summary>The removed version's command is not in the manifest that is current, which is all there is to read.</summary>
         [Fact]
         public async Task KilledUpdate_CannotBePutBack_RemovingTheAppDeletesTheCommandsOfBothVersions()
@@ -262,15 +347,19 @@ namespace Updaemon.Tests.Services
             using (h)
             {
                 File.Copy(h.Scope.GetCommandPath("shelf2"), h.Scope.GetCommandPath("shelf"));
+                // Outside, as what it links to may be deleted first otherwise.
+                string wrapper = Path.Combine(h.Root, "wrapper");
+                File.Copy(h.Scope.GetCommandPath("shelf2"), wrapper);
                 string link = h.Scope.GetCommandPath("mine");
-                File.CreateSymbolicLink(link, h.Scope.GetCommandPath("shelf"));
-                File.WriteAllText(h.Scope.GetCommandPath("other"), "someone else's");
+                File.CreateSymbolicLink(link, wrapper);
+                string other = h.Scope.GetCommandPath("other");
+                File.WriteAllText(other, AppWrapper.ForCommand("other", "/other", "/settings", "/secrets", new Dictionary<string, string>()));
                 Directory.Delete(h.Versions.GetVersionDirectory(Shelf, One), recursive: true);
 
                 Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf" }));
 
                 Assert.StartsWith("Warning: putting back shelf 1.0.0 failed", Assert.Single(h.Output.Errors));
-                Assert.Equal(new[] { link, h.Scope.GetCommandPath("other") }, Directory.GetFileSystemEntries(h.Scope.BinDirectory).Order(StringComparer.Ordinal));
+                Assert.Equal(new[] { link, other }, Directory.GetFileSystemEntries(h.Scope.BinDirectory).Order(StringComparer.Ordinal));
             }
         }
 

@@ -100,9 +100,9 @@ An extension is a folder of files that an installed app, its host, loads. Updaem
 |---|---|
 | `variable` | Required. The environment variable that carries the folder of extensions, for the service and the command. It is always set, and the folder can be empty. It cannot be in `settings` too, nor be `UPDAEMON_DATA_DIR`, and `updaemon set` and `unset` refuse it. A value stored for it before the host declared it is dropped when that version becomes current. |
 | `check` | Optional. Arguments to the host's executable that make it [say whether it would load an extension](#the-check). Without it, the host accepts every extension. |
-| `known` | Optional. Where extensions come from, as `<plugin>:<remote>` by id, so `updaemon install byteshelf/images` needs no `--from`. The id follows the rules of an app name, but ids that differ only in case are one. An installed extension keeps the source it was installed from. |
+| `known` | Optional. Where extensions come from, as `<plugin>:<remote>` by id, so `updaemon install byteshelf/images` needs no `--from`. The id follows the rules of an app name: letters, digits, `.`, `_` and `-`, starting with a letter or digit, and not `updaemon`. Ids that differ only in case are one. An installed extension keeps the source it was installed from. |
 
-Releases of updaemon without support for extensions ignore the field.
+Updaemon restarts the host when its extensions change, unless the host is set to manual restart or, on Linux, its service is disabled. A host left running keeps the files of an extension that is removed, but not for good those of one that is updated: after enough updates without a restart, the version it started with is deleted (see `releaseRetentionCount` in the README).
 
 ### What a host must do
 
@@ -114,7 +114,7 @@ Releases of updaemon without support for extensions ignore the field.
 
 ### The check
 
-Updaemon runs the executable of the host version that would run, with the `check` arguments and then the extension's folder as the last one. Exit code 0 means the host would load the extension. Anything else, or no answer in 60 seconds, is a refusal, and what the check prints is the reason.
+Updaemon runs the executable of the host version that would run, with the `check` arguments and then the extension's folder as the last one. Exit code 0 means the host would load the extension. Anything else, or no answer in 60 seconds, is a refusal, and what the check prints is the reason: its stderr, then its stdout, on one line and cut at 1000 characters. The check has answered when it exits; what it leaves running is not waited for.
 
 - It runs as the user the host runs as, in that host version's folder. It gets no settings or secrets, no input, and no environment but a standard `PATH` and that user's `HOME`.
 - The folder's name carries no meaning: the check sees a version's folder, while at startup the folder is named after the extension. What the extension is must come from the files inside.
@@ -122,9 +122,9 @@ Updaemon runs the executable of the host version that would run, with the `check
 
 ### Publishing an extension
 
-Publish an extension as an app is published: an asset per platform or one the remote names, and a `SHA256SUMS`. Its archive needs no `updaemon.json`, and one in it is ignored. Its files get the owner and permissions the host's own have: the user the host runs as only reads them.
+Publish an extension as an app is published: an asset per platform or one the remote names, and a `SHA256SUMS`. Its archive needs no `updaemon.json`, and one in it is ignored. Its files get the owner and permissions the host's own have: a host that runs system-wide as a user of its own only reads them.
 
-An extension in its host's own repository must not have an asset that ends in `-<rid>.zip`, `-<rid>.tar.gz` or `-<rid>`, as updaemon would then find several for the host. Name it otherwise, such as `byteshelf-images.zip`, and name it in the remote: `github:owner/byteshelf/byteshelf-images.zip`.
+An extension in its host's own repository must not have an asset that ends in `-<rid>.zip`, `-<rid>.tar.gz` or `-<rid>`, as updaemon would then find several for the host. Name it otherwise, such as `byteshelf-images.zip`, and name it in the remote: `github:owner/byteshelf/byteshelf-images.zip`. Two things follow from that. The remote reads the repository's latest release, so every release of the host must carry the extension's asset, or updating the extension fails. And it names the same asset on every platform, so an extension with a build per platform goes in a repository of its own, with assets named as an app's are.
 
 An extension has no settings, data or service of its own. A value it reads from the environment can be set on the host with `updaemon set`, which takes keys the host does not declare.
 

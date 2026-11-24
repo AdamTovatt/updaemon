@@ -68,9 +68,11 @@ namespace Updaemon.Tests.Services
             return invocation!;
         }
 
+        /// <param name="runAs">A user's name or, as a service manager takes too, its id; a process is started with the name.</param>
         [Theory]
         [InlineData(true, false, "root", "root")]
         [InlineData(true, true, "root", "root")]
+        [InlineData(true, false, "0", "root")]
         [InlineData(true, false, null, null)]
         [InlineData(false, false, null, null)]
         [InlineData(false, true, null, null)]
@@ -190,12 +192,55 @@ namespace Updaemon.Tests.Services
             using (TempFileHelper temp = new TempFileHelper())
             {
                 string pidFile = temp.GetFullPath("pid");
-                ExtensionCheck check = Check(Scope(temp), (invocation, token) => ProcessRunner.RunAsync(invocation with { Timeout = TimeSpan.FromSeconds(1) }, token));
+                // Long enough for it to have written the file on a busy machine.
+                ExtensionCheck check = Check(Scope(temp), (invocation, token) => ProcessRunner.RunAsync(invocation with { Timeout = TimeSpan.FromSeconds(5) }, token));
 
-                string? refusal = await ReasonAsync(check, Host, HostVersion(temp, $"echo $$ > '{pidFile}'; exec sleep 30"));
+                string? refusal = await ReasonAsync(check, Host, HostVersion(temp, $"sleep 120 & echo \"$$ $!\" > '{pidFile}'; wait"));
 
                 Assert.Equal("its check gave no answer in 60 seconds", refusal);
-                Assert.Throws<ArgumentException>(() => Process.GetProcessById(int.Parse(File.ReadAllText(pidFile))));
+                // It and what it started.
+                int[] pids = File.ReadAllText(pidFile).Split(' ').Select(int.Parse).ToArray();
+                Assert.Equal(2, pids.Length);
+                Assert.All(pids, pid => Assert.False(IsRunning(pid)));
+            }
+        }
+
+        /// <summary>One that has ended and waits for its parent to see to it runs no more.</summary>
+        private static bool IsRunning(int pid)
+        {
+            try
+            {
+                using (Process process = Process.GetProcessById(pid))
+                {
+                    return process.WaitForExit(0) is false && !IsZombie(pid);
+                }
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private static bool IsZombie(int pid) => File.Exists($"/proc/{pid}/stat") && File.ReadAllText($"/proc/{pid}/stat").Split(") ")[^1].StartsWith('Z');
+
+        /// <summary>What it left running keeps its output open: its answer is its exit code, and what it said is kept.</summary>
+        [Theory]
+        [InlineData(0, null)]
+        [InlineData(1, "wrong ABI")]
+        public async Task Check_LeavesSomethingRunning_AnswersWhenItExits(int exitCode, string? expected)
+        {
+            using (TempFileHelper temp = new TempFileHelper())
+            {
+                string pidFile = temp.GetFullPath("pid");
+                ExtensionCheck check = Check(Scope(temp), (invocation, token) => ProcessRunner.RunAsync(invocation with { Timeout = TimeSpan.FromSeconds(30) }, token));
+                try
+                {
+                    Assert.Equal(expected, await ReasonAsync(check, Host, HostVersion(temp, $"sleep 120 & echo $! > '{pidFile}'; echo wrong ABI; exit {exitCode}")));
+                }
+                finally
+                {
+                    Process.GetProcessById(int.Parse(File.ReadAllText(pidFile))).Kill();
+                }
             }
         }
 
@@ -221,6 +266,7 @@ namespace Updaemon.Tests.Services
 
         /// <summary>For real, from files only root could read before updaemon made them readable. Needs root, to become another user.</summary>
         [SkippableFact]
+        [Trait("Category", "Root")]
         public async Task Check_RealRunByRoot_RunsAsTheUserTheHostRunsAs()
         {
             Skip.If(LibC.EffectiveUserId() != 0, "Only root can run something as another user.");

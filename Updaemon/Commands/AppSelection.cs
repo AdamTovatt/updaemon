@@ -25,19 +25,8 @@ namespace Updaemon.Commands
         }
 
         /// <summary>For commands that take an app or an extension (<c>&lt;app&gt;/&lt;id&gt;</c>): the one named, or null.</summary>
-        public static async Task<SelectedPackage?> FindAsync(string name, IConfigManager configManager, IOutputWriter outputWriter, CancellationToken cancellationToken)
-        {
-            ExtensionName? extensionName = ExtensionName.TryParse(name);
-            InstalledApp? app = await configManager.GetAppAsync(extensionName?.Host ?? name, cancellationToken);
-            InstalledExtension? extension = extensionName == null ? null : app?.FindExtension(extensionName.Id);
-            if (app == null || (extensionName != null && extension == null))
-            {
-                outputWriter.FailNotInstalled(name);
-                return null;
-            }
-
-            return new SelectedPackage(app, extension);
-        }
+        public static Task<SelectedPackage?> FindAsync(string name, IConfigManager configManager, IOutputWriter outputWriter, CancellationToken cancellationToken) =>
+            FindAsync(name, configManager, outputWriter, Task.FromResult, cancellationToken);
 
         /// <summary>
         /// For commands that change it: ends what an earlier run left unfinished, then finds it in the entry as that
@@ -47,15 +36,23 @@ namespace Updaemon.Commands
         public static async Task<PreparedPackage?> PrepareAsync(
             string name, IConfigManager configManager, AppPreparer preparer, IOutputWriter outputWriter, CancellationToken cancellationToken)
         {
+            PreparedApp? prepared = null;
+            SelectedPackage? found = await FindAsync(name, configManager, outputWriter, async app => (prepared = await preparer.PrepareAsync(app, cancellationToken)).App, cancellationToken);
+            return prepared == null || found == null ? null : new PreparedPackage(prepared, found.Extension);
+        }
+
+        /// <param name="open">Makes of the app's entry the one to look for the extension in.</param>
+        private static async Task<SelectedPackage?> FindAsync(
+            string name, IConfigManager configManager, IOutputWriter outputWriter, Func<InstalledApp, Task<InstalledApp>> open, CancellationToken cancellationToken)
+        {
             ExtensionName? extensionName = ExtensionName.TryParse(name);
-            InstalledApp? app = await configManager.GetAppAsync(extensionName?.Host ?? name, cancellationToken);
-            if (app != null)
+            if (await configManager.GetAppAsync(extensionName?.Host ?? name, cancellationToken) is InstalledApp found)
             {
-                PreparedApp prepared = await preparer.PrepareAsync(app, cancellationToken);
-                InstalledExtension? extension = extensionName == null ? null : prepared.App.FindExtension(extensionName.Id);
+                InstalledApp app = await open(found);
+                InstalledExtension? extension = extensionName == null ? null : app.FindExtension(extensionName.Id);
                 if (extensionName == null || extension != null)
                 {
-                    return new PreparedPackage(prepared, extension);
+                    return new SelectedPackage(app, extension);
                 }
             }
 

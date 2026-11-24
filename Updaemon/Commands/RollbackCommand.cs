@@ -101,14 +101,14 @@ namespace Updaemon.Commands
         {
             InstalledApp app = prepared.App;
             DeployableVersion opened = await _serviceDeployer.OpenRetainedAsync(app.Name, target, cancellationToken);
-            AppSwitch change = AppSwitch.RollBack(prepared, opened);
-            await _readiness.MakeReadyAsync(change, cancellationToken);
+            AppSwitch appSwitch = AppSwitch.RollBack(prepared, opened);
+            await _readiness.MakeReadyAsync(appSwitch, cancellationToken);
             foreach (InstalledExtension extension in app.Extensions)
             {
                 await WarnOfRefusalAsync(app, opened, app.NameOf(extension), cancellationToken);
             }
 
-            return await RollBackAsync(change, app.PackageName, current, target, cancellationToken);
+            return await RollBackAsync(appSwitch, app.PackageName, current, target, cancellationToken);
         }
 
         private async Task WarnOfRefusalAsync(InstalledApp app, DeployableVersion target, ExtensionName name, CancellationToken cancellationToken)
@@ -139,14 +139,14 @@ namespace Updaemon.Commands
                 : _outputWriter.Fail($"{name} was not rolled back: {verdict}.");
         }
 
-        private async Task<int> RollBackAsync(AppSwitch change, PackageName name, Version current, Version target, CancellationToken cancellationToken)
+        private async Task<int> RollBackAsync(AppSwitch appSwitch, PackageName name, Version current, Version target, CancellationToken cancellationToken)
         {
-            SwitchOutcome outcome = await _switcher.SwitchAsync(change, cancellationToken);
-            _outputWriter.WriteRestartSkipped(change.App.Name, outcome);
+            SwitchOutcome outcome = await _switcher.SwitchAsync(appSwitch, cancellationToken);
+            _outputWriter.WriteRestartSkipped(appSwitch.App.Name, outcome);
             _outputWriter.WriteLine(target < current
                 ? $"Rolled back {name} from {current} to {target}. 'updaemon update' skips {current} from now on."
                 : $"Switched {name} from {current} to {target}.");
-            return SwitchText.Problem(change.App.Name, outcome) is string problem ? _outputWriter.Fail(problem) : 0;
+            return SwitchText.Problem(appSwitch.App.Name, outcome) is string problem ? _outputWriter.Fail(problem) : 0;
         }
 
         /// <summary>"1.2" names the version kept as "1.2.0": missing parts count as zero.</summary>
@@ -173,7 +173,8 @@ namespace Updaemon.Commands
                   updaemon.json and restarts the service. The version rolled back from is
                   skipped: 'updaemon update' does not install it again, only a newer release.
                   Naming a newer kept version switches forward to it, for example to undo a
-                  rollback; that skips nothing.
+                  rollback; that skips nothing. If the service does not keep running, the
+                  rollback stands and the command fails, pointing to 'updaemon logs'.
 
                   An app's extensions stay at their versions; one the version rolled back
                   to refuses is named, and that version runs without it. A version that takes
@@ -181,7 +182,7 @@ namespace Updaemon.Commands
 
                   <app>/<extension> goes back to an earlier version of that extension, if
                   the app accepts it, and restarts the app unless it is not a service, is
-                  set to manual restart or is disabled.
+                  set to manual restart or, on Linux, is disabled.
 
                 Examples:
                   updaemon rollback byteshelf

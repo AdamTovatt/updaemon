@@ -92,7 +92,7 @@ namespace Updaemon
             services.AddSingleton<IUnitFileManager, UnitFileManager>();
             services.AddSingleton<IFilePermissionManager, FilePermissionManager>();
             services.AddSingleton<AppFileWriter>();
-            services.AddSingleton<AppSettingsStore>();
+            services.AddSingleton<AppEntryStore>();
             services.AddSingleton<UpdateRunLog>();
             services.AddSingleton(TimeProvider.System);
             services.AddSingleton<IServiceDeployer, ServiceDeployer>();

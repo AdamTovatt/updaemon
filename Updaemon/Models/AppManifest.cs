@@ -52,7 +52,7 @@ namespace Updaemon.Models
         public bool IsSetByUpdaemon(string key) => key == DataDirectoryVariable || key == Extensions?.Variable;
 
         /// <summary>Why no value can be stored for it.</summary>
-        public static string SetByUpdaemon(string key) => $"{key} is set by updaemon.";
+        public static string SetByUpdaemonMessage(string key) => $"{key} is set by updaemon.";
 
         public bool IsSecret(string key) => Settings.TryGetValue(key, out SettingSpec? spec) && spec.Secret;
 

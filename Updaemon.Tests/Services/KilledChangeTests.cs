@@ -112,11 +112,39 @@ namespace Updaemon.Tests.Services
         /// <param name="secretsFirst">Whether the secrets, which are not in the entry, may be as once it is done while the entry is as before.</param>
         [Theory]
         [MemberData(nameof(Changes))]
-        public async Task KilledAtAnyStep_TheNextChangePutsItRight(string name, Func<AppHarness, Task> arrange, Func<AppHarness, Task<int>> change, int exitCode, bool secretsFirst)
+        public Task KilledAtAnyStep_TheNextChangePutsItRight(string name, Func<AppHarness, Task> arrange, Func<AppHarness, Task<int>> change, int exitCode, bool secretsFirst) =>
+            AssertPutRightAsync(() => new AppHarness(), name, arrange, change, exitCode, secretsFirst);
+
+        public static TheoryData<bool, bool, string, Func<AppHarness, Task>, Func<AppHarness, Task<int>>, int, bool> ChangesElsewhere
+        {
+            get
+            {
+                TheoryData<bool, bool, string, Func<AppHarness, Task>, Func<AppHarness, Task<int>>, int, bool> data = new TheoryData<bool, bool, string, Func<AppHarness, Task>, Func<AppHarness, Task<int>>, int, bool>();
+                foreach ((bool isSystem, bool isMacOS) in new[] { (true, false), (false, true), (true, true) })
+                {
+                    data.Add(isSystem, isMacOS, "update", ReleasedAsync, h => h.Update().ExecuteAsync(new[] { "shelf" }), 0, false);
+                    data.Add(isSystem, isMacOS, "update that removes the service", h => ReleasedAsync(h, AppHarness.HostManifest, CommandOnlyManifest), h => h.Update().ExecuteAsync(new[] { "shelf" }), 0, false);
+                    data.Add(isSystem, isMacOS, "remove", InstalledAsync, h => h.Remove().ExecuteAsync(new[] { "shelf/images" }), 0, false);
+                    data.Add(isSystem, isMacOS, "set of a secret", InstalledAsync, h => h.Set().ExecuteAsync(new[] { "shelf", "TOKEN=new", "--secret" }), 0, true);
+                }
+
+                return data;
+            }
+        }
+
+        /// <summary>The same in the system scope, with a user to run as, and on macOS, with its own units.</summary>
+        [Theory]
+        [MemberData(nameof(ChangesElsewhere))]
+        public Task KilledAtAnyStep_InTheSystemScopeOrOnMacOS_TheNextChangePutsItRight(
+            bool isSystem, bool isMacOS, string name, Func<AppHarness, Task> arrange, Func<AppHarness, Task<int>> change, int exitCode, bool secretsFirst) =>
+            AssertPutRightAsync(() => new AppHarness(isSystem, isMacOS), name, arrange, change, exitCode, secretsFirst);
+
+        private static async Task AssertPutRightAsync(
+            Func<AppHarness> create, string name, Func<AppHarness, Task> arrange, Func<AppHarness, Task<int>> change, int exitCode, bool secretsFirst)
         {
             IReadOnlyList<string> done;
             int steps = 0;
-            using (AppHarness h = new AppHarness())
+            using (AppHarness h = create())
             {
                 await arrange(h);
                 h.OnStep = () => steps++;
@@ -128,7 +156,7 @@ namespace Updaemon.Tests.Services
             bool stood = false;
             for (int step = 1; step <= steps; step++)
             {
-                using (AppHarness h = new AppHarness())
+                using (AppHarness h = create())
                 {
                     await arrange(h);
                     IReadOnlyList<string> before = State(h);

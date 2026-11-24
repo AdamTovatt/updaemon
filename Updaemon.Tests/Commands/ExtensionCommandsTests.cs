@@ -6,6 +6,7 @@ using Updaemon.Models;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
 using Updaemon.Tests.Mocks;
+using static Updaemon.Tests.Helpers.ShelfPackages;
 
 namespace Updaemon.Tests.Commands
 {
@@ -200,20 +201,14 @@ namespace Updaemon.Tests.Commands
             }
         }
 
-        public static TheoryData<string, string> HostsNotRestarted => new TheoryData<string, string>
-        {
-            { "manual", "shelf: restart skipped (restart=manual); the service runs the extensions it started with until it restarts." },
-            { "disabled", "shelf: restart skipped, as its service is disabled." },
-        };
-
         [Theory]
-        [MemberData(nameof(HostsNotRestarted))]
-        public async Task Install_HostManualOrDisabled_LeavesItRunning(string kind, string message)
+        [MemberData(nameof(HostsLeftRunning), MemberType = typeof(ShelfPackages))]
+        public async Task Install_HostManualOrDisabled_LeavesItRunning(string message, Func<AppHarness, Task> leaveRunning)
         {
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallHostAsync();
-                await LeaveAloneAsync(h, kind);
+                await leaveRunning(h);
                 h.ServiceManager.MethodCalls.Clear();
 
                 Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
@@ -226,13 +221,13 @@ namespace Updaemon.Tests.Commands
         }
 
         [Theory]
-        [MemberData(nameof(HostsNotRestarted))]
-        public async Task Remove_HostManualOrDisabled_LeavesItRunning(string kind, string message)
+        [MemberData(nameof(HostsLeftRunning), MemberType = typeof(ShelfPackages))]
+        public async Task Remove_HostManualOrDisabled_LeavesItRunning(string message, Func<AppHarness, Task> leaveRunning)
         {
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallHostWithImagesAsync();
-                await LeaveAloneAsync(h, kind);
+                await leaveRunning(h);
 
                 Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf/images" }));
 
@@ -240,23 +235,13 @@ namespace Updaemon.Tests.Commands
                 Assert.Contains(message, h.Output.Messages);
                 Assert.Equal(0, h.HostRestarts());
                 Assert.Null((await h.HostAsync()).Unfinished);
+                // Its service may still read them. They go when it is installed again.
+                Assert.Equal(new[] { One }, h.Versions.GetRetained(Images));
+                h.AddExtensionRelease(ImagesRemote, "2.0.0");
+                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
+                Assert.Equal(new[] { Two }, h.Versions.GetRetained(Images));
             }
         }
-
-        private static async Task LeaveAloneAsync(AppHarness h, string kind)
-        {
-            if (kind == "manual")
-            {
-                await h.SetRestart().ExecuteAsync(new[] { "shelf", "manual" });
-            }
-            else
-            {
-                h.ServiceManager.EnabledServices.Remove("shelf");
-            }
-        }
-
-        private const string CommandOnlyManifest =
-            """{ "executable": "bin/shelf", "command": "shelf", "extensions": { "variable": "SHELF_PLUGINS", "known": { "images": "github:owner/shelf/images.zip" } } }""";
 
         [Fact]
         public async Task Install_CommandOnlyHost_NeedsNoServiceManager()
@@ -285,6 +270,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf/images" }));
 
                 Assert.Empty(h.LinkedExtensions());
+                Assert.Empty(h.Versions.GetRetained(Images));
                 Assert.Empty(h.ServiceManager.MethodCalls);
             }
         }
@@ -327,6 +313,70 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(new[] { error }, h.Output.Errors);
                 h.AssertUnchangedSince(before);
+            }
+        }
+
+        [Fact]
+        public async Task Install_HostKnowsNoExtensions_SaysSo()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync("""{ "executable": "bin/shelf", "command": "shelf", "extensions": { "variable": "SHELF_PLUGINS" } }""");
+
+                Assert.Equal(1, await h.Install().ExecuteAsync(new[] { "shelf/images" }));
+
+                Assert.Equal(
+                    new[] { "Error: shelf 1.0.0 does not know an extension 'images'; it knows none. For another, say where it comes from: updaemon install shelf/images --from <plugin>:<remote>" },
+                    h.Output.Errors);
+            }
+        }
+
+        public static TheoryData<string, Func<AppHarness, Task<int>>, string> CommandsOnAnotherCase => new TheoryData<string, Func<AppHarness, Task<int>>, string>
+        {
+            { "update", h => h.Update().ExecuteAsync(new[] { "shelf/IMAGES" }), "Updated shelf/images from 1.0.0 to 2.0.0." },
+            {
+                "rollback",
+                async h =>
+                {
+                    Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf/images" }));
+                    return await h.RollbackCommand().ExecuteAsync(new[] { "shelf/IMAGES" });
+                },
+                "Rolled back shelf/images from 2.0.0 to 1.0.0. 'updaemon update' skips 2.0.0 from now on."
+            },
+            { "remove", h => h.Remove().ExecuteAsync(new[] { "shelf/IMAGES" }), "Removed shelf/images." },
+        };
+
+        /// <summary>The installed one is meant, and is called by its own name.</summary>
+        [Theory]
+        [MemberData(nameof(CommandsOnAnotherCase))]
+        public async Task Command_IdDiffersOnlyInCase_IsTheInstalledOne(string name, Func<AppHarness, Task<int>> run, string message)
+        {
+            _ = name; // Names the case in the test's display name.
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                h.AddExtensionRelease(ImagesRemote, "2.0.0");
+
+                Assert.Equal(0, await run(h));
+
+                Assert.Contains(message, h.Output.Messages);
+                Assert.Empty(h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task Status_IdDiffersOnlyInCase_IsTheInstalledOne()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                Assert.Equal(0, await h.Status().ExecuteAsync(new[] { "shelf/images" }));
+                List<string> asInstalled = h.Output.Messages.ToList();
+                h.Output.Clear();
+
+                Assert.Equal(0, await h.Status().ExecuteAsync(new[] { "shelf/IMAGES" }));
+
+                Assert.Equal(asInstalled, h.Output.Messages);
             }
         }
 
@@ -454,12 +504,16 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallHostWithImagesAsync();
                 await h.RunLog.SaveAsync(new UpdateRun(h.Time.GetUtcNow(), UpdateStarter.Timer, new[] { new UpdateFailure("shelf/images", "refused"), new UpdateFailure("shelf", "other") }));
+                IReadOnlyList<Version> atRestart = Array.Empty<Version>();
+                h.ServiceManager.OnRestart = () => atRestart = h.Versions.GetRetained(Images);
 
                 int exitCode = await h.Remove().ExecuteAsync(new[] { "shelf/images" });
 
                 Assert.Equal(0, exitCode);
                 Assert.Equal(new[] { "Removed shelf/images." }, h.Output.Messages);
                 Assert.Empty(h.LinkedExtensions());
+                // Until the host is restarted, it may read them.
+                Assert.Equal(new[] { One }, atRestart);
                 Assert.False(Directory.Exists(Path.Combine(h.Scope.GetAppDirectory("shelf"), "extension-versions")));
                 InstalledApp host = await h.HostAsync();
                 Assert.Empty(host.Extensions);
@@ -548,8 +602,9 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(new[] { "Removed shelf/images." }, h.Output.Messages);
                 Assert.Equal(new[] { "Error: shelf could not be restarted: no restart today. shelf/images is removed. See 'updaemon logs shelf'." }, h.Output.Errors);
                 Assert.Empty((await h.RunLog.LoadAsync())!.Failures);
-                // Still owed to the next change.
+                // Still owed to the next change, so the host may read what it runs with.
                 Assert.True((await h.HostAsync()).Unfinished!.Restart);
+                Assert.Equal(new[] { One }, h.Versions.GetRetained(Images));
             }
         }
 
@@ -704,7 +759,7 @@ namespace Updaemon.Tests.Commands
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallHostAsync();
-                h.AddRelease("owner/other", "1.0.0", AppHarness.HostManifest.Replace("\"command\": \"shelf\",", string.Empty), "bin/shelf");
+                h.AddRelease("owner/other", "1.0.0", Changed(AppHarness.HostManifest, ("\"command\": \"shelf\",", string.Empty)), "bin/shelf");
                 IReadOnlyList<string> before = h.Snapshot();
 
                 InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => command(h).ExecuteAsync(args, CancellationToken.None));

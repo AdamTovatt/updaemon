@@ -19,7 +19,7 @@ namespace Updaemon.Models
 
     /// <summary>
     /// Proof that <see cref="ExtensionVerdict.HostVersion"/> loads that version of the extension. Only
-    /// <see cref="Services.ExtensionCheck"/> makes one, and what makes an extension's version current takes one.
+    /// <see cref="Services.ExtensionCheck"/> makes one, and making a version current that was not so before the change takes one.
     /// </summary>
     public sealed class AcceptedExtension : ExtensionVerdict
     {

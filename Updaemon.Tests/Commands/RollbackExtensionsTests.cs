@@ -81,25 +81,13 @@ namespace Updaemon.Tests.Commands
             }
         }
 
-        public static TheoryData<string, Func<AppHarness, Task>> WaysNotToBeRestarted => new TheoryData<string, Func<AppHarness, Task>>
-        {
-            {
-                "shelf: restart skipped (restart=manual); the service runs the extensions it started with until it restarts.",
-                h => h.SetRestart().ExecuteAsync(new[] { "shelf", "manual" })
-            },
-            {
-                "shelf: restart skipped, as its service is disabled.",
-                h => h.ServiceManager.DisableServiceAsync("shelf")
-            },
-        };
-
         [Theory]
-        [MemberData(nameof(WaysNotToBeRestarted))]
-        public async Task Rollback_ExtensionOfAManualOrDisabledHost_LeavesItRunning(string message, Func<AppHarness, Task> arrange)
+        [MemberData(nameof(HostsLeftRunning), MemberType = typeof(ShelfPackages))]
+        public async Task Rollback_ExtensionOfAManualOrDisabledHost_LeavesItRunning(string message, Func<AppHarness, Task> leaveRunning)
         {
             using (AppHarness h = await UpdatedAsync())
             {
-                await arrange(h);
+                await leaveRunning(h);
 
                 Assert.Equal(0, await RollBackAsync(h, "shelf/images"));
 
@@ -245,8 +233,9 @@ namespace Updaemon.Tests.Commands
             {
                 File.Delete(Path.Combine(h.Versions.GetVersionDirectory(Shelf, One), "bin", "shelf"));
 
-                await Assert.ThrowsAsync<InvalidOperationException>(() => RollBackAsync(h, "shelf"));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => RollBackAsync(h, "shelf"));
 
+                Assert.Equal("shelf 1.0.0: the executable 'bin/shelf' named in updaemon.json is not in the release.", ex.Message);
                 Assert.Empty(h.Checks);
             }
         }

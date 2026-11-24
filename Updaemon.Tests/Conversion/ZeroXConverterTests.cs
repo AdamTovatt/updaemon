@@ -1,5 +1,6 @@
 using Updaemon.Conversion;
 using Updaemon.Interfaces;
+using Updaemon.IO;
 using Updaemon.Models;
 using Updaemon.Services;
 using Updaemon.Tests.Helpers;
@@ -95,10 +96,17 @@ namespace Updaemon.Tests.Conversion
         {
             using (AppHarness h = ZeroXSetup())
             {
+                const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+                string directory = Path.Combine(h.Scope.GetAppDirectory("my-api"), "1.0.0");
+                string executable = Path.Combine(directory, "my-api");
+                File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.SetUnixFileMode(directory, ownerOnly);
+                h.Permissions.SetsModes = true;
+
                 await h.Converter().RunAsync(dryRun: false);
 
-                Assert.Contains(Path.Combine(h.Scope.GetAppDirectory("my-api"), "1.0.0", "my-api"), h.Permissions.ExecutablePermissionsCalls);
-                Assert.Contains(h.Scope.GetAppDirectory("my-api"), h.Permissions.TreesMadeReadable);
+                Assert.Equal(AtomicFile.Executable, File.GetUnixFileMode(executable));
+                Assert.True(File.GetUnixFileMode(directory).HasFlag(UnixFileMode.OtherRead | UnixFileMode.OtherExecute));
             }
         }
 

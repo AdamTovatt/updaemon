@@ -55,13 +55,13 @@ namespace Updaemon.Services
             }
 
             string user = host.RunAs ?? (_scope.IsSystem ? "root" : _scope.UserName!);
-            string? home = LibC.FindUser(user)?.Home;
-            if (home == null && host.RunAs != null)
+            LibC.User? found = LibC.FindUser(user);
+            if (found == null && host.RunAs != null)
             {
                 return $"its check cannot run: there is no user named '{host.RunAs}'";
             }
 
-            ProcessInvocation invocation = CreateInvocation(host, hostVersion, extensions.Check, extensionDirectory, home);
+            ProcessInvocation invocation = CreateInvocation(host, hostVersion, extensions.Check, extensionDirectory, found);
             try
             {
                 ProcessRunner.Result result = await Run(invocation, cancellationToken);
@@ -77,19 +77,20 @@ namespace Updaemon.Services
             }
         }
 
-        private static ProcessInvocation CreateInvocation(InstalledApp host, DeployableVersion hostVersion, IReadOnlyList<string> check, string extensionDirectory, string? home)
+        private static ProcessInvocation CreateInvocation(InstalledApp host, DeployableVersion hostVersion, IReadOnlyList<string> check, string extensionDirectory, LibC.User? user)
         {
             Dictionary<string, string> environment = new Dictionary<string, string> { ["PATH"] = StandardPath };
-            if (home != null)
+            if (user != null)
             {
-                environment["HOME"] = home;
+                environment["HOME"] = user.Home;
             }
 
             return new ProcessInvocation(hostVersion.ExecutablePath, [.. check, extensionDirectory])
             {
                 WorkingDirectory = hostVersion.Directory,
                 Environment = environment,
-                User = host.RunAs,
+                // Its name, which a process is started with, also where the host runs as a user id.
+                User = host.RunAs == null ? null : user?.Name,
                 Timeout = Timeout,
                 WithoutInput = true,
                 MaxOutput = 4 * MaxReasonLength,

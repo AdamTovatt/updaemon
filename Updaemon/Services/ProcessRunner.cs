@@ -33,6 +33,9 @@ namespace Updaemon.Services
     /// </summary>
     internal static class ProcessRunner
     {
+        /// <summary>How long the output of a command that ended is still waited for, when something it left running keeps it open.</summary>
+        private static readonly TimeSpan OutputGrace = TimeSpan.FromSeconds(2);
+
         public readonly record struct Result(int ExitCode, string StdOut, string StdErr)
         {
             public bool Success => ExitCode == 0;
@@ -52,6 +55,7 @@ namespace Updaemon.Services
             startInfo.RedirectStandardError = true;
             startInfo.CreateNoWindow = true;
 
+            using (CancellationTokenSource reading = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             using (CancellationTokenSource end = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             using (Process process = Process.Start(startInfo)!)
             {
@@ -65,13 +69,12 @@ namespace Updaemon.Services
                     process.StandardInput.Close();
                 }
 
-                Task<string> stdOutTask = ReadAsync(process.StandardOutput, invocation.MaxOutput, end.Token);
-                Task<string> stdErrTask = ReadAsync(process.StandardError, invocation.MaxOutput, end.Token);
+                Task<string> stdOutTask = ReadAsync(process.StandardOutput, invocation.MaxOutput, reading.Token);
+                Task<string> stdErrTask = ReadAsync(process.StandardError, invocation.MaxOutput, reading.Token);
 
                 try
                 {
                     await process.WaitForExitAsync(end.Token);
-                    return new Result(process.ExitCode, await stdOutTask, await stdErrTask);
                 }
                 catch (OperationCanceledException)
                 {
@@ -81,25 +84,36 @@ namespace Updaemon.Services
                         await process.WaitForExitAsync(CancellationToken.None);
                     }
 
+                    // Read no more, also where something outside its tree keeps the output open.
+                    await reading.CancelAsync();
                     cancellationToken.ThrowIfCancellationRequested();
                     throw new TimeoutException($"{invocation.Command} did not end within {invocation.Timeout!.Value.TotalSeconds} seconds.");
                 }
+
+                // Its exit code is its answer. What it left running is no child of updaemon's, and is left alone.
+                reading.CancelAfter(OutputGrace);
+                Result result = new Result(process.ExitCode, await stdOutTask, await stdErrTask);
+                cancellationToken.ThrowIfCancellationRequested();
+                return result;
             }
         }
 
+        /// <summary>What there is to read until it ends or <paramref name="cancellationToken"/> says it is enough.</summary>
         private static async Task<string> ReadAsync(StreamReader reader, int? max, CancellationToken cancellationToken)
         {
-            if (max == null)
-            {
-                return await reader.ReadToEndAsync(cancellationToken);
-            }
-
             StringBuilder kept = new StringBuilder();
             char[] buffer = new char[4096];
-            int read;
-            while ((read = await reader.ReadAsync(buffer, cancellationToken)) > 0)
+            try
             {
-                kept.Append(buffer, 0, Math.Min(read, max.Value - kept.Length));
+                int read;
+                while ((read = await reader.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    kept.Append(buffer, 0, Math.Min(read, (max ?? int.MaxValue) - kept.Length));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // What was read is the output.
             }
 
             return kept.ToString();

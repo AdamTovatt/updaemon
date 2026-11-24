@@ -12,27 +12,27 @@ namespace Updaemon.Services
     {
         private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppSettingsStore _settingsStore;
+        private readonly AppEntryStore _entryStore;
 
-        public SwitchReadiness(VersionStore versions, IServiceDeployer serviceDeployer, AppSettingsStore settingsStore)
+        public SwitchReadiness(VersionStore versions, IServiceDeployer serviceDeployer, AppEntryStore entryStore)
         {
             _versions = versions;
             _serviceDeployer = serviceDeployer;
-            _settingsStore = settingsStore;
+            _entryStore = entryStore;
         }
 
         /// <summary>Makes ready what the switch switches to.</summary>
         /// <exception cref="ServiceManagerUnreachableException">It cannot be reached.</exception>
         /// <exception cref="InvalidOperationException">The app's new version cannot take over, or an extension was accepted by another version than will run.</exception>
-        public async Task<ReachableServiceManager> MakeReadyAsync(AppSwitch change, CancellationToken cancellationToken = default)
+        public async Task<ReachableServiceManager> MakeReadyAsync(AppSwitch appSwitch, CancellationToken cancellationToken = default)
         {
-            InstalledApp app = change.App;
-            ReachableServiceManager reachable = change.NewVersion == null
+            InstalledApp app = appSwitch.App;
+            ReachableServiceManager reachable = appSwitch.Next == null
                 ? await _serviceDeployer.ReachServiceManagerAsync(app.Name, cancellationToken: cancellationToken)
-                : await MakeReadyAsync(app, change.NewVersion, change.RetryCommand, cancellationToken);
-            foreach (AcceptedExtension accepted in change.Extensions.Select(extension => extension.To).OfType<AcceptedExtension>())
+                : await MakeReadyAsync(app, appSwitch.Next, cancellationToken);
+            foreach (AcceptedExtension accepted in appSwitch.Extensions.Select(extension => extension.To).OfType<AcceptedExtension>())
             {
-                Version willRun = change.NewVersion?.Version ?? await _versions.GetCurrentAsync(app.PackageName, cancellationToken);
+                Version willRun = appSwitch.Next?.Version.Version ?? await _versions.GetCurrentAsync(app.PackageName, cancellationToken);
                 if (accepted.HostVersion != willRun)
                 {
                     throw new InvalidOperationException($"{accepted.Name} {accepted.Version} was accepted by {app.Name} {accepted.HostVersion}, but {willRun} will run.");
@@ -43,7 +43,6 @@ namespace Updaemon.Services
         }
 
         /// <summary>Makes a version of the app ready to run, as it is asked about its extensions before it is switched to.</summary>
-        /// <param name="retryCommand">What to run once it can take over.</param>
         /// <remarks>
         /// Does not look for a command name that is taken: that fails the switch, its extensions' with it, which
         /// goes back and is tried again by the next run.
@@ -52,12 +51,13 @@ namespace Updaemon.Services
         /// <exception cref="InvalidOperationException">
         /// It needs a setting that has no value, no longer takes the extensions installed into the app or lacks its executable.
         /// </exception>
-        public async Task<ReachableServiceManager> MakeReadyAsync(InstalledApp app, DeployableVersion next, string retryCommand, CancellationToken cancellationToken = default)
+        public async Task<ReachableServiceManager> MakeReadyAsync(InstalledApp app, NextAppVersion nextVersion, CancellationToken cancellationToken = default)
         {
+            (DeployableVersion next, string retryCommand) = nextVersion;
             ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(app.Name, next.Manifest, cancellationToken);
             await _serviceDeployer.MakeExecutableAsync(app.Name, next, cancellationToken);
             Version running = await _versions.GetCurrentAsync(app.PackageName, cancellationToken);
-            AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
+            AppValues values = await _entryStore.LoadValuesAsync(app, cancellationToken);
             values.EnsureComplete(next.Manifest, next.Version, running, retryCommand);
             if (next.Manifest.Extensions == null && app.Extensions.Count > 0)
             {

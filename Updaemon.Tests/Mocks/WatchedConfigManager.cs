@@ -4,12 +4,12 @@ using Updaemon.Models;
 
 namespace Updaemon.Tests.Mocks
 {
-    /// <summary>A config whose next saves of an app can be made to fail, as on a disk that is full for a moment.</summary>
-    public sealed class SaveFailingConfigManager : IConfigManager
+    /// <summary>A real config, with a call around each save of an app; the next ones can be made to fail, as on a disk that is full for a moment.</summary>
+    public sealed class WatchedConfigManager : IConfigManager
     {
         private readonly IConfigManager _inner;
 
-        public SaveFailingConfigManager(IConfigManager inner)
+        public WatchedConfigManager(IConfigManager inner)
         {
             _inner = inner;
         }

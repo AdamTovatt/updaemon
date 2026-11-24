@@ -14,7 +14,7 @@ namespace Updaemon.Commands
     public class InstallCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly AppSettingsStore _settingsStore;
+        private readonly AppEntryStore _entryStore;
         private readonly ReleaseStager _stager;
         private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
@@ -29,7 +29,7 @@ namespace Updaemon.Commands
 
         public InstallCommand(
             IConfigManager configManager,
-            AppSettingsStore settingsStore,
+            AppEntryStore entryStore,
             ReleaseStager stager,
             VersionStore versions,
             IServiceDeployer serviceDeployer,
@@ -43,7 +43,7 @@ namespace Updaemon.Commands
             ExtensionInstaller extensionInstaller)
         {
             _configManager = configManager;
-            _settingsStore = settingsStore;
+            _entryStore = entryStore;
             _stager = stager;
             _versions = versions;
             _serviceDeployer = serviceDeployer;
@@ -166,7 +166,8 @@ namespace Updaemon.Commands
                   host's updaemon.json knows it to. If the host can check an extension, it
                   must accept this one. The host is then restarted, and the extension is
                   removed again if the host does not keep running. A host that is not a
-                  service, is set to manual restart or is disabled is not restarted.
+                  service, is set to manual restart or, on Linux, is disabled is not
+                  restarted.
 
                 Options (an extension takes only --from):
                   --from <plugin>:<remote>   Where to get it, for example github:owner/repo.
@@ -361,7 +362,7 @@ namespace Updaemon.Commands
             bool staysRunning;
             try
             {
-                await _settingsStore.SaveAsync(values, cancellationToken: cancellationToken);
+                await _entryStore.SaveAsync(values, cancellationToken: cancellationToken);
                 await _serviceDeployer.ActivateAsync(app, staged, reachable, cancellationToken: cancellationToken);
                 staysRunning = !staged.Manifest.IsService || await _serviceDeployer.StartAsync(app.Name, reachable, cancellationToken);
             }
@@ -399,7 +400,7 @@ namespace Updaemon.Commands
             // There is no earlier version to fall back to: the app stays installed, and the log says why.
             if (!staysRunning)
             {
-                return _outputWriter.Fail($"{app.Name}: {ServiceDeployer.NotRunning(app.Name, staged.Version)}");
+                return _outputWriter.Fail($"{app.Name}: {HealthText.Failed(app.Name, staged.Version)}");
             }
 
             return 0;

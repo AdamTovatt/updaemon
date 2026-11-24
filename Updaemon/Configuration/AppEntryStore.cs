@@ -6,12 +6,12 @@ namespace Updaemon.Configuration
     /// <summary>
     /// Loads and saves an app's entry and its secret values, each by itself or both.
     /// </summary>
-    public class AppSettingsStore
+    public class AppEntryStore
     {
         private readonly IConfigManager _configManager;
         private readonly ISecretsManager _secretsManager;
 
-        public AppSettingsStore(IConfigManager configManager, ISecretsManager secretsManager)
+        public AppEntryStore(IConfigManager configManager, ISecretsManager secretsManager)
         {
             _configManager = configManager;
             _secretsManager = secretsManager;

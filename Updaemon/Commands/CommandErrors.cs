@@ -33,6 +33,6 @@ namespace Updaemon.Commands
         /// a failure naming the logs. The change itself is kept either way.
         /// </summary>
         public static int FinishSettingsChange(this IOutputWriter outputWriter, string appName, bool staysRunning) =>
-            staysRunning ? 0 : outputWriter.Fail($"{ServiceDeployer.NotRunningAfterRestart(appName)}. The change is kept. {ServiceDeployer.SeeLogs(appName)}");
+            staysRunning ? 0 : outputWriter.Fail($"{HealthText.AfterRestart(appName)}. The change is kept. {HealthText.SeeLogs(appName)}");
     }
 }

@@ -22,6 +22,19 @@ namespace Updaemon.Tests.Helpers
         /// <summary>The host's manifest without its service.</summary>
         public static readonly string CommandOnlyManifest = Changed(AppHarness.HostManifest, ("\"service\": { \"args\": [\"serve\"] },", string.Empty));
 
+        /// <summary>The ways a host is not restarted for its extensions: what is said then, and how it gets there.</summary>
+        public static TheoryData<string, Func<AppHarness, Task>> HostsLeftRunning => new TheoryData<string, Func<AppHarness, Task>>
+        {
+            {
+                "shelf: restart skipped (restart=manual); the service runs the extensions it started with until it restarts.",
+                h => h.SetRestart().ExecuteAsync(new[] { "shelf", "manual" })
+            },
+            {
+                "shelf: restart skipped, as its service is disabled.",
+                h => h.ServiceManager.DisableServiceAsync("shelf")
+            },
+        };
+
         /// <summary><paramref name="text"/> with each part replaced; fails when one is not in it.</summary>
         public static string Changed(string text, params (string From, string To)[] changes)
         {

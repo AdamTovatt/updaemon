@@ -4,7 +4,8 @@ using Updaemon.Models;
 namespace Updaemon.Interfaces
 {
     /// <summary>
-    /// Client for communicating with distribution service plugins via named pipes.
+    /// Client for communicating with one distribution service plugin via a named pipe: it connects once, and
+    /// disposing it stops the plugin.
     /// A call the plugin fails throws <see cref="PluginException"/> with the plugin's message, or, when
     /// it failed for want of a secret, <see cref="Common.Utilities.CredentialNeededException"/>.
     /// </summary>
@@ -14,6 +15,7 @@ namespace Updaemon.Interfaces
         /// Starts the plugin executable, connects to it and reads its service information.
         /// A plugin speaking another plugin protocol version is refused.
         /// </summary>
+        /// <exception cref="InvalidOperationException">It was called before.</exception>
         /// <param name="pluginExecutablePath">Path to the plugin executable.</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation.</param>
         /// <returns>The plugin's service information.</returns>

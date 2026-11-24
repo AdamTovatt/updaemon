@@ -209,7 +209,7 @@ namespace Updaemon.Conversion
                 return new BlockedApp(old, $"it has no current version (0.x 'init' never ran); {install}");
             }
 
-            string versionDirectory = Path.Combine(_scope.GetAppDirectory(name), current.ToString());
+            string versionDirectory = _versions.GetVersionDirectory(new AppName(name), current);
             string currentLink = _scope.GetCurrentLinkPath(name);
             InstalledApp app = new InstalledApp
             {
@@ -491,7 +491,7 @@ namespace Updaemon.Conversion
                     await _serviceManager.EnableServiceAsync(app.Name, cancellationToken);
                     if (app.AutoRestart && !await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken))
                     {
-                        throw new InvalidOperationException(ServiceDeployer.NotRunning(app.Name, current.Version, " with its new unit, so its 0.x unit is back"));
+                        throw new InvalidOperationException(HealthText.Failed(app.Name, current.Version, " with its new unit, so its 0.x unit is back"));
                     }
                 }
 
@@ -526,7 +526,7 @@ namespace Updaemon.Conversion
         {
             foreach (Version version in _versions.GetRetained(app.PackageName).Where(version => version != current))
             {
-                string directory = Path.Combine(_scope.GetAppDirectory(app.Name), version.ToString());
+                string directory = _versions.GetVersionDirectory(app.PackageName, version);
                 string? found = await _executableDetector.FindExecutableAsync(directory, app.Manifest!.Executable, cancellationToken);
                 if (found != null)
                 {

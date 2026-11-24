@@ -311,6 +311,28 @@ namespace Updaemon.Tests.Commands
             }
         }
 
+        /// <summary>What a killed run left of one app that cannot be ended concerns only that app.</summary>
+        [Fact]
+        public async Task Update_OneAppCannotBePutRight_UpdatesTheOthers()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallByteShelfAsync();
+                await h.InstallHostWithImagesAsync();
+                h.AddHostRelease("2.0.0");
+                h.ServiceManager.OnRestart = h.KeepForCutOff;
+                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
+                h.CutOff();
+                Directory.Delete(h.Versions.GetVersionDirectory(new AppName("shelf"), new Version(1, 0, 0)), recursive: true);
+                h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
+
+                Assert.Equal(1, await h.Update().ExecuteAsync(Array.Empty<string>()));
+
+                Assert.StartsWith("Error: shelf: putting back shelf 1.0.0 failed: ", Assert.Single(h.Output.Errors));
+                Assert.Contains("Updated byteshelf from 1.0.0 to 1.1.0.", h.Output.Messages);
+            }
+        }
+
         [Fact]
         public async Task Update_RunCannotBeRecorded_WarnsAndKeepsItsOutcome()
         {

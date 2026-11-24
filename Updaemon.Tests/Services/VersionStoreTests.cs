@@ -8,8 +8,10 @@ namespace Updaemon.Tests.Services
     {
         private static readonly ExtensionName Images = new ExtensionName("shelf", "images");
 
+        private static readonly InstalledExtension ImagesEntry = new InstalledExtension { Id = "images", Remote = "owner/images" };
+
         private static Task<Version> DownloadAsync(AppHarness h, string version) => h.Versions.DownloadAsync(
-            Images, new InstalledExtension { Id = "images", Remote = "owner/images" }, Version.Parse(version), h.Client);
+            Images, ImagesEntry, Version.Parse(version), h.Client);
 
         /// <summary>A run killed before the download is read and readable must not leave what a rollback could take for a version.</summary>
         [Theory]
@@ -34,7 +36,7 @@ namespace Updaemon.Tests.Services
 
                 h.AfterDownloading("owner/images", "1.0.0", _ => Step("downloading"));
                 h.Permissions.OnMakeTreeReadable = _ => Step("making readable");
-                await h.Versions.DownloadAsync(Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client, directory =>
+                await h.Versions.DownloadAsync(Images, ImagesEntry, new Version(1, 0, 0), h.Client, directory =>
                 {
                     Assert.True(File.Exists(Path.Combine(directory, "plugin.dll")));
                     Step("reading");
@@ -59,7 +61,7 @@ namespace Updaemon.Tests.Services
                 h.AddExtensionRelease("owner/images", "1.0.0");
 
                 await Assert.ThrowsAsync<InvalidOperationException>(() => h.Versions.DownloadAsync<Version>(
-                    Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client, _ => throw new InvalidOperationException("no")));
+                    Images, ImagesEntry, new Version(1, 0, 0), h.Client, _ => throw new InvalidOperationException("no")));
 
                 Assert.False(Directory.Exists(h.Scope.GetAppDirectory("shelf")));
             }
@@ -77,7 +79,7 @@ namespace Updaemon.Tests.Services
                 }
 
                 Directory.CreateDirectory(h.Scope.GetExtensionsDirectory("shelf"));
-                await h.Versions.PointAsync(Images, new Version(1, 0, 0));
+                await h.Versions.PointBackAsync(Images, new Version(1, 0, 0));
 
                 await h.Versions.PruneAsync(Images, 2);
 
@@ -87,14 +89,15 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task PointAsync_VersionNotKept_ThrowsAndLeavesTheLink()
+        public async Task PointBackAsync_VersionNotKept_ThrowsAndLeavesTheLink()
         {
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallHostWithImagesAsync();
 
-                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Versions.PointAsync(Images, new Version(9, 0, 0)));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Versions.PointBackAsync(Images, new Version(9, 0, 0)));
 
+                Assert.Equal("shelf/images 9.0.0 is not kept. Kept versions: 1.0.0.", ex.Message);
                 Assert.Equal(new[] { "images -> 1.0.0" }, h.LinkedExtensions());
             }
         }
@@ -107,7 +110,7 @@ namespace Updaemon.Tests.Services
                 h.AddExtensionRelease("owner/images", "1.0.0");
                 Version version = await DownloadAsync(h, "1.0.0");
                 Directory.CreateDirectory(h.Scope.GetExtensionsDirectory("shelf"));
-                await h.Versions.PointAsync(Images, version);
+                await h.Versions.PointBackAsync(Images, version);
 
                 await h.Versions.DiscardAsync(Images, version);
 
@@ -123,7 +126,7 @@ namespace Updaemon.Tests.Services
                 h.AddExtensionRelease("owner/images", "1.0.0");
                 Version current = await DownloadAsync(h, "1.0.0");
                 Directory.CreateDirectory(h.Scope.GetExtensionsDirectory("shelf"));
-                await h.Versions.PointAsync(Images, current);
+                await h.Versions.PointBackAsync(Images, current);
                 h.AddExtensionRelease("owner/images", "2.0.0");
                 Version downloaded = await DownloadAsync(h, "2.0.0");
 
@@ -148,7 +151,7 @@ namespace Updaemon.Tests.Services
                 });
                 VersionStore versions = new VersionStore(h.Scope, new SymlinkManager(), new FilePermissionManager(h.Output), h.Output);
 
-                await versions.DownloadAsync(Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client);
+                await versions.DownloadAsync(Images, ImagesEntry, new Version(1, 0, 0), h.Client);
 
                 string directory = versions.GetVersionDirectory(Images, new Version(1, 0, 0));
                 Assert.True(File.GetUnixFileMode(directory).HasFlag(UnixFileMode.OtherRead | UnixFileMode.OtherExecute));
@@ -179,7 +182,7 @@ namespace Updaemon.Tests.Services
                 h.AddExtensionRelease("owner/images", "1.0.0");
                 VersionStore versions = new VersionStore(h.Scope, new SymlinkManager(), new FilePermissionManager(h.Output), h.Output);
 
-                await versions.DownloadAsync(Images, new InstalledExtension { Remote = "owner/images" }, new Version(1, 0, 0), h.Client);
+                await versions.DownloadAsync(Images, ImagesEntry, new Version(1, 0, 0), h.Client);
 
                 Assert.All(parents, directory => Assert.True(File.GetUnixFileMode(directory).HasFlag(UnixFileMode.OtherRead | UnixFileMode.OtherExecute)));
                 Assert.All(others, directory => Assert.Equal(ownerOnly, File.GetUnixFileMode(directory)));
@@ -206,9 +209,32 @@ namespace Updaemon.Tests.Services
             }
         }
 
+        [SkippableFact]
+        public async Task PruneAsync_VersionCannotBeDeleted_WarnsAndGoesOn()
+        {
+            Unwritable.SkipUnderRoot();
+            using (AppHarness h = new AppHarness())
+            {
+                foreach (string version in new[] { "1.0.0", "1.1.0", "1.2.0" })
+                {
+                    Directory.CreateDirectory(h.Versions.GetVersionDirectory(Images, Version.Parse(version)));
+                }
+
+                string kept = h.Versions.GetVersionDirectory(Images, new Version(1, 1, 0));
+                File.WriteAllText(Path.Combine(kept, "plugin.dll"), "1.1.0");
+                using (Unwritable.Make(kept))
+                {
+                    await h.Versions.PruneAsync(Images, 1);
+                }
+
+                Assert.StartsWith("Warning: Failed to prune 1.1.0: ", Assert.Single(h.Output.Errors));
+                Assert.Equal(new[] { "1.1.0", "1.2.0" }, h.Versions.GetRetained(Images).Select(version => version.ToString()));
+            }
+        }
+
         /// <summary>What the host loads is every folder in there: never one for an instant, or for good after a kill, that is no extension.</summary>
         [Fact]
-        public async Task PointAsync_AnExtension_NothingButTheExtensionsIsEverInTheirFolder()
+        public async Task PointBackAsync_NothingButTheExtensionsIsEverInTheirFolder()
         {
             using (AppHarness h = new AppHarness())
             using (FileSystemWatcher watcher = new FileSystemWatcher())
@@ -221,7 +247,7 @@ namespace Updaemon.Tests.Services
                 watcher.EnableRaisingEvents = true;
                 Directory.CreateDirectory(h.Versions.GetVersionDirectory(Images, new Version(2, 0, 0)));
 
-                await h.Versions.PointAsync(Images, new Version(2, 0, 0));
+                await h.Versions.PointBackAsync(Images, new Version(2, 0, 0));
                 // Something to see for sure, after which the events before it have come too.
                 Directory.CreateDirectory(Path.Combine(watcher.Path, "last"));
                 for (int i = 0; i < 100 && !Seen(seen).Contains("last"); i++)
@@ -229,6 +255,7 @@ namespace Updaemon.Tests.Services
                     await Task.Delay(50);
                 }
 
+                Assert.Contains("last", Seen(seen));
                 Assert.Empty(Seen(seen).Except(new[] { "images", "last" }));
             }
         }

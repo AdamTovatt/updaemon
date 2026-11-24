@@ -90,7 +90,8 @@ namespace Updaemon.Commands
                     manual  Deploy the new version (download, repoint symlink, prune) but leave
                             the running process untouched, so the application can restart on
                             demand. The service keeps running the previous version, with the
-                            extensions it started with, until it restarts.
+                            extensions it started with, until it restarts. Enough updates
+                            without a restart delete the versions it runs.
 
                   Only meaningful for apps with a service; commands are never restarted.
 

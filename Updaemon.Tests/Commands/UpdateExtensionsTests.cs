@@ -232,7 +232,7 @@ namespace Updaemon.Tests.Commands
             }
         }
 
-        private static readonly string NeedsASetting = AppHarness.HostManifest.Replace("\"extensions\"", "\"settings\": { \"SHELF_KEY\": { \"required\": true } }, \"extensions\"");
+        private static readonly string NeedsASetting = Changed(AppHarness.HostManifest, ("\"extensions\"", "\"settings\": { \"SHELF_KEY\": { \"required\": true } }, \"extensions\""));
 
         [Fact]
         public async Task Update_HostCannotBeUpdated_AsksTheCurrentOneAndUpdatesTheExtension()
@@ -494,7 +494,7 @@ namespace Updaemon.Tests.Commands
 
         private static async Task AssertNothingSwitchedWhenAsync(Action<AppHarness> duringTheCheck, string problem)
         {
-            string manifest = AppHarness.HostManifest.Replace("\"command\"", "\"settings\": { \"TOKEN\": { \"required\": true, \"secret\": true } }, \"command\"");
+            string manifest = Changed(AppHarness.HostManifest, ("\"command\"", "\"settings\": { \"TOKEN\": { \"required\": true, \"secret\": true } }, \"command\""));
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallHostAsync(manifest, "--set", "TOKEN=abc");
@@ -554,6 +554,7 @@ namespace Updaemon.Tests.Commands
 
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Update().ExecuteAsync(new[] { "shelf" }, cancellation.Token));
 
+                Assert.Equal(2, h.HostRestarts());
                 h.AssertUnchangedSince(before);
             }
         }

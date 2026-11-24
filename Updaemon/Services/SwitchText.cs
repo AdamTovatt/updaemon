@@ -12,7 +12,7 @@ namespace Updaemon.Services
             switch (outcome.Restart)
             {
                 case RestartDecision.Manual:
-                    string running = outcome.Switched.FirstOrDefault(package => package.Name is AppName)?.From!.ToString() ?? "the extensions it started with";
+                    string running = outcome.Switched.OfType<PackageSwitch.Moved>().FirstOrDefault(package => package.Name is AppName)?.From.ToString() ?? "the extensions it started with";
                     outputWriter.WriteLine($"{appName}: restart skipped (restart=manual); the service runs {running} until it restarts.");
                     break;
                 case RestartDecision.Disabled:
@@ -28,13 +28,13 @@ namespace Updaemon.Services
         /// <param name="ifStands">A sentence for one that stands though the service is down; none when empty.</param>
         public static string? Problem(string appName, SwitchOutcome outcome, string ifStands = "")
         {
-            string logs = ServiceDeployer.SeeLogs(appName);
+            string logs = HealthText.SeeLogs(appName);
             string stands = ifStands.Length == 0 ? logs : $"{ifStands} {logs}";
             return outcome switch
             {
                 SwitchOutcome.Stands => null,
                 SwitchOutcome.StandsDown { RestartFailure: string failure } => $"{appName} could not be restarted: {failure.TrimEnd('.')}. {stands}",
-                SwitchOutcome.StandsDown => $"{ServiceDeployer.NotRunningAfterRestart(appName)}. {stands}",
+                SwitchOutcome.StandsDown => $"{HealthText.AfterRestart(appName)}. {stands}",
                 SwitchOutcome.WentBack wentBack => $"{WentBack(appName, wentBack)}. {logs}",
                 SwitchOutcome.NotBack notBack => $"{Failed(appName, notBack)}, and going back{(Before(notBack) is string before ? $" to {before}" : string.Empty)} failed: {notBack.Problem.TrimEnd('.')}. {logs}",
                 _ => throw new InvalidOperationException($"There is no wording for {outcome.GetType().Name}."),
@@ -65,23 +65,26 @@ namespace Updaemon.Services
             };
         }
 
-        private static string Failed(string appName, SwitchOutcome outcome) => outcome.Switched is [{ Name: AppName }]
-            ? $"{To(outcome)} did not stay running"
-            : $"{appName} did not stay running with {To(outcome)}";
+        private static string Failed(string appName, SwitchOutcome outcome) => outcome.Switched is [{ Package: AppName }]
+            ? HealthText.DidNotStayRunning(To(outcome))
+            : $"{HealthText.DidNotStayRunning(appName)} with {To(outcome)}";
 
-        private static string To(SwitchOutcome outcome) => Join(outcome, package => package.To)!;
+        private static string To(SwitchOutcome outcome) => string.Join(", ", outcome.Switched.SelectMany(package => package switch
+        {
+            PackageSwitch.Moved moved => new[] { Name(outcome, package, moved.To) },
+            PackageSwitch.Installed installed => new[] { Name(outcome, package, installed.To) },
+            _ => Array.Empty<string>(),
+        }));
 
         /// <summary>Null when all the switch did was install an extension.</summary>
-        private static string? Before(SwitchOutcome outcome) => Join(outcome, package => package.From);
-
-        private static string? Join(SwitchOutcome outcome, Func<PackageSwitch, Version?> version)
+        private static string? Before(SwitchOutcome outcome)
         {
-            List<string> versions = outcome.Switched
-                .Where(package => version(package) != null)
-                .Select(package => IsOne(outcome) ? version(package)!.ToString() : $"{package.Name} {version(package)}")
-                .ToList();
-            return versions.Count == 0 ? null : string.Join(", ", versions);
+            string[] versions = outcome.Switched.OfType<PackageSwitch.Moved>().Select(moved => Name(outcome, moved, moved.From)).ToArray();
+            return versions.Length == 0 ? null : string.Join(", ", versions);
         }
+
+        private static string Name(SwitchOutcome outcome, PackageSwitch package, Version version) =>
+            IsOne(outcome) ? version.ToString() : $"{package.Package} {version}";
 
         private static bool IsOne(SwitchOutcome outcome) => outcome.Switched.Count == 1;
     }
