@@ -120,10 +120,14 @@ namespace Updaemon.Tests.Services
             github.Assets[Build] = binary;
             github.Assets[Sums] = $"{Sha256(binary)}  Updaemon-linux-arm64\n";
 
-            IOException exception = await Assert.ThrowsAsync<IOException>(() => Releasing(github).DownloadAsync(UpdaemonVersion.Of(1, 2, 0), "/dev/full"));
+            // /dev/full is shared by the whole machine: another test run may have it open like the download does.
+            using (FileStream otherRun = new FileStream("/dev/full", FileMode.Create, FileAccess.Write, FileShare.Read))
+            {
+                IOException exception = await Assert.ThrowsAsync<IOException>(() => Releasing(github).DownloadAsync(UpdaemonVersion.Of(1, 2, 0), "/dev/full"));
 
-            Assert.Contains("No space left on device", exception.Message);
-            Assert.Contains("/dev/full", exception.Message);
+                Assert.Contains("No space left on device", exception.Message);
+                Assert.Contains("/dev/full", exception.Message);
+            }
         }
 
         [Fact]

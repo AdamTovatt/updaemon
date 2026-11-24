@@ -51,7 +51,9 @@ namespace Updaemon.Services
                 // say, and the path it names, inside "Error while copying content to a stream".
                 await using (Stream body = await response.Content.ReadAsStreamAsync(cancellationToken))
                 {
-                    await using (FileStream file = File.Create(destinationPath))
+                    // Not File.Create, which locks exclusively: the disk-full test downloads onto /dev/full, which another
+                    // run may hold open the same way.
+                    await using (FileStream file = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.Read))
                     {
                         await body.CopyToAsync(file, cancellationToken);
                     }
