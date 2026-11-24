@@ -1,5 +1,6 @@
 using Updaemon.Interfaces;
 using Updaemon.Models;
+using Updaemon.Services;
 
 namespace Updaemon.Commands
 {
@@ -10,12 +11,14 @@ namespace Updaemon.Commands
     {
         private readonly IConfigManager _configManager;
         private readonly IServiceDeployer _serviceDeployer;
+        private readonly AppSwitcher _switcher;
         private readonly IOutputWriter _outputWriter;
 
-        public SetArgsCommand(IConfigManager configManager, IServiceDeployer serviceDeployer, IOutputWriter outputWriter)
+        public SetArgsCommand(IConfigManager configManager, IServiceDeployer serviceDeployer, AppSwitcher switcher, IOutputWriter outputWriter)
         {
             _configManager = configManager;
             _serviceDeployer = serviceDeployer;
+            _switcher = switcher;
             _outputWriter = outputWriter;
         }
 
@@ -45,12 +48,13 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail("An argument contains a control character, such as a line break.");
             }
 
-            InstalledApp? app = await _configManager.GetAppAsync(appName, cancellationToken);
+            InstalledApp? app = await AppSelection.FindAppAsync(this, appName, _configManager, _outputWriter, cancellationToken);
             if (app == null)
             {
-                return _outputWriter.Fail($"'{appName}' is not installed.");
+                return 1;
             }
 
+            PreparedApp prepared = await _switcher.PrepareAsync(app, cancellationToken);
             ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
             AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
             if (manifest.Service == null)
@@ -60,7 +64,7 @@ namespace Updaemon.Commands
 
             app.Args = parser.Rest?.ToList();
             await _configManager.SaveAppAsync(app, cancellationToken);
-            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(app, reachable, cancellationToken);
+            bool staysRunning = await _serviceDeployer.ApplySettingsAsync(prepared, reachable, cancellationToken);
 
             IReadOnlyList<string> effective = app.Args ?? manifest.Service.Args;
             string shown = effective.Count == 0 ? "no arguments" : string.Join(' ', effective);

@@ -10,15 +10,17 @@ namespace Updaemon.Commands
     public class RollbackCommand : ICommand
     {
         private readonly IConfigManager _configManager;
+        private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppRollback _appRollback;
+        private readonly AppSwitcher _switcher;
         private readonly IOutputWriter _outputWriter;
 
-        public RollbackCommand(IConfigManager configManager, IServiceDeployer serviceDeployer, AppRollback appRollback, IOutputWriter outputWriter)
+        public RollbackCommand(IConfigManager configManager, VersionStore versions, IServiceDeployer serviceDeployer, AppSwitcher switcher, IOutputWriter outputWriter)
         {
             _configManager = configManager;
+            _versions = versions;
             _serviceDeployer = serviceDeployer;
-            _appRollback = appRollback;
+            _switcher = switcher;
             _outputWriter = outputWriter;
         }
 
@@ -52,15 +54,15 @@ namespace Updaemon.Commands
                     return _outputWriter.FailUsage(this);
             }
 
-            InstalledApp? app = await _configManager.GetAppAsync(appName, cancellationToken);
+            InstalledApp? app = await AppSelection.FindAppAsync(this, appName, _configManager, _outputWriter, cancellationToken);
             if (app == null)
             {
-                return _outputWriter.Fail($"'{appName}' is not installed.");
+                return 1;
             }
 
-            ReachableServiceManager reachable = await _serviceDeployer.ReachServiceManagerAsync(appName, cancellationToken: cancellationToken);
-            Version current = await _serviceDeployer.GetCurrentVersionAsync(appName, cancellationToken);
-            IReadOnlyList<Version> kept = _serviceDeployer.GetRetainedVersions(appName);
+            PreparedApp prepared = await _switcher.PrepareAsync(app, cancellationToken);
+            Version current = await _versions.GetCurrentAsync(app.PackageName, cancellationToken);
+            IReadOnlyList<Version> kept = _versions.GetRetained(app.PackageName);
             Version? target = named != null
                 ? kept.FirstOrDefault(version => SameVersion(version, named)) ?? named
                 : app.FindRollbackTarget(current, kept);
@@ -74,14 +76,13 @@ namespace Updaemon.Commands
                 return _outputWriter.Fail($"{appName} {current} is already the current version.");
             }
 
-            await _appRollback.SwitchAsync(app, current, target, reachable, cancellationToken);
-            AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);
-            bool staysRunning = !manifest.IsService || await _serviceDeployer.RestartAsync(appName, reachable, cancellationToken);
+            DeployableVersion opened = await _serviceDeployer.OpenRetainedAsync(appName, target, cancellationToken);
+            string? problem = await _switcher.RollBackAsync(AppSwitch.ToVersion(prepared, opened), cancellationToken);
 
             _outputWriter.WriteLine(target < current
                 ? $"Rolled back {appName} from {current} to {target}. 'updaemon update' skips {current} from now on."
                 : $"Switched {appName} from {current} to {target}.");
-            return staysRunning ? 0 : _outputWriter.Fail($"{appName}: {ServiceDeployer.NotRunning(appName, target)}");
+            return problem == null ? 0 : _outputWriter.Fail($"{problem}. {ServiceDeployer.SeeLogs(appName)}");
         }
 
         /// <summary>"1.2" names the version kept as "1.2.0": missing parts count as zero.</summary>

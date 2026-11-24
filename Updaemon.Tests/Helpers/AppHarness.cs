@@ -27,6 +27,20 @@ namespace Updaemon.Tests.Helpers
             }
             """;
 
+        /// <summary>A host of extensions: one it knows, loaded from the folder in SHELF_PLUGINS.</summary>
+        public const string HostManifest = """
+            {
+              "executable": "bin/shelf",
+              "command": "shelf",
+              "service": { "args": ["serve"] },
+              "extensions": {
+                "variable": "SHELF_PLUGINS",
+                "check": ["--check-plugin"],
+                "known": { "images": "github:owner/shelf/images.zip", "audio": "other:audio" }
+              }
+            }
+            """;
+
         private readonly TempFileHelper _temp = new TempFileHelper();
 
         /// <summary>The health check's clock: it never waits, and records what it would have.</summary>
@@ -40,9 +54,10 @@ namespace Updaemon.Tests.Helpers
             Secrets = new SecretsManager(Scope, Permissions);
             SettingsStore = new AppSettingsStore(Config, Secrets);
             Files = new AppFileWriter(Scope, Permissions, new UnitFileManager(Scope), ServiceManager, Output);
+            Versions = new VersionStore(Scope, new SymlinkManager(), Permissions, Output);
             Deployer = new ServiceDeployer(
                 Scope,
-                new SymlinkManager(),
+                Versions,
                 new ExecutableDetector(),
                 Permissions,
                 Files,
@@ -50,7 +65,9 @@ namespace Updaemon.Tests.Helpers
                 Secrets,
                 Output,
                 Time);
-            Rollback = new AppRollback(Deployer, SettingsStore, Config);
+            SwitcherConfig = new SaveFailingConfigManager(Config);
+            Switcher = new AppSwitcher(Versions, Deployer, ServiceManager, SettingsStore, SwitcherConfig, Output);
+            Check = new ExtensionCheck(Scope) { Run = RunCheckAsync };
             RunLog = new UpdateRunLog(Scope);
             PluginUrlResolver = new GitHubPluginUrlResolver(new Dictionary<string, string> { ["github"] = "Updaemon.GithubDistributionService" }, Scope.Platform);
             PluginInstaller = new PluginInstaller(PluginUrlResolver, GitHubPlugins, PluginDownloader, Config, Scope);
@@ -112,7 +129,14 @@ namespace Updaemon.Tests.Helpers
 
         public static UpdaemonVersion RunningVersion { get; } = UpdaemonVersion.Of(1, 0, 0);
 
-        public AppRollback Rollback { get; }
+        public AppSwitcher Switcher { get; }
+
+        /// <summary>What the switcher saves an app's entry with once it has begun a switch.</summary>
+        public SaveFailingConfigManager SwitcherConfig { get; }
+
+        public VersionStore Versions { get; }
+
+        public ExtensionCheck Check { get; }
 
         public UpdateRunLog RunLog { get; }
 
@@ -148,9 +172,15 @@ namespace Updaemon.Tests.Helpers
         public MockOutputWriter Output { get; } = new MockOutputWriter();
 
         public InstallCommand Install() => new InstallCommand(
-            Config, SettingsStore, Secrets, Client, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, new OtherScopeApps(new ConfigManager(OtherScope), OtherScope.Owner), Credentials());
+            Config, SettingsStore, Stager(), Versions, Deployer, ServiceManager, Permissions, Prompter, Output, Scope, Plugins, OtherScopeApps(), ExtensionInstaller());
 
-        public UpdateCommand Update() => new UpdateCommand(Config, SettingsStore, Secrets, Client, Output, Deployer, Rollback, Plugins, GitHubPluginUpdater(), SelfUpdater(), Credentials(), RunLog, Time);
+        private ReleaseStager Stager() => new ReleaseStager(Client, Secrets, Plugins, Credentials());
+
+        private OtherScopeApps OtherScopeApps() => new OtherScopeApps(new ConfigManager(OtherScope), OtherScope.Owner);
+
+        private ExtensionInstaller ExtensionInstaller() => new ExtensionInstaller(Config, Versions, Deployer, Switcher, Check, Stager(), OtherScopeApps(), Scope, Output);
+
+        public UpdateCommand Update() => new UpdateCommand(Config, Secrets, Client, Output, Versions, Deployer, Switcher, Plugins, GitHubPluginUpdater(), SelfUpdater(), Credentials(), RunLog, Time);
 
         public GitHubPluginUpdater GitHubPluginUpdater() => new GitHubPluginUpdater(Config, GitHubPlugins, PluginInstaller, Output, Credentials());
 
@@ -162,22 +192,36 @@ namespace Updaemon.Tests.Helpers
 
         public DistListCommand DistList() => new DistListCommand(Config, Output, Client, RunningVersion);
 
-        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Deployer, Rollback, Output);
+        public RollbackCommand RollbackCommand() => new RollbackCommand(Config, Versions, Deployer, Switcher, Output);
 
-        public StatusCommand Status() => new StatusCommand(Config, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion, RunLog, Time);
+        public StatusCommand Status() => new StatusCommand(Config, Versions, Deployer, ServiceManager, Timer, Output, Scope, RunningVersion, RunLog, Time);
 
         public LogsCommand Logs() => new LogsCommand(Config, Deployer, ServiceManager, Output);
 
-        public SetCommand Set() => new SetCommand(Config, SettingsStore, Deployer, Output);
+        public SetCommand Set() => new SetCommand(Config, SettingsStore, Deployer, Switcher, Output);
 
-        public UnsetCommand Unset() => new UnsetCommand(Config, SettingsStore, Deployer, Output);
+        public UnsetCommand Unset() => new UnsetCommand(Config, SettingsStore, Deployer, Switcher, Output);
 
-        public SetArgsCommand SetArgs() => new SetArgsCommand(Config, Deployer, Output);
+        public SetArgsCommand SetArgs() => new SetArgsCommand(Config, Deployer, Switcher, Output);
 
-        public RemoveCommand Remove() => new RemoveCommand(Config, Deployer, Output, Scope);
+        public SetRestartCommand SetRestart() => new SetRestartCommand(Config, Output, Deployer);
+
+        public RemoveCommand Remove() => new RemoveCommand(Config, Deployer, Switcher, RunLog, Output, Scope);
 
         public ZeroXConverter Converter() => new ZeroXConverter(
-            Scope, Config, Deployer, ServiceManager, Timer, new ExecutableDetector(), new SymlinkManager(), Permissions, Files, Plugins, PluginUrlResolver, Output);
+            Scope, Config, Versions, Deployer, ServiceManager, Timer, new ExecutableDetector(), new SymlinkManager(), Permissions, Files, Plugins, PluginUrlResolver, Output);
+
+        /// <summary>Every check a host was asked to run, in order.</summary>
+        internal List<ProcessInvocation> Checks { get; } = new List<ProcessInvocation>();
+
+        /// <summary>How a host's check answers; by default it accepts.</summary>
+        internal Func<ProcessInvocation, ProcessRunner.Result> AnswerCheck { get; set; } = _ => new ProcessRunner.Result(0, string.Empty, string.Empty);
+
+        private Task<ProcessRunner.Result> RunCheckAsync(ProcessInvocation invocation, CancellationToken cancellationToken)
+        {
+            Checks.Add(invocation);
+            return Task.FromResult(AnswerCheck(invocation));
+        }
 
         public async Task AddPluginAsync(string alias = "github")
         {
@@ -203,6 +247,47 @@ namespace Updaemon.Tests.Helpers
                 }
             });
         }
+
+        /// <summary>Publishes a release of an extension: one file, <c>plugin.dll</c>, holding <paramref name="version"/>.</summary>
+        public void AddExtensionRelease(string remote, string version)
+        {
+            Client.AddRelease(remote, Version.Parse(version), directory => File.WriteAllText(Path.Combine(directory, "plugin.dll"), version));
+        }
+
+        /// <summary>Publishes a release of the host <c>shelf</c>, whose executable prints SHELF_PLUGINS.</summary>
+        public void AddHostRelease(string version, string manifest = HostManifest) => AddRelease("owner/shelf", version, manifest, "bin/shelf", "SHELF_PLUGINS");
+
+        /// <summary>Installs the host <c>shelf</c> 1.0.0, in the system scope as the user <c>daemon</c>, which every machine has, and publishes its extension images 1.0.0.</summary>
+        public async Task InstallHostAsync(string manifest = HostManifest, params string[] options)
+        {
+            await AddPluginAsync();
+            Permissions.ExistingUsers.Add("daemon");
+            AddHostRelease("1.0.0", manifest);
+            AddExtensionRelease("owner/shelf/images.zip", "1.0.0");
+            string[] runAs = Scope.IsSystem ? new[] { "--run-as", "daemon" } : Array.Empty<string>();
+            Assert.Equal(0, await Install().ExecuteAsync(["shelf", "--from", "github:owner/shelf", .. runAs, .. options]));
+        }
+
+        /// <summary>The host and its extension images, both at 1.0.0.</summary>
+        public async Task InstallHostWithImagesAsync(string manifest = HostManifest)
+        {
+            await InstallHostAsync(manifest);
+            Assert.Equal(0, await Install().ExecuteAsync(new[] { "shelf/images" }));
+            Output.Clear();
+            Checks.Clear();
+            ServiceManager.MethodCalls.Clear();
+        }
+
+        /// <summary>How often the host's service was restarted since the calls were last cleared.</summary>
+        public int HostRestarts() => ServiceManager.MethodCalls.Count(call => call == MockServiceManager.Call(nameof(MockServiceManager.RestartServiceAsync), "shelf"));
+
+        public async Task<InstalledApp> HostAsync() => (await Config.GetAppAsync("shelf"))!;
+
+        /// <summary>What is in the folder the host loads its extensions from, as <c>id -> version</c>.</summary>
+        public IReadOnlyList<string> LinkedExtensions() => Directory.GetFileSystemEntries(Scope.GetExtensionsDirectory("shelf"))
+            .Order(StringComparer.Ordinal)
+            .Select(link => $"{Path.GetFileName(link)} -> {File.ReadAllText(Path.Combine(link, "plugin.dll"))}")
+            .ToList();
 
         /// <summary>Runs <paramref name="fault"/> on the download directory once the release's files are written.</summary>
         public void AfterDownloading(string remote, string version, Action<string> fault)
@@ -247,7 +332,7 @@ namespace Updaemon.Tests.Helpers
         public async Task SkipAsync(string appName, Version version)
         {
             InstalledApp app = (await Config.GetAppAsync(appName))!;
-            app.RecordSwitch(from: version, to: await Deployer.GetCurrentVersionAsync(appName));
+            app.RecordSwitch(from: version, to: await Versions.GetCurrentAsync(app.PackageName));
             await Config.SaveAppAsync(app);
         }
 
@@ -274,9 +359,51 @@ namespace Updaemon.Tests.Helpers
             Assert.True(changes.Count == 0, string.Join('\n', changes));
         }
 
+        private string? _cutOff;
+
+        /// <summary>
+        /// Keeps what is on disk now, the first time it is called: what a run killed here leaves.
+        /// <see cref="CutOff"/> then goes back to it.
+        /// </summary>
+        public void KeepForCutOff()
+        {
+            if (_cutOff == null)
+            {
+                _cutOff = _temp.TempDirectory + "_cutoff";
+                Copy(_temp.TempDirectory, _cutOff);
+            }
+        }
+
+        /// <summary>Leaves on disk what <see cref="KeepForCutOff"/> kept, as if the run had been killed there.</summary>
+        public void CutOff()
+        {
+            Assert.NotNull(_cutOff);
+            Directory.Delete(_temp.TempDirectory, recursive: true);
+            Directory.Move(_cutOff, _temp.TempDirectory);
+            _cutOff = null;
+            ServiceManager.OnDaemonReload = null;
+            ServiceManager.OnRestart = null;
+            Permissions.OnSetDirectoryPermissions = null;
+            Output.Clear();
+            ServiceManager.MethodCalls.Clear();
+        }
+
+        private static void Copy(string from, string to)
+        {
+            using (System.Diagnostics.Process copy = System.Diagnostics.Process.Start("cp", new[] { "-a", from, to }))
+            {
+                copy.WaitForExit();
+                Assert.Equal(0, copy.ExitCode);
+            }
+        }
+
         public void Dispose()
         {
             _temp.Dispose();
+            if (_cutOff != null)
+            {
+                Directory.Delete(_cutOff, recursive: true);
+            }
         }
     }
 }

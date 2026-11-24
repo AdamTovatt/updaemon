@@ -11,12 +11,12 @@ namespace Updaemon.Commands
     public class UpdateCommand : ICommand
     {
         private readonly IConfigManager _configManager;
-        private readonly AppSettingsStore _settingsStore;
         private readonly ISecretsManager _secretsManager;
         private readonly IDistributionServiceClient _distributionClient;
         private readonly IOutputWriter _outputWriter;
+        private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
-        private readonly AppRollback _appRollback;
+        private readonly AppSwitcher _switcher;
         private readonly PluginProvider _pluginProvider;
         private readonly GitHubPluginUpdater _gitHubPluginUpdater;
         private readonly SelfUpdater _selfUpdater;
@@ -26,12 +26,12 @@ namespace Updaemon.Commands
 
         public UpdateCommand(
             IConfigManager configManager,
-            AppSettingsStore settingsStore,
             ISecretsManager secretsManager,
             IDistributionServiceClient distributionClient,
             IOutputWriter outputWriter,
+            VersionStore versions,
             IServiceDeployer serviceDeployer,
-            AppRollback appRollback,
+            AppSwitcher switcher,
             PluginProvider pluginProvider,
             GitHubPluginUpdater gitHubPluginUpdater,
             SelfUpdater selfUpdater,
@@ -40,12 +40,12 @@ namespace Updaemon.Commands
             TimeProvider time)
         {
             _configManager = configManager;
-            _settingsStore = settingsStore;
             _secretsManager = secretsManager;
             _distributionClient = distributionClient;
             _outputWriter = outputWriter;
+            _versions = versions;
             _serviceDeployer = serviceDeployer;
-            _appRollback = appRollback;
+            _switcher = switcher;
             _pluginProvider = pluginProvider;
             _gitHubPluginUpdater = gitHubPluginUpdater;
             _selfUpdater = selfUpdater;
@@ -70,11 +70,18 @@ namespace Updaemon.Commands
                 return _outputWriter.FailUnknownOption(unknown);
             }
 
-            IReadOnlyList<InstalledApp>? apps = await AppSelection.SelectAsync(this, parser.Positionals, _configManager, _outputWriter, cancellationToken);
-            if (apps == null)
+            IReadOnlyList<SelectedPackage>? selected = await AppSelection.SelectAsync(this, parser.Positionals, _configManager, _outputWriter, cancellationToken);
+            if (selected == null)
             {
                 return 1;
             }
+
+            if (selected.FirstOrDefault(package => package.Extension != null) is SelectedPackage extension)
+            {
+                return _outputWriter.Fail($"'{extension.Name}' names an extension, which 'update' does not work on. For its host, use 'updaemon update {extension.App.Name}'.");
+            }
+
+            IReadOnlyList<InstalledApp> apps = selected.Select(package => package.App).ToList();
 
             if (apps.Count == 0)
             {
@@ -122,13 +129,9 @@ namespace Updaemon.Commands
                 {
                     await _runLog.SaveAsync(new UpdateRun(_time.GetUtcNow(), startedBy, failures.All), cancellationToken);
                 }
-                else if (failures.All.Count == 0 && await _runLog.LoadAsync(cancellationToken) is UpdateRun last)
+                else if (failures.All.Count == 0)
                 {
-                    UpdateRun cleared = last.WithoutFailuresOf(apps.Select(app => app.Name));
-                    if (cleared.Failures.Count < last.Failures.Count)
-                    {
-                        await _runLog.SaveAsync(cleared, cancellationToken);
-                    }
+                    await _runLog.ForgetFailuresAsync(apps.Select(app => app.Name), cancellationToken);
                 }
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -198,7 +201,8 @@ namespace Updaemon.Commands
 
         private async Task UpdateAppAsync(InstalledApp app, int retentionCount, CancellationToken cancellationToken)
         {
-            Version currentVersion = await _serviceDeployer.GetCurrentVersionAsync(app.Name, cancellationToken);
+            PreparedApp prepared = await _switcher.PrepareAsync(app, cancellationToken);
+            Version currentVersion = await _versions.GetCurrentAsync(app.PackageName, cancellationToken);
             Version? latestVersion = await _distributionClient.GetLatestVersionAsync(app.Remote, cancellationToken);
             if (latestVersion == null)
             {
@@ -220,93 +224,33 @@ namespace Updaemon.Commands
 
             DeployableVersion staged = await _serviceDeployer.StageAsync(app, latestVersion, _distributionClient, cancellationToken);
 
-            ReachableServiceManager reachable;
             try
             {
-                // Known only now: whether the new version has a service.
-                reachable = await _serviceDeployer.ReachServiceManagerAsync(app.Name, staged.Manifest, cancellationToken);
-                AppValues values = await _settingsStore.LoadValuesAsync(app, cancellationToken);
-                values.EnsureComplete(staged.Manifest, latestVersion, currentVersion, $"updaemon update {app.Name}");
-
-                // A release can newly declare a setting secret; its value then moves out of the readable settings.
-                values.ConformTo(staged.Manifest);
-                if (staged.ManifestInDirectory)
-                {
-                    // The release ships its own manifest; one from the install flags is no longer used.
-                    app.Manifest = null;
-                }
-
-                await _settingsStore.SaveAsync(values, cancellationToken);
-                await _serviceDeployer.ActivateAsync(app, staged, reachable, cancellationToken);
+                await _switcher.UpdateAsync(AppSwitch.ToVersion(prepared, staged), cancellationToken);
             }
-            catch
+            catch (Exception ex) when (ex is not NotRunningException)
             {
                 // A full disk or an unwritable directory included: the current version stays, and
                 // nothing of the new one is left.
-                _serviceDeployer.Discard(staged);
+                await _versions.DiscardAsync(app.PackageName, latestVersion);
                 throw;
-            }
-
-            if (staged.Manifest.IsService)
-            {
-                if (app.AutoRestart)
-                {
-                    await RestartAndCheckAsync(app, latestVersion, currentVersion, reachable, cancellationToken);
-                }
-                else
-                {
-                    _outputWriter.WriteLine($"{app.Name}: restart skipped (restart=manual); the service runs {currentVersion} until it restarts.");
-                }
             }
 
             _outputWriter.WriteLine($"Updated {app.Name} from {currentVersion} to {latestVersion}.");
 
             try
             {
-                await _serviceDeployer.PruneOldVersionsAsync(app.Name, retentionCount, cancellationToken);
+                await _versions.PruneAsync(app.PackageName, retentionCount, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _outputWriter.WriteError($"Warning: {app.Name}: failed to prune old versions: {ex.Message}");
             }
 
-            if (app.ForgetSkipsOlderThan(latestVersion, _serviceDeployer.GetRetainedVersions(app.Name)))
+            if (app.ForgetSkipsOlderThan(latestVersion, _versions.GetRetained(app.PackageName)))
             {
                 await _configManager.SaveAppAsync(app, cancellationToken);
             }
-        }
-
-        /// <summary>
-        /// Restarts the service on the new version and checks it stays up. If it does not, the previous
-        /// version runs again and the new one is skipped; the update then fails with that.
-        /// </summary>
-        private async Task RestartAndCheckAsync(InstalledApp app, Version newVersion, Version previousVersion, ReachableServiceManager reachable, CancellationToken cancellationToken)
-        {
-            if (await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken))
-            {
-                return;
-            }
-
-            string? skipNotRecorded;
-            bool previousStaysRunning;
-            try
-            {
-                skipNotRecorded = await _appRollback.FallBackAsync(app, newVersion, previousVersion, reachable, cancellationToken);
-                previousStaysRunning = await _serviceDeployer.RestartAsync(app.Name, reachable, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                throw new InvalidOperationException(
-                    ServiceDeployer.NotRunning(app.Name, newVersion, $", and going back to {previousVersion} failed: {ex.Message.TrimEnd('.')}"));
-            }
-
-            string skip = skipNotRecorded == null
-                ? $"{newVersion} is skipped"
-                : $"{newVersion} could not be recorded as skipped ({skipNotRecorded.TrimEnd('.')}), so the next update tries it again";
-            string consequence = previousStaysRunning
-                ? $", so {previousVersion} runs again and {skip}"
-                : $"; {previousVersion} is current again but did not stay running either, and {skip}";
-            throw new InvalidOperationException(ServiceDeployer.NotRunning(app.Name, newVersion, consequence));
         }
 
         private async Task DisposeClientAsync(string pluginAlias)
@@ -359,6 +303,7 @@ namespace Updaemon.Commands
                   finished, what failed and why, and whether the update timer started it
                   (the timer runs 'updaemon {string.Join(' ', TimerRun.Arguments)}'). Updating one app does not
                   replace that record; when it succeeds, it clears that app's failure from it.
+                  So does removing an app.
 
                 Examples:
                   updaemon update

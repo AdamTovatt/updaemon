@@ -23,7 +23,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Contains(RestartCall, h.ServiceManager.MethodCalls);
                 Assert.Contains("Updated byteshelf from 1.0.0 to 1.1.0.", h.Output.Messages);
             }
@@ -63,7 +63,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(
                     new[] { "Error: byteshelf: 1.1.0 did not stay running, so 1.0.0 runs again and 1.1.0 is skipped. See 'updaemon logs byteshelf'." },
                     h.Output.Errors);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
                 // Two (re)starts: the new version, then the previous one after rolling back.
                 Assert.Equal(2, h.ServiceManager.MethodCalls.Count(call => call == RestartCall || call == StartCall));
@@ -115,7 +115,7 @@ namespace Updaemon.Tests.Commands
             {
                 await h.InstallByteShelfPastACrashingReleaseAsync();
 
-                Assert.Equal(new Version(1, 2, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 2, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }
@@ -131,7 +131,7 @@ namespace Updaemon.Tests.Commands
 
                 await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                Assert.Equal(new Version(1, 2, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 2, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }
@@ -401,7 +401,7 @@ namespace Updaemon.Tests.Commands
                 string error = Assert.Single(h.Output.Errors);
                 Assert.StartsWith("Error: byteshelf: ", error);
                 Assert.Contains("updaemon set byteshelf BYTESHELF_DEVICE=<value>", error);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.False(Directory.Exists(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "1.1.0")));
                 Assert.Empty(h.ServiceManager.MethodCalls);
             }
@@ -440,7 +440,7 @@ namespace Updaemon.Tests.Commands
 
                 await h.Update().ExecuteAsync(Array.Empty<string>());
 
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.DoesNotContain(RestartCall, h.ServiceManager.MethodCalls);
                 Assert.DoesNotContain(StartCall, h.ServiceManager.MethodCalls);
             }
@@ -459,7 +459,7 @@ namespace Updaemon.Tests.Commands
                 await h.Update().ExecuteAsync(new[] { "tool" });
 
                 Assert.Null((await h.Config.GetAppAsync("tool"))!.Manifest);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("tool"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("tool")));
             }
         }
 
@@ -478,7 +478,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(1, exitCode);
                 Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: byteshelf: Invalid updaemon.json") && !e.Contains('\n'));
                 Assert.Contains(h.Output.Errors, e => e.StartsWith("Error: orphan: the plugin 'gone' is not installed"));
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
             }
         }
 
@@ -526,7 +526,20 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.Update().ExecuteAsync(Array.Empty<string>());
 
                 Assert.Equal(1, exitCode);
-                Assert.Contains("Error: byteshelf: Simulated restart failure", h.Output.Errors);
+                // Restarting what was put back fails the same way, so the next run tries that again.
+                Assert.Contains("Error: byteshelf: Simulated restart failure, and switching back failed: Simulated restart failure", h.Output.Errors);
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
+                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
+                Assert.Empty(app.SkippedVersions);
+                Assert.True(app.Unfinished!.Restart);
+
+                h.ServiceManager.RestartFailure = null;
+                h.ServiceManager.MethodCalls.Clear();
+                Assert.Equal(0, await h.Update().ExecuteAsync(Array.Empty<string>()));
+                // Once on what was put back, once on the update tried again.
+                Assert.Equal(2, h.ServiceManager.MethodCalls.Count(call => call == MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf")));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
+                Assert.Null((await h.Config.GetAppAsync("byteshelf"))!.Unfinished);
             }
         }
 

@@ -21,6 +21,9 @@ namespace Updaemon.Tests.Mocks
         /// <summary>Thrown by <see cref="RestartServiceAsync"/> when set.</summary>
         public Exception? RestartFailure { get; set; }
 
+        /// <summary>Called at each restart: to look at what the service starts with.</summary>
+        public Action? OnRestart { get; set; }
+
         /// <summary>How a call is recorded in <see cref="MethodCalls"/>; pass the method with <c>nameof</c>.</summary>
         public static string Call(string method, string? serviceName = null) =>
             serviceName == null ? method : $"{method}:{serviceName}";
@@ -44,6 +47,7 @@ namespace Updaemon.Tests.Mocks
         public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(RestartServiceAsync), serviceName));
+            OnRestart?.Invoke();
             if (RestartFailure != null)
                 throw RestartFailure;
             ServiceRunningStates[serviceName] = !Crashes(serviceName);
@@ -69,9 +73,13 @@ namespace Updaemon.Tests.Mocks
             return Task.FromResult(EnabledServices.Contains(serviceName));
         }
 
+        /// <summary>Called at each reload: to break something once a version is activated, before its service restarts.</summary>
+        public Action? OnDaemonReload { get; set; }
+
         public Task DaemonReloadAsync(CancellationToken cancellationToken = default)
         {
             MethodCalls.Add(Call(nameof(DaemonReloadAsync)));
+            OnDaemonReload?.Invoke();
             return Task.CompletedTask;
         }
 

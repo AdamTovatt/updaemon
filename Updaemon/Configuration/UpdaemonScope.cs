@@ -1,4 +1,5 @@
 using Updaemon.IO;
+using Updaemon.Models;
 
 namespace Updaemon.Configuration
 {
@@ -75,6 +76,20 @@ namespace Updaemon.Configuration
         public string SecretsDirectory => Path.Combine(RootDirectory, "secrets");
 
         public string GetAppDirectory(string appName) => Path.Combine(AppsDirectory, appName);
+
+        /// <summary>The folder a host finds its extensions in: one link per extension, named by its id.</summary>
+        public string GetExtensionsDirectory(string appName) => Path.Combine(AppsDirectory, appName, "extensions");
+
+        /// <summary>Where an app's versions are, or an extension's, and the link to its current one.</summary>
+        public PackageLocation Locate(PackageName name) => name switch
+        {
+            AppName app => new PackageLocation(GetAppDirectory(app.Name), GetAppDirectory(app.Name), GetCurrentLinkPath(app.Name)),
+            ExtensionName extension => new PackageLocation(
+                GetAppDirectory(extension.Host),
+                Path.Combine(GetAppDirectory(extension.Host), "extension-versions", extension.Id),
+                Path.Combine(GetExtensionsDirectory(extension.Host), extension.Id)),
+            _ => throw new ArgumentOutOfRangeException(nameof(name)),
+        };
 
         /// <summary>The generated environment file with the app's non-secret settings.</summary>
         public string GetSettingsFilePath(string appName) => Path.Combine(RootDirectory, "settings", appName + ".env");

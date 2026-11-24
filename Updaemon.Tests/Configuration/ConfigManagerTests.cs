@@ -63,7 +63,7 @@ namespace Updaemon.Tests.Configuration
                 InstalledApp? loaded = await new ConfigManager(TestScope.Create(tempHelper.TempDirectory)).GetAppAsync("byteshelf");
 
                 Assert.NotNull(loaded);
-                Assert.Equal("github:AdamTovatt/byteshelf", loaded.Source);
+                Assert.Equal("github:AdamTovatt/byteshelf", loaded.Source.ToString());
                 Assert.Equal("byteshelf", loaded.Manifest!.Command);
                 Assert.Equal(new[] { "sync", "run" }, loaded.Manifest.Service!.Args);
                 Assert.Equal("https://shelf.example.com", loaded.Settings["BYTESHELF_URL"]);

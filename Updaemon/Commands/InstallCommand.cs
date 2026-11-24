@@ -8,14 +8,15 @@ namespace Updaemon.Commands
 {
     /// <summary>
     /// Handles the 'install' command: downloads an app's latest release, reads its manifest, asks
-    /// for missing required settings, then writes its command wrapper and service unit and starts it.
+    /// for missing required settings, then writes its command wrapper and service unit and starts it. An
+    /// extension of an app is installed by <see cref="ExtensionInstaller"/>.
     /// </summary>
     public class InstallCommand : ICommand
     {
         private readonly IConfigManager _configManager;
         private readonly AppSettingsStore _settingsStore;
-        private readonly ISecretsManager _secretsManager;
-        private readonly IDistributionServiceClient _distributionClient;
+        private readonly ReleaseStager _stager;
+        private readonly VersionStore _versions;
         private readonly IServiceDeployer _serviceDeployer;
         private readonly IServiceManager _serviceManager;
         private readonly IFilePermissionManager _filePermissionManager;
@@ -24,13 +25,13 @@ namespace Updaemon.Commands
         private readonly UpdaemonScope _scope;
         private readonly PluginProvider _pluginProvider;
         private readonly OtherScopeApps _otherScopeApps;
-        private readonly PluginCredentials _credentials;
+        private readonly ExtensionInstaller _extensionInstaller;
 
         public InstallCommand(
             IConfigManager configManager,
             AppSettingsStore settingsStore,
-            ISecretsManager secretsManager,
-            IDistributionServiceClient distributionClient,
+            ReleaseStager stager,
+            VersionStore versions,
             IServiceDeployer serviceDeployer,
             IServiceManager serviceManager,
             IFilePermissionManager filePermissionManager,
@@ -39,12 +40,12 @@ namespace Updaemon.Commands
             UpdaemonScope scope,
             PluginProvider pluginProvider,
             OtherScopeApps otherScopeApps,
-            PluginCredentials credentials)
+            ExtensionInstaller extensionInstaller)
         {
             _configManager = configManager;
             _settingsStore = settingsStore;
-            _secretsManager = secretsManager;
-            _distributionClient = distributionClient;
+            _stager = stager;
+            _versions = versions;
             _serviceDeployer = serviceDeployer;
             _serviceManager = serviceManager;
             _filePermissionManager = filePermissionManager;
@@ -53,14 +54,14 @@ namespace Updaemon.Commands
             _scope = scope;
             _pluginProvider = pluginProvider;
             _otherScopeApps = otherScopeApps;
-            _credentials = credentials;
+            _extensionInstaller = extensionInstaller;
         }
 
         public string Name => "install";
 
-        public string Description => "Install an app from a distribution plugin";
+        public string Description => "Install an app, or an extension of one, from a distribution plugin";
 
-        public string Usage => "updaemon install <app> --from <plugin>:<remote> [--set KEY=VALUE]... [--command <name>] [--service] [--run-as <user>]";
+        public string Usage => "updaemon install <app> --from <plugin>:<remote> [--set KEY=VALUE]... [--command <name>] [--service] [--run-as <user>], or updaemon install <app>/<extension> [--from <plugin>:<remote>]";
 
         public bool ChangesState(string[] args) => true;
 
@@ -72,6 +73,8 @@ namespace Updaemon.Commands
                 case Parsed.Request parsed:
                     request = parsed.Value;
                     break;
+                case Parsed.Extension extension:
+                    return await _extensionInstaller.InstallAsync(extension.Name, extension.From, cancellationToken);
                 case Parsed.SourceMissing missing:
                     return await FailSourceMissingAsync(missing.AppName, cancellationToken);
                 case Parsed.Problem problem:
@@ -93,29 +96,22 @@ namespace Updaemon.Commands
             }
 
             InstalledApp app = request.CreateApp();
-            DeployableVersion? staged;
+            DeployableVersion staged;
             try
             {
-                InstalledPluginInfo plugin = await _pluginProvider.GetOrInstallAsync(app.Plugin, cancellationToken);
-                // Each try starts the plugin with its secrets as stored.
-                staged = await _credentials.RunAsync(app.Plugin, () => StageLatestAsync(app, plugin, cancellationToken), handOverSavedSecret: null, cancellationToken);
+                staged = await _stager.StageLatestAsync(app.Source, (latest, client) => _serviceDeployer.StageAsync(app, latest, client, cancellationToken), cancellationToken);
             }
-            catch (CredentialNeededException ex)
+            catch (NoReleaseException ex)
             {
-                return _outputWriter.Fail($"{app.Name}: {ex.Message}");
+                return _outputWriter.Fail(ex.Message);
             }
             catch (MissingManifestException ex)
             {
                 return _outputWriter.Fail($"{ex.Message} Pass --command <name> and/or --service to install it without one.");
             }
-            catch (PluginException ex)
+            catch (Exception ex) when (ex is CredentialNeededException or PluginException)
             {
                 return _outputWriter.Fail($"{app.Name}: {ex.Message}");
-            }
-
-            if (staged == null)
-            {
-                return _outputWriter.Fail($"{app.Source} has no released version.");
             }
 
             if (staged.ManifestInDirectory && app.Manifest != null)
@@ -134,13 +130,13 @@ namespace Updaemon.Commands
             }
             catch
             {
-                _serviceDeployer.Discard(staged);
+                await _versions.DiscardAsync(app.PackageName, staged.Version);
                 throw;
             }
 
             if (values == null)
             {
-                _serviceDeployer.Discard(staged);
+                await _versions.DiscardAsync(app.PackageName, staged.Version);
                 return 1;
             }
 
@@ -155,6 +151,7 @@ namespace Updaemon.Commands
                 Usage:
                   updaemon install <app> --from <plugin>:<remote> [--set KEY=VALUE]...
                                    [--command <name>] [--service] [--run-as <user>]
+                  updaemon install <app>/<extension> [--from <plugin>:<remote>]
 
                 Description:
                   Downloads the latest release of an app and sets it up as its updaemon.json
@@ -164,7 +161,14 @@ namespace Updaemon.Commands
                   needs a secret, such as a githubToken for a private repository, it is
                   asked for the same way and saved as the plugin's secret.
 
-                Options:
+                  <app>/<extension> installs an extension of an installed app, its host:
+                  a folder of files the host loads. Without --from, it comes from where the
+                  host's updaemon.json knows it to. If the host can check an extension, it
+                  must accept this one. The host is then restarted, and the extension is
+                  removed again if the host does not keep running. A host that is not a
+                  service, is set to manual restart or is disabled is not restarted.
+
+                Options (an extension takes only --from):
                   --from <plugin>:<remote>   Where to get it, for example github:owner/repo.
                   --set KEY=VALUE            A setting value; repeat for more.
                   --command <name>           For a release without updaemon.json: link the
@@ -177,6 +181,7 @@ namespace Updaemon.Commands
                 Examples:
                   updaemon install byteshelf --from github:AdamTovatt/byteshelf
                   updaemon install my-api --from github:owner/my-api --service --run-as myapi
+                  updaemon install byteshelf/images
                 """;
         }
 
@@ -184,6 +189,9 @@ namespace Updaemon.Commands
         private abstract record Parsed
         {
             public sealed record Request(InstallRequest Value) : Parsed;
+
+            /// <param name="From">Null when --from is not given: the host may know it.</param>
+            public sealed record Extension(ExtensionName Name, PackageSource? From) : Parsed;
 
             /// <summary>Only --from is missing.</summary>
             public sealed record SourceMissing(string AppName) : Parsed;
@@ -207,7 +215,22 @@ namespace Updaemon.Commands
                 return new Parsed.ShowUsage();
             }
 
-            if (parser.GetFlag("--from") is not string from)
+            PackageSource? from = null;
+            if (parser.GetFlag("--from") is string fromText)
+            {
+                from = PackageSource.TryParse(fromText);
+                if (from == null)
+                {
+                    return new Parsed.Problem($"--from must be <plugin>:<remote>, for example github:owner/repo. Got '{fromText}'.");
+                }
+            }
+
+            if (ExtensionName.IsMeantBy(appName))
+            {
+                return ParseExtension(appName, from, parser);
+            }
+
+            if (from == null)
             {
                 return new Parsed.SourceMissing(appName);
             }
@@ -215,12 +238,6 @@ namespace Updaemon.Commands
             if (!AppManifest.IsValidAppName(appName))
             {
                 return new Parsed.Problem($"'{appName}' is not a valid app name. Use letters, digits, '.', '_' and '-'; '{AppManifest.ReservedAppName}' is reserved.");
-            }
-
-            int separator = from.IndexOf(':');
-            if (separator <= 0 || separator == from.Length - 1)
-            {
-                return new Parsed.Problem($"--from must be <plugin>:<remote>, for example github:owner/repo. Got '{from}'.");
             }
 
             string? command = parser.GetFlag("--command");
@@ -242,12 +259,29 @@ namespace Updaemon.Commands
 
             return new Parsed.Request(new InstallRequest(
                 appName,
-                from.Substring(0, separator),
-                from.Substring(separator + 1),
+                from,
                 command,
                 parser.HasFlag("--service"),
                 parser.GetFlag("--run-as"),
                 values));
+        }
+
+        /// <summary>Everything that says what the app is or how it runs is its host's for an extension.</summary>
+        private static Parsed ParseExtension(string text, PackageSource? from, ArgumentParser parser)
+        {
+            if (ExtensionName.TryParse(text) is not ExtensionName name)
+            {
+                return new Parsed.Problem($"'{text}' is not a valid extension name. Use <app>/<extension>, each of letters, digits, '.', '_' and '-'; '{AppManifest.ReservedAppName}' is reserved.");
+            }
+
+            if (parser.HasFlag("--set"))
+            {
+                return new Parsed.Problem($"--set does not go with an extension, which has no settings of its own. Use 'updaemon set {name.Host} KEY=VALUE' for what it reads.");
+            }
+
+            return new[] { "--command", "--service", "--run-as" }.FirstOrDefault(parser.HasFlag) is string flag
+                ? new Parsed.Problem($"{flag} does not go with an extension: its host, {name.Host}, loads it.")
+                : new Parsed.Extension(name, from);
         }
 
         /// <summary>Shows how to give the source, and what plugins it can name.</summary>
@@ -287,23 +321,6 @@ namespace Updaemon.Commands
             }
 
             return null;
-        }
-
-        /// <summary>Stages the latest release, or returns null when the remote has none.</summary>
-        private async Task<DeployableVersion?> StageLatestAsync(InstalledApp app, InstalledPluginInfo plugin, CancellationToken cancellationToken)
-        {
-            await _distributionClient.ConnectAsync(plugin.Path, cancellationToken);
-            try
-            {
-                await _distributionClient.InitializeAsync(await _secretsManager.GetPluginSecretsFormattedAsync(app.Plugin, cancellationToken), cancellationToken);
-
-                Version? latest = await _distributionClient.GetLatestVersionAsync(app.Remote, cancellationToken);
-                return latest == null ? null : await _serviceDeployer.StageAsync(app, latest, _distributionClient, cancellationToken);
-            }
-            finally
-            {
-                await _distributionClient.DisposeAsync();
-            }
         }
 
         /// <summary>
@@ -411,8 +428,7 @@ namespace Updaemon.Commands
 
         private sealed record InstallRequest(
             string AppName,
-            string PluginAlias,
-            string Remote,
+            PackageSource Source,
             string? Command,
             bool Service,
             string? RunAs,
@@ -421,8 +437,7 @@ namespace Updaemon.Commands
             public InstalledApp CreateApp() => new InstalledApp
             {
                 Name = AppName,
-                Plugin = PluginAlias,
-                Remote = Remote,
+                Source = Source,
                 RunAs = RunAs,
                 Manifest = Command != null || Service
                     ? new AppManifest

@@ -25,8 +25,10 @@ namespace Updaemon.Models
         /// Any other key is secret when <paramref name="secret"/> is set or it is already stored as a
         /// secret, so changing a secret value never moves it into the readable settings file.
         /// </summary>
+        /// <exception cref="InvalidOperationException">Updaemon sets <paramref name="key"/> itself.</exception>
         public void Set(AppManifest manifest, string key, string value, bool secret = false)
         {
+            EnsureNotSetByUpdaemon(manifest, key);
             bool isSecret = manifest.Settings.ContainsKey(key)
                 ? manifest.IsSecret(key)
                 : secret || Secrets.ContainsKey(key);
@@ -37,7 +39,28 @@ namespace Updaemon.Models
         }
 
         /// <summary>Removes a value from wherever it is stored. Returns whether there was one.</summary>
-        public bool Remove(string key) => Settings.Remove(key) | Secrets.Remove(key);
+        /// <exception cref="InvalidOperationException">Updaemon sets <paramref name="key"/> itself.</exception>
+        public bool Remove(AppManifest manifest, string key)
+        {
+            EnsureNotSetByUpdaemon(manifest, key);
+            return Settings.Remove(key) | Secrets.Remove(key);
+        }
+
+        /// <summary>
+        /// Drops values stored for what updaemon sets itself, from before <paramref name="manifest"/> declared
+        /// it. Returns whether there were any.
+        /// </summary>
+        public bool DropSetByUpdaemon(AppManifest manifest)
+        {
+            List<string> dropped = Settings.Keys.Concat(Secrets.Keys).Where(manifest.IsSetByUpdaemon).ToList();
+            foreach (string key in dropped)
+            {
+                Settings.Remove(key);
+                Secrets.Remove(key);
+            }
+
+            return dropped.Count > 0;
+        }
 
         /// <summary>Moves plain values that <paramref name="manifest"/> declares secret into the secrets.</summary>
         public void ConformTo(AppManifest manifest)
@@ -46,6 +69,14 @@ namespace Updaemon.Models
             {
                 Secrets[key] = Settings[key];
                 Settings.Remove(key);
+            }
+        }
+
+        private static void EnsureNotSetByUpdaemon(AppManifest manifest, string key)
+        {
+            if (manifest.IsSetByUpdaemon(key))
+            {
+                throw new InvalidOperationException(AppManifest.SetByUpdaemon(key));
             }
         }
 

@@ -70,7 +70,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await change(h);
 
                 Assert.Equal(1, exitCode);
-                Assert.Equal(new[] { "Error: byteshelf did not stay running after the restart. The change is kept; see 'updaemon logs byteshelf'." }, h.Output.Errors);
+                Assert.Equal(new[] { "Error: byteshelf did not stay running after the restart. The change is kept. See 'updaemon logs byteshelf'." }, h.Output.Errors);
                 await assertKept(h);
             }
         }

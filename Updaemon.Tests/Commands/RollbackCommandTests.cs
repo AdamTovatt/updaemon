@@ -27,7 +27,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
                 Assert.Contains("Rolled back byteshelf from 1.1.0 to 1.0.0. 'updaemon update' skips 1.1.0 from now on.", h.Output.Messages);
@@ -45,7 +45,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf", "1.1.0" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
                 Assert.Equal(new[] { "Switched byteshelf from 1.0.0 to 1.1.0." }, h.Output.Messages);
             }
@@ -61,7 +61,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf", "1.1.0" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 2, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }
@@ -74,7 +74,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf", "1.0" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 1, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }
@@ -101,8 +101,69 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" });
 
                 Assert.Equal(1, exitCode);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
-                Assert.Equal(new[] { "Error: byteshelf: 1.0.0 did not stay running. See 'updaemon logs byteshelf'." }, h.Output.Errors);
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
+                Assert.Equal(new[] { "Error: byteshelf did not stay running after the restart. See 'updaemon logs byteshelf'." }, h.Output.Errors);
+            }
+        }
+
+        [Fact]
+        public async Task Rollback_RestartFails_StandsAndSaysBoth()
+        {
+            using (AppHarness h = await UpdatedByteShelfAsync())
+            {
+                h.ServiceManager.RestartFailure = new InvalidOperationException("no restart today.");
+
+                Assert.Equal(1, await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" }));
+
+                Assert.Contains("Rolled back byteshelf from 1.1.0 to 1.0.0. 'updaemon update' skips 1.1.0 from now on.", h.Output.Messages);
+                Assert.Equal(new[] { "Error: byteshelf could not be restarted: no restart today. See 'updaemon logs byteshelf'." }, h.Output.Errors);
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
+                // Still owed to the next change.
+                Assert.True((await h.Config.GetAppAsync("byteshelf"))!.Unfinished!.Restart);
+            }
+        }
+
+        [Fact]
+        public async Task Rollback_CancelledDuringTheHealthCheck_LeavesNothingToMakeUpFor()
+        {
+            using (AppHarness h = await UpdatedByteShelfAsync())
+            using (CancellationTokenSource cancellation = new CancellationTokenSource())
+            {
+                h.ServiceManager.OnRestart = cancellation.Cancel;
+
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" }, cancellation.Token));
+
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
+                Assert.Null((await h.Config.GetAppAsync("byteshelf"))!.Unfinished);
+            }
+        }
+
+        [Fact]
+        public async Task Rollback_RestartManual_RestartsAllTheSame()
+        {
+            using (AppHarness h = await UpdatedByteShelfAsync())
+            {
+                await h.SetRestart().ExecuteAsync(new[] { "byteshelf", "manual" });
+                h.ServiceManager.MethodCalls.Clear();
+
+                Assert.Equal(0, await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" }));
+
+                Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
+            }
+        }
+
+        [Fact]
+        public async Task Rollback_ToAVersionWithoutItsExecutable_IsRefusedAndChangesNothing()
+        {
+            using (AppHarness h = await UpdatedByteShelfAsync())
+            {
+                File.Delete(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "1.0.0", "bin", "byteshelf"));
+                IReadOnlyList<string> before = h.Snapshot();
+
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" }));
+
+                Assert.Equal("byteshelf 1.0.0: the executable 'bin/byteshelf' named in updaemon.json is not in the release.", ex.Message);
+                h.AssertUnchangedSince(before);
             }
         }
 
@@ -121,7 +182,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.RollbackCommand().ExecuteAsync(new[] { "tool" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("tool"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("tool")));
                 Assert.Empty(h.ServiceManager.MethodCalls);
             }
         }
@@ -135,7 +196,7 @@ namespace Updaemon.Tests.Commands
                     () => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf", "0.9.0" }));
 
                 Assert.Equal("byteshelf 0.9.0 is not kept. Kept versions: 1.0.0, 1.1.0.", ex.Message);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
             }
         }
 
@@ -163,7 +224,7 @@ namespace Updaemon.Tests.Commands
                 int exitCode = await h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" });
 
                 Assert.Equal(0, exitCode);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(new[] { new Version(1, 1, 0), new Version(1, 2, 0) }, (await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }
@@ -185,7 +246,7 @@ namespace Updaemon.Tests.Commands
                     () => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" }));
 
                 Assert.Equal("1.0.0 needs DEVICE; 1.1.0 keeps running. Run 'updaemon set byteshelf DEVICE=<value>', then 'updaemon rollback byteshelf 1.0.0'.", ex.Message);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }

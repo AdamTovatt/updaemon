@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Updaemon.Models;
 using Updaemon.Tests.Helpers;
 
 namespace Updaemon.Tests.Commands
@@ -74,7 +75,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(1, exitCode);
                 string error = Assert.Single(h.Output.Errors);
                 Assert.StartsWith($"Error: byteshelf: Could not write {directory}/", error);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 h.AssertUnchangedSince(before);
             }
         }
@@ -117,19 +118,33 @@ namespace Updaemon.Tests.Commands
             return h;
         }
 
-        [SkippableFact]
-        public async Task Rollback_ConfigCannotBeSaved_SwitchesBackAndChangesNothing()
+        /// <summary>Saved neither before nor after the switch: the first never begins it, the second has to undo it.</summary>
+        [SkippableTheory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task Rollback_ConfigCannotBeSaved_SwitchesBackAndChangesNothing(bool onceSwitched)
         {
             Unwritable.SkipUnderRoot();
             using (AppHarness h = await UpdatedToTwoAsync())
+            using (Unwritable.Pending unwritable = Unwritable.Prepare(h.Scope.RootDirectory))
             {
                 IReadOnlyList<string> before = h.Snapshot();
+                if (onceSwitched)
+                {
+                    int reloads = 0;
+                    // Unwritable once switched, and writable again by the time it is switched back.
+                    h.ServiceManager.OnDaemonReload = () => (reloads++ == 0 ? unwritable.Make : (Action)unwritable.Dispose)();
+                }
+                else
+                {
+                    unwritable.Make();
+                }
 
-                IOException ex = await Assert.ThrowsAsync<IOException>(
-                    () => Unwritable.WhileAsync(h.Scope.RootDirectory, () => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" })));
+                IOException ex = await Assert.ThrowsAsync<IOException>(() => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf" }));
+                unwritable.Dispose();
 
                 Assert.StartsWith($"Could not write {h.Scope.ConfigFilePath}: ", ex.Message);
-                Assert.Equal(new Version(2, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(2, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
                 h.AssertUnchangedSince(before);
             }
@@ -140,14 +155,18 @@ namespace Updaemon.Tests.Commands
         {
             Unwritable.SkipUnderRoot();
             using (AppHarness h = await UpdatedToTwoAsync())
+            using (Unwritable.Pending unwritable = Unwritable.Prepare(h.Scope.RootDirectory))
             {
-                // The version to switch back to is gone, so switching back fails too.
-                Directory.Delete(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "2.0.0"), recursive: true);
+                h.ServiceManager.OnDaemonReload = () =>
+                {
+                    // Once switched, it cannot be recorded, and the version to switch back to is gone.
+                    unwritable.Make();
+                    Directory.Delete(Path.Combine(h.Scope.GetAppDirectory("byteshelf"), "2.0.0"), recursive: true);
+                };
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-                    () => Unwritable.WhileAsync(h.Scope.RootDirectory, () => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf", "1.0.0" })));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.RollbackCommand().ExecuteAsync(new[] { "byteshelf", "1.0.0" }));
 
-                Assert.Matches($"^Could not write {Regex.Escape(h.Scope.ConfigFilePath)}: .*, and switching back to 2\\.0\\.0 failed: byteshelf 2\\.0\\.0 is not kept\\.", ex.Message);
+                Assert.Matches($"^Could not write {Regex.Escape(h.Scope.ConfigFilePath)}: .*, and switching back failed: byteshelf 2\\.0\\.0 is not kept\\.", ex.Message);
             }
         }
 
@@ -156,28 +175,21 @@ namespace Updaemon.Tests.Commands
         {
             Unwritable.SkipUnderRoot();
             using (AppHarness h = new AppHarness())
+            using (Unwritable.Pending unwritable = Unwritable.Prepare(h.Scope.RootDirectory))
             {
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/byteshelf", "1.1.0", AppHarness.ByteShelfManifest);
                 h.ServiceManager.CrashOnNextStart.Add("byteshelf");
-                IDisposable? unwritable = null;
-                h.ServiceManager.OnCrash = () => unwritable = Unwritable.Make(h.Scope.RootDirectory);
-                int exitCode;
-                try
-                {
-                    exitCode = await h.Update().ExecuteAsync(new[] { "byteshelf" });
-                }
-                finally
-                {
-                    unwritable?.Dispose();
-                }
+                h.ServiceManager.OnCrash = unwritable.Make;
+
+                int exitCode = await h.Update().ExecuteAsync(new[] { "byteshelf" });
 
                 Assert.Equal(1, exitCode);
                 Assert.Matches(
                     $"^Error: byteshelf: 1\\.1\\.0 did not stay running, so 1\\.0\\.0 runs again and 1\\.1\\.0 could not be recorded as skipped \\(Could not write {Regex.Escape(h.Scope.ConfigFilePath)}: .*\\), so the next update tries it again\\. See 'updaemon logs byteshelf'\\.$",
                     Assert.Single(h.Output.Errors));
                 // 1.1.0 is known not to run: going back stands, unlike a rollback by hand.
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Empty((await h.Config.GetAppAsync("byteshelf"))!.SkippedVersions);
             }
         }

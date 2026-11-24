@@ -13,7 +13,7 @@ namespace Updaemon.Tests.Commands
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallByteShelfAsync();
-                SetRestartCommand command = new SetRestartCommand(h.Config, h.Output, h.Deployer);
+                SetRestartCommand command = h.SetRestart();
 
                 int exitCode = await command.ExecuteAsync(new[] { "byteshelf", mode });
 
@@ -32,7 +32,7 @@ namespace Updaemon.Tests.Commands
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallByteShelfAsync();
-                SetRestartCommand command = new SetRestartCommand(h.Config, h.Output, h.Deployer);
+                SetRestartCommand command = h.SetRestart();
 
                 int exitCode = await command.ExecuteAsync(mode == null ? new[] { app } : new[] { app, mode });
 
@@ -51,7 +51,7 @@ namespace Updaemon.Tests.Commands
                 h.AddRelease("owner/tool", "1.0.0", """{ "executable": "tool", "command": "tool" }""", executable: "tool");
                 await h.Install().ExecuteAsync(new[] { "tool", "--from", "github:owner/tool" });
 
-                int exitCode = await new SetRestartCommand(h.Config, h.Output, h.Deployer).ExecuteAsync(new[] { "tool", "manual" });
+                int exitCode = await h.SetRestart().ExecuteAsync(new[] { "tool", "manual" });
 
                 Assert.Equal(0, exitCode);
                 Assert.Contains(h.Output.Messages, m => m.Contains("no effect"));

@@ -53,10 +53,10 @@ namespace Updaemon.Commands
                     return _outputWriter.Fail($"Invalid restart mode '{mode}'. Expected 'auto' or 'manual'.");
             }
 
-            InstalledApp? app = await _configManager.GetAppAsync(appName, cancellationToken);
+            InstalledApp? app = await AppSelection.FindAppAsync(this, appName, _configManager, _outputWriter, cancellationToken);
             if (app == null)
             {
-                return _outputWriter.Fail($"'{appName}' is not installed.");
+                return 1;
             }
 
             app.AutoRestart = autoRestart;
@@ -82,13 +82,14 @@ namespace Updaemon.Commands
                   updaemon set-restart <app> auto|manual
 
                 Description:
-                  Controls whether a service is restarted after 'update' deploys a new version.
+                  Controls whether a service is restarted after 'update' deploys a new version
+                  and after one of its extensions is installed or removed.
 
-                    auto    (default) Restart the service after deploying a new version.
+                    auto    (default) Restart the service after the change.
                     manual  Deploy the new version (download, repoint symlink, prune) but leave
                             the running process untouched, so the application can restart on
-                            demand. The service keeps running the previous version until it
-                            restarts.
+                            demand. The service keeps running the previous version, with the
+                            extensions it started with, until it restarts.
 
                   Only meaningful for apps with a service; commands are never restarted.
 

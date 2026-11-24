@@ -7,7 +7,8 @@ namespace Updaemon.Services
 {
     /// <summary>
     /// Writes and removes what updaemon generates for an app from its manifest and settings: the
-    /// data directory, the settings file, the command wrapper on PATH, and the service's wrapper and unit.
+    /// data directory, the folder of extensions, the settings file, the command wrapper on PATH, and the
+    /// service's wrapper and unit.
     /// </summary>
     public class AppFileWriter
     {
@@ -84,9 +85,21 @@ namespace Updaemon.Services
                 settings[setting.Key] = setting.Value;
             }
 
-            settings[AppManifest.DataDirectoryVariable] = dataDirectory;
             string settingsFilePath = _scope.GetSettingsFilePath(app.Name);
             await EnvFile.WriteAsync(settingsFilePath, settings, AtomicFile.Readable, cancellationToken);
+
+            Dictionary<string, string> variables = new Dictionary<string, string> { [AppManifest.DataDirectoryVariable] = dataDirectory };
+            string extensionsDirectory = _scope.GetExtensionsDirectory(app.Name);
+            if (manifest.Extensions != null)
+            {
+                variables[manifest.Extensions.Variable!] = extensionsDirectory;
+                Directory.CreateDirectory(extensionsDirectory);
+                await _filePermissionManager.SetDirectoryPermissionsAsync(extensionsDirectory, cancellationToken);
+            }
+            else if (previous?.Extensions != null && Directory.Exists(extensionsDirectory) && !Directory.EnumerateFileSystemEntries(extensionsDirectory).Any())
+            {
+                Directory.Delete(extensionsDirectory);
+            }
 
             string currentLink = _scope.GetCurrentLinkPath(app.Name);
             string executablePath = Path.Combine(currentLink, manifest.Executable);
@@ -98,14 +111,14 @@ namespace Updaemon.Services
 
             if (manifest.Command != null)
             {
-                string wrapper = AppWrapper.ForCommand(app.Name, executablePath, settingsFilePath, secretsFilePath);
+                string wrapper = AppWrapper.ForCommand(app.Name, executablePath, settingsFilePath, secretsFilePath, variables);
                 await AtomicFile.WriteAsync(_scope.GetCommandPath(manifest.Command), wrapper, AtomicFile.Executable, cancellationToken);
             }
 
             if (manifest.Service != null)
             {
                 string wrapperPath = _scope.GetServiceWrapperPath(app.Name);
-                string wrapper = AppWrapper.ForService(app.Name, executablePath, settingsFilePath, secretsFilePath);
+                string wrapper = AppWrapper.ForService(app.Name, executablePath, settingsFilePath, secretsFilePath, variables);
                 await AtomicFile.WriteAsync(wrapperPath, wrapper, AtomicFile.Executable, cancellationToken);
 
                 ServiceUnit unit = new ServiceUnit

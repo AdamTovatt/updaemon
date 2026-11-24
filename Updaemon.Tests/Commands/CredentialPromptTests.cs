@@ -111,8 +111,8 @@ namespace Updaemon.Tests.Commands
 
                 Assert.Equal(0, exitCode);
                 Assert.Single(h.Prompter.Asked);
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("private"));
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("private2"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("private")));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("private2")));
             }
         }
 

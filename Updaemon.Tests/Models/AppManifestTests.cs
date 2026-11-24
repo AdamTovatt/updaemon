@@ -1,4 +1,5 @@
 using Updaemon.Models;
+using Updaemon.Tests.Helpers;
 
 namespace Updaemon.Tests.Models
 {
@@ -68,6 +69,46 @@ namespace Updaemon.Tests.Models
 
             Assert.Empty(manifest.Settings);
             Assert.Empty(manifest.Service!.Args);
+        }
+
+        [Fact]
+        public void Parse_Extensions_ReadsEveryField()
+        {
+            ExtensionsSpec extensions = AppManifest.Parse(AppHarness.HostManifest).Extensions!;
+
+            Assert.Equal("SHELF_PLUGINS", extensions.Variable);
+            Assert.Equal(new[] { "--check-plugin" }, extensions.Check!);
+            Assert.Equal("github:owner/shelf/images.zip", extensions.Known["images"]);
+        }
+
+        [Fact]
+        public void Parse_ExtensionsWithOnlyTheVariable_HasNoCheckAndKnowsNone()
+        {
+            ExtensionsSpec extensions = AppManifest.Parse("""{ "executable": "app", "command": "app", "extensions": { "variable": "PLUGINS", "check": null, "known": null } }""").Extensions!;
+
+            Assert.Null(extensions.Check);
+            Assert.Empty(extensions.Known);
+        }
+
+        [Theory]
+        [InlineData("""{ }""", "'extensions.variable' is missing")]
+        [InlineData("""{ "variable": "" }""", "'extensions.variable' is missing")]
+        [InlineData("""{ "variable": "A-B" }""", "'extensions.variable' must be an environment variable name, got 'A-B'")]
+        [InlineData("""{ "variable": "UPDAEMON_DATA_DIR" }""", "'extensions.variable' cannot be UPDAEMON_DATA_DIR")]
+        [InlineData("""{ "variable": "LEVEL" }""", "setting 'LEVEL' is reserved")]
+        [InlineData("""{ "variable": "P", "check": ["a\nb"] }""", "'extensions.check'")]
+        [InlineData("""{ "variable": "P", "check": [null] }""", "'extensions.check'")]
+        [InlineData("""{ "variable": "P", "known": { "../x": "github:a/b" } }""", "'../x', which is not a valid extension id")]
+        [InlineData("""{ "variable": "P", "known": { "updaemon": "github:a/b" } }""", "'updaemon', which is not a valid extension id")]
+        [InlineData("""{ "variable": "P", "known": { "x": "a/b" } }""", "the source of 'x' in 'extensions.known' must be <plugin>:<remote>, got 'a/b'")]
+        [InlineData("""{ "variable": "P", "known": { "x": null } }""", "the source of 'x'")]
+        public void Parse_InvalidExtensions_ThrowsNamingTheProblem(string extensions, string expectedInMessage)
+        {
+            string json = $$"""{ "executable": "app", "command": "app", "settings": { "LEVEL": {} }, "extensions": {{extensions}} }""";
+
+            ManifestException ex = Assert.Throws<ManifestException>(() => AppManifest.Parse(json));
+
+            Assert.Contains(expectedInMessage, ex.Message);
         }
 
         [Theory]

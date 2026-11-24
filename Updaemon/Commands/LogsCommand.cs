@@ -43,9 +43,9 @@ namespace Updaemon.Commands
                 return _outputWriter.FailUsage(this);
             }
 
-            if (await _configManager.GetAppAsync(appName, cancellationToken) == null)
+            if (await AppSelection.FindAppAsync(this, appName, _configManager, _outputWriter, cancellationToken) == null)
             {
-                return _outputWriter.Fail($"'{appName}' is not installed.");
+                return 1;
             }
 
             AppManifest manifest = await _serviceDeployer.GetCurrentManifestAsync(appName, cancellationToken);

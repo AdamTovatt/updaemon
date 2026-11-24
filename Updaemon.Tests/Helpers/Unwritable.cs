@@ -23,6 +23,33 @@ namespace Updaemon.Tests.Helpers
             return new Restore(directory, mode);
         }
 
+        /// <summary>
+        /// For a directory that becomes unwritable partway through a command: pass <see cref="Pending.Make"/> as
+        /// the hook it happens at. Writable again once disposed.
+        /// </summary>
+        public static Pending Prepare(string directory) => new Pending(directory);
+
+        public sealed class Pending : IDisposable
+        {
+            private readonly string _directory;
+            private IDisposable? _made;
+
+            internal Pending(string directory)
+            {
+                _directory = directory;
+            }
+
+            public void Make()
+            {
+                _made ??= Unwritable.Make(_directory);
+            }
+
+            public void Dispose()
+            {
+                _made?.Dispose();
+            }
+        }
+
         /// <summary>Runs <paramref name="action"/> with <paramref name="directory"/> unwritable, and makes it writable again after.</summary>
         public static async Task<T> WhileAsync<T>(string directory, Func<Task<T>> action)
         {

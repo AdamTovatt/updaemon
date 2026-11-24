@@ -17,6 +17,8 @@ namespace Updaemon.Models
         /// the version is a retained one. False when it comes from the install flags; activation writes it.
         /// </summary>
         public required bool ManifestInDirectory { get; init; }
+
+        public string ExecutablePath => Path.Combine(Directory, Manifest.Executable);
     }
 
     /// <summary>

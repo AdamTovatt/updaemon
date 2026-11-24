@@ -67,8 +67,8 @@ namespace Updaemon.Tests.Conversion
                 InstalledApp api = (await h.Config.GetAppAsync("my-api"))!;
                 Assert.Equal(("github", "owner/my-api"), (api.Plugin, api.Remote));
                 Assert.Equal(new Dictionary<string, string> { ["API_URL"] = "https://api.example" }, api.Settings);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("my-api"));
-                Assert.Equal(new[] { new Version(0, 9, 0), new Version(1, 0, 0) }, h.Deployer.GetRetainedVersions("my-api"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("my-api")));
+                Assert.Equal(new[] { new Version(0, 9, 0), new Version(1, 0, 0) }, h.Versions.GetRetained(new AppName("my-api")));
                 Assert.Empty(h.Client.Downloads);
                 Assert.Contains("Converted my-api (service) at 1.0.0.", h.Output.Messages);
             }
@@ -86,6 +86,19 @@ namespace Updaemon.Tests.Conversion
                 Assert.Contains("API_URL=\"https://api.example\"", File.ReadAllText(h.Scope.GetSettingsFilePath("my-api")));
                 Assert.Equal(ZeroXLayout.Unit(h, ZeroXLayout.Settings), File.ReadAllText(Backup(h, "my-api.service")));
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "my-api"), h.ServiceManager.MethodCalls);
+            }
+        }
+
+        /// <summary>As a download is: 0.x left that to who ran it.</summary>
+        [Fact]
+        public async Task RunAsync_Service_MakesItsCurrentVersionReadyToRun()
+        {
+            using (AppHarness h = ZeroXSetup())
+            {
+                await h.Converter().RunAsync(dryRun: false);
+
+                Assert.Contains(Path.Combine(h.Scope.GetAppDirectory("my-api"), "1.0.0", "my-api"), h.Permissions.ExecutablePermissionsCalls);
+                Assert.Contains(h.Scope.GetAppDirectory("my-api"), h.Permissions.DirectoryPermissionsCalls);
             }
         }
 
@@ -514,7 +527,7 @@ namespace Updaemon.Tests.Conversion
                 await h.Converter().RunAsync(dryRun: false);
                 // What a conversion killed after writing the wrapper leaves: the wrapper, and no alias link.
                 File.Delete(h.Scope.GetCommandPath("ripgrep"));
-                File.WriteAllText(h.Scope.GetCommandPath("rg"), AppWrapper.ForCommand("ripgrep", "/x/rg", "/x/settings", "/x/secrets"));
+                File.WriteAllText(h.Scope.GetCommandPath("rg"), AppWrapper.ForCommand("ripgrep", "/x/rg", "/x/settings", "/x/secrets", new Dictionary<string, string>()));
 
                 Assert.True(await h.Converter().RunAsync(dryRun: false));
 

@@ -28,7 +28,8 @@ namespace Updaemon.Commands
 
             if (key == AppManifest.DataDirectoryVariable)
             {
-                error = $"{AppManifest.DataDirectoryVariable} is set by updaemon.";
+                // Told before anything is downloaded; the app's own variables are known only from its manifest (see AppValues).
+                error = AppManifest.SetByUpdaemon(key);
                 return false;
             }
 

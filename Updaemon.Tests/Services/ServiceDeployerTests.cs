@@ -41,38 +41,6 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task Discard_VersionLeftCurrentByAFailedSwitchBack_IsKept()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallByteShelfAsync();
-                h.AddRelease("owner/byteshelf", "2.0.0", AppHarness.ByteShelfManifest);
-                DeployableVersion staged = await h.Deployer.StageAsync(App(), new Version(2, 0, 0), h.Client);
-                await new SymlinkManager().CreateOrUpdateSymlinkAsync(h.Scope.GetCurrentLinkPath("byteshelf"), staged.Directory);
-
-                h.Deployer.Discard(staged);
-
-                Assert.True(File.Exists(Path.Combine(staged.Directory, "bin", "byteshelf")));
-            }
-        }
-
-        [Fact]
-        public async Task Discard_StagedVersion_IsDeletedAndTheCurrentOneKept()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                await h.InstallByteShelfAsync();
-                h.AddRelease("owner/byteshelf", "2.0.0", AppHarness.ByteShelfManifest);
-                DeployableVersion staged = await h.Deployer.StageAsync(App(), new Version(2, 0, 0), h.Client);
-
-                h.Deployer.Discard(staged);
-
-                Assert.False(Directory.Exists(staged.Directory));
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
-            }
-        }
-
-        [Fact]
         public async Task StageAsync_TheCurrentVersion_IsRefused()
         {
             using (AppHarness h = new AppHarness())
@@ -124,7 +92,7 @@ namespace Updaemon.Tests.Services
                 InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged, h.Reachable));
 
                 Assert.Contains("did not create it", ex.Message);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 0, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal("#!/bin/sh\necho mine\n", File.ReadAllText(h.Scope.GetCommandPath("shelf")));
             }
         }
@@ -146,39 +114,32 @@ namespace Updaemon.Tests.Services
         }
 
         [Fact]
-        public async Task ActivateAsync_ExecutableMissingFromTheRelease_ThrowsAndKeepsCurrentVersion()
+        public async Task StageAsync_ExecutableMissingFromTheRelease_ThrowsAndDeletesTheDownload()
         {
             using (AppHarness h = new AppHarness())
             {
                 await h.InstallByteShelfAsync();
                 h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/renamed", "service": {} }""");
                 InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
-                DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
 
-                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.ActivateAsync(app, staged, h.Reachable));
+                InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client));
 
                 Assert.Contains("'bin/renamed'", ex.Message);
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new[] { new Version(1, 0, 0) }, h.Versions.GetRetained(new AppName("byteshelf")));
             }
         }
 
         [Fact]
-        public async Task ActivateAsync_GeneratingFilesFails_SwitchesBackToThePreviousVersion()
+        public async Task StageAsync_MakesTheVersionReadyToRun()
         {
             using (AppHarness h = new AppHarness())
             {
-                await h.AddPluginAsync();
-                h.AddRelease("owner/byteshelf", "1.0.0", """{ "executable": "bin/byteshelf", "command": "byteshelf" }""");
-                await h.Install().ExecuteAsync(new[] { "byteshelf", "--from", "github:owner/byteshelf" });
-                h.AddRelease("owner/byteshelf", "2.0.0", """{ "executable": "bin/byteshelf", "command": "byteshelf", "service": {} }""");
-                InstalledApp app = (await h.Config.GetAppAsync("byteshelf"))!;
-                DeployableVersion staged = await h.Deployer.StageAsync(app, new Version(2, 0, 0), h.Client);
-                // A file where the unit directory should be: writing the new service unit fails.
-                File.WriteAllText(h.Scope.UnitDirectory, "");
+                h.AddRelease("owner/byteshelf", "1.0.0", AppHarness.ByteShelfManifest);
 
-                await Assert.ThrowsAnyAsync<IOException>(() => h.Deployer.ActivateAsync(app, staged, h.Reachable));
+                DeployableVersion staged = await h.Deployer.StageAsync(App(), new Version(1, 0, 0), h.Client);
 
-                Assert.Equal(new Version(1, 0, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new[] { staged.ExecutablePath }, h.Permissions.ExecutablePermissionsCalls);
+                Assert.Equal(new[] { h.Scope.GetAppDirectory("byteshelf") }, h.Permissions.DirectoryPermissionsCalls);
             }
         }
 
@@ -192,7 +153,7 @@ namespace Updaemon.Tests.Services
                 h.ServiceManager.ServiceRunningStates["byteshelf"] = false;
                 h.ServiceManager.MethodCalls.Clear();
 
-                bool staysRunning = await h.Deployer.ApplySettingsAsync((await h.Config.GetAppAsync("byteshelf"))!, h.Reachable);
+                bool staysRunning = await h.Deployer.ApplySettingsAsync(new PreparedApp((await h.Config.GetAppAsync("byteshelf"))!), h.Reachable);
 
                 Assert.True(staysRunning);
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
@@ -209,7 +170,7 @@ namespace Updaemon.Tests.Services
                 await h.ServiceManager.DisableServiceAsync("byteshelf");
                 h.ServiceManager.MethodCalls.Clear();
 
-                Assert.True(await h.Deployer.ApplySettingsAsync((await h.Config.GetAppAsync("byteshelf"))!, h.Reachable));
+                Assert.True(await h.Deployer.ApplySettingsAsync(new PreparedApp((await h.Config.GetAppAsync("byteshelf"))!), h.Reachable));
 
                 Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
                 Assert.DoesNotContain(MockServiceManager.Call(nameof(IServiceManager.StartServiceAsync), "byteshelf"), h.ServiceManager.MethodCalls);
@@ -263,7 +224,7 @@ namespace Updaemon.Tests.Services
 
                 Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "byteshelf" }));
 
-                Assert.Equal(new Version(1, 1, 0), await h.Deployer.GetCurrentVersionAsync("byteshelf"));
+                Assert.Equal(new Version(1, 1, 0), await h.Versions.GetCurrentAsync(new AppName("byteshelf")));
                 Assert.Equal(TimeSpan.FromSeconds(45), h.Time.Waits[^1]);
             }
         }
@@ -375,26 +336,6 @@ namespace Updaemon.Tests.Services
                 Assert.Equal(!purge, File.Exists(h.Scope.GetOutputLogPath("byteshelf")));
                 Assert.Equal(!purge, File.Exists(h.Scope.GetErrorLogPath("byteshelf")));
                 Assert.True(File.Exists(h.Scope.GetOutputLogPath("other")));
-            }
-        }
-
-        [Fact]
-        public async Task PruneOldVersionsAsync_KeepsNewestAndCurrent_IgnoresOtherDirectories()
-        {
-            using (AppHarness h = new AppHarness())
-            {
-                string appDirectory = h.Scope.GetAppDirectory("my-api");
-                foreach (string version in new[] { "1.0.0", "1.1.0", "1.2.0", "1.3.0", "not-a-version" })
-                {
-                    Directory.CreateDirectory(Path.Combine(appDirectory, version));
-                }
-
-                File.CreateSymbolicLink(h.Scope.GetCurrentLinkPath("my-api"), Path.Combine(appDirectory, "1.0.0"));
-
-                await h.Deployer.PruneOldVersionsAsync("my-api", 2);
-
-                string[] remaining = Directory.GetDirectories(appDirectory).Select(Path.GetFileName).Order().ToArray()!;
-                Assert.Equal(new[] { "1.0.0", "1.2.0", "1.3.0", "current", "not-a-version" }, remaining);
             }
         }
     }

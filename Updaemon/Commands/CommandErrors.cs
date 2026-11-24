@@ -1,4 +1,5 @@
 using Updaemon.Interfaces;
+using Updaemon.Services;
 
 namespace Updaemon.Commands
 {
@@ -21,6 +22,9 @@ namespace Updaemon.Commands
             return 1;
         }
 
+        public static int FailNotInstalled(this IOutputWriter outputWriter, string name) =>
+            outputWriter.Fail($"'{name}' is not installed.");
+
         public static int FailUnknownOption(this IOutputWriter outputWriter, string option) =>
             outputWriter.Fail($"Unknown option '{option}'.");
 
@@ -29,6 +33,6 @@ namespace Updaemon.Commands
         /// a failure naming the logs. The change itself is kept either way.
         /// </summary>
         public static int FinishSettingsChange(this IOutputWriter outputWriter, string appName, bool staysRunning) =>
-            staysRunning ? 0 : outputWriter.Fail($"{appName} did not stay running after the restart. The change is kept; see 'updaemon logs {appName}'.");
+            staysRunning ? 0 : outputWriter.Fail($"{ServiceDeployer.NotRunningAfterRestart(appName)}. The change is kept. {ServiceDeployer.SeeLogs(appName)}");
     }
 }

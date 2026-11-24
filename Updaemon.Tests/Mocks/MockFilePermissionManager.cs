@@ -21,8 +21,12 @@ namespace Updaemon.Tests.Mocks
             string methodCall = $"SetDirectoryPermissionsAsync:{directoryPath}";
             MethodCalls.Add(methodCall);
             DirectoryPermissionsCalls.Add(directoryPath);
+            OnSetDirectoryPermissions?.Invoke(directoryPath);
             return Task.CompletedTask;
         }
+
+        /// <summary>Called with the path at each <see cref="SetDirectoryPermissionsAsync"/>, to look at what is there then.</summary>
+        public Action<string>? OnSetDirectoryPermissions { get; set; }
 
         /// <summary>Users <see cref="UserExistsAsync"/> reports as existing.</summary>
         public HashSet<string> ExistingUsers { get; } = new HashSet<string>();
