@@ -98,6 +98,7 @@ namespace Updaemon.Tests.Commands
                 Assert.Equal(
                     new[] { "Error: shelf, shelf/images: shelf did not stay running with shelf 2.0.0, shelf/images 2.0.0, so shelf 1.0.0, shelf/images 1.0.0 run again and each of the new versions is skipped. See 'updaemon logs shelf'." },
                     h.Output.Errors);
+                Assert.DoesNotContain(h.Output.Messages, message => message.StartsWith("Updated "));
                 await AssertCurrentAsync(h, One, "1.0.0");
                 Assert.Equal(2, h.HostRestarts());
                 InstalledApp host = await h.HostAsync();

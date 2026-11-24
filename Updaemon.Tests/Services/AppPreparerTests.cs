@@ -313,6 +313,37 @@ namespace Updaemon.Tests.Services
             }
         }
 
+        /// <summary>Neither note is lost for the other: what to put back, and the restart that is owed though the update makes none.</summary>
+        [Fact]
+        public async Task OwedRestart_AndAManualUpdateIsKilled_IsPutBackAndRestarted()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                h.ServiceManager.RestartFailure = new InvalidOperationException("no restart today");
+                await Assert.ThrowsAsync<InvalidOperationException>(() => h.Set().ExecuteAsync(new[] { "shelf", "A=1" }));
+                Assert.Equal(0, await h.SetRestart().ExecuteAsync(new[] { "shelf", "manual" }));
+                h.AddHostRelease("2.0.0", ChangedManifest);
+                h.SavedConfig.OnSaved = app =>
+                {
+                    if (app.Unfinished is UnfinishedChange.PutBack)
+                    {
+                        h.KeepForCutOff();
+                    }
+                };
+                Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
+                h.CutOff();
+                h.ServiceManager.RestartFailure = null;
+
+                Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
+
+                Assert.Contains("shelf: an earlier run did not finish switching versions; putting back shelf 1.0.0.", h.Output.Messages);
+                Assert.Equal(One, await h.Versions.GetCurrentAsync(Shelf));
+                Assert.Equal(1, h.HostRestarts());
+                Assert.Null((await h.HostAsync()).Unfinished);
+            }
+        }
+
         /// <summary>The files to write anew include the unit, which the service manager reads.</summary>
         [Fact]
         public async Task KilledSet_ChecksTheServiceManagerBeforeItWritesTheFiles()
@@ -382,6 +413,8 @@ namespace Updaemon.Tests.Services
 
                 h.ServiceManager.Unreachable = null;
                 Assert.Equal(0, await h.Unset().ExecuteAsync(new[] { "shelf", "NOTHING" }));
+                Assert.Equal(new[] { "shelf: an earlier run did not finish switching versions; putting back shelf 1.0.0.", "NOTHING was not set." }, h.Output.Messages);
+                Assert.Equal(0, h.HostRestarts());
                 Assert.False(File.Exists(h.Scope.GetServiceWrapperPath("shelf")));
                 Assert.Contains(MockServiceManager.Call(nameof(IServiceManager.DaemonReloadAsync)), h.ServiceManager.MethodCalls);
             }

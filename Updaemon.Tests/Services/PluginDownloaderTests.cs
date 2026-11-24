@@ -109,6 +109,8 @@ namespace Updaemon.Tests.Services
                     Assert.Equal("application/octet-stream", request.Headers.Accept.ToString());
                 });
                 Assert.NotEmpty(client.MethodCalls);
+                // Stops the plugin.
+                Assert.True(client.IsDisposed);
             }
         }
 

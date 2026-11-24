@@ -114,6 +114,22 @@ namespace Updaemon.Tests.Services
             }
         }
 
+        /// <summary>With no secrets to write ahead of it, the entry is saved as changed from the first.</summary>
+        [Fact]
+        public async Task ApplyAsync_PlainSetting_SavesNothingBeforeTheChange()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostAsync();
+                List<bool> changed = new List<bool>();
+                h.SavedConfig.OnSave = app => changed.Add(app.Settings.ContainsKey("A"));
+
+                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "shelf", "A=1" }));
+
+                Assert.Equal(new[] { true, true }, changed);
+            }
+        }
+
         [Fact]
         public async Task Set_CancelledDuringTheHealthCheck_LeavesNothingToMakeUpFor()
         {

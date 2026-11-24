@@ -6,6 +6,7 @@ using Updaemon.Tests.Mocks;
 
 namespace Updaemon.Tests.Commands
 {
+    [Collection(RunsFreshScripts.Name)]
     public class UpdateCommandTests
     {
         private static readonly string RestartCall = MockServiceManager.Call(nameof(IServiceManager.RestartServiceAsync), "byteshelf");

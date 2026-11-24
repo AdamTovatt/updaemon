@@ -201,6 +201,12 @@ namespace Updaemon.Tests.Services
                 // It and what it started.
                 int[] pids = File.ReadAllText(pidFile).Split(' ').Select(int.Parse).ToArray();
                 Assert.Equal(2, pids.Length);
+                // Killing is not waited for but of the check itself.
+                for (int i = 0; i < 200 && pids.Any(IsRunning); i++)
+                {
+                    await Task.Delay(50);
+                }
+
                 Assert.All(pids, pid => Assert.False(IsRunning(pid)));
             }
         }

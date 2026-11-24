@@ -55,6 +55,7 @@ namespace Updaemon.Tests.Mocks
 
         public Task RestartServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             MethodCalls.Add(Call(nameof(RestartServiceAsync), serviceName));
             OnRestart?.Invoke();
             if (RestartFailure != null)

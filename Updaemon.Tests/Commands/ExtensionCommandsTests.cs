@@ -542,6 +542,22 @@ namespace Updaemon.Tests.Commands
         }
 
         [Fact]
+        public async Task Remove_OneOfTwoExtensions_LeavesTheOther()
+        {
+            using (AppHarness h = new AppHarness())
+            {
+                await h.InstallHostWithImagesAsync();
+                h.AddExtensionRelease("owner/audio", "3.0.0");
+                Assert.Equal(0, await h.Install().ExecuteAsync(new[] { "shelf/audio", "--from", "github:owner/audio" }));
+
+                Assert.Equal(0, await h.Remove().ExecuteAsync(new[] { "shelf/images" }));
+
+                Assert.Equal(new[] { "audio -> 3.0.0" }, h.LinkedExtensions());
+                Assert.Equal("audio", Assert.Single((await h.HostAsync()).Extensions).Id);
+            }
+        }
+
+        [Fact]
         public async Task Remove_ExtensionWithPurge_IsRefused()
         {
             using (AppHarness h = new AppHarness())
@@ -821,14 +837,17 @@ namespace Updaemon.Tests.Commands
         }
 
         /// <summary>By hand too, once the variable is one updaemon sets.</summary>
-        [Fact]
-        public async Task Rollback_ToAVersionDeclaringAVariableWithAStoredValue_DropsTheValue()
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task Rollback_ToAVersionDeclaringAVariableWithAStoredValue_DropsTheValue(bool secret)
         {
-            using (AppHarness h = await WithStoredVariableAsync(secret: false))
+            using (AppHarness h = await WithStoredVariableAsync(secret))
             {
                 Assert.Equal(0, await h.Update().ExecuteAsync(new[] { "shelf" }));
                 Assert.Equal(0, await h.RollbackCommand().ExecuteAsync(new[] { "shelf" }));
-                Assert.Equal(0, await h.Set().ExecuteAsync(new[] { "shelf", "SHELF_PLUGINS=/elsewhere" }));
+                string[] set = ["shelf", "SHELF_PLUGINS=/elsewhere", .. secret ? new[] { "--secret" } : Array.Empty<string>()];
+                Assert.Equal(0, await h.Set().ExecuteAsync(set));
 
                 Assert.Equal(0, await h.RollbackCommand().ExecuteAsync(new[] { "shelf", "2.0.0" }));
 

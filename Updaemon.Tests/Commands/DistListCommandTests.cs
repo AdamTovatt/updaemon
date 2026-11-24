@@ -98,6 +98,8 @@ namespace Updaemon.Tests.Commands
                 // An alias is printed only after connecting to its plugin succeeds
                 Assert.Contains(output.Messages, line => line.Contains("Alias: github"));
                 Assert.Contains(output.Messages, line => line.Contains("Alias: byteshelf"));
+                // Stops each plugin.
+                Assert.Equal(2, client.MethodCalls.Count(call => call == nameof(MockDistributionServiceClient.DisposeAsync)));
             }
         }
 
